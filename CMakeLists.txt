@@ -24,7 +24,7 @@ message(STATUS "CMAKE_INSTALL_PREFIX:           ${CMAKE_INSTALL_PREFIX}" )
 #                       Library definition
 
 set(PARLAYHASH_INCLUDE_DIR "${PARLAYHASH_SOURCE_DIR}/include")
-set(CMAKE_CXX_COMPILER "/usr/bin/g++-11")
+#set(CMAKE_CXX_COMPILER "/usr/bin/g++-11")
 
 add_library(parlay INTERFACE)
 target_include_directories(parlay INTERFACE ${PARLAYHASH_INCLUDE_DIR})
