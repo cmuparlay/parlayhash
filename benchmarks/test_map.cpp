@@ -10,6 +10,8 @@
 
 using K = unsigned long;
 using V = unsigned long;
+using namespace parlay;
+
 #include "unordered_map.h"
 
 // leave undefined if measuring througput since measuring latency will slow down throughput
@@ -37,16 +39,16 @@ double geometric_mean(const parlay::sequence<double>& vals) {
 
 std::tuple<double,double>
 test_loop(commandLine& C,
-		 long n,   // num entries in map
-		 long p,   // num threads
-		 long rounds,  // num trials
-		 double zipfian_param, // zipfian parameter [0:1) (0 is uniform, .99 is high skew)
-		 int update_percent, // percent of operations that are either insert or delete (1/2 each)
-		 double trial_time, // time to run one trial
-		 double latency_cutoff, // cutoff to measure percent below
-		 bool verbose, // show some more info
-		 bool warmup,  // run one warmup round
-		 bool grow) {  // start with table of size 1
+	  long n,   // num entries in map
+	  long p,   // num threads
+	  long rounds,  // num trials
+	  double zipfian_param, // zipfian parameter [0:1) (0 is uniform, .99 is high skew)
+	  int update_percent, // percent of operations that are either insert or delete (1/2 each)
+	  double trial_time, // time to run one trial
+	  double latency_cutoff, // cutoff to measure percent below
+	  bool verbose, // show some more info
+	  bool warmup,  // run one warmup round
+	  bool grow) {  // start with table of size 1
   // total samples used
   long m = 10 * n + 1000 * p;
 

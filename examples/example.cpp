@@ -4,7 +4,7 @@
 
 using K = std::string;
 using V = unsigned long;
-using map_type = unordered_map<K,V>;
+using map_type = parlay::unordered_map<K,V>;
 
 int main() {
   map_type my_map(100);

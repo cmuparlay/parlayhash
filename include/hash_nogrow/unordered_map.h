@@ -51,13 +51,17 @@
 // There can be concurrent reads on the old value, hence the const to prevent
 // any read-write races.
 
+#ifndef PARLAYHASH_H_
+#define PARLAYHASH_H_
+
 #include <atomic>
 #include <optional>
-#include <parlay/primitives.h>
 #include "epoch.h"
 #include "lock.h"
 //#define USE_LOCKS 1
 
+namespace parlay {
+  
 template <typename K,
 	  typename V,
 	  class Hash = std::hash<K>,
@@ -101,7 +105,7 @@ private:
     for (int i = 0; i < idx; i++) out[i] = entries[i];
     for (int i = idx; i < cnt-1; i++) out[i] = entries[i+1];
   }
-
+  
   // Each bucket points to a Node of some Size, or to a BigNode (defined below)
   // A node contains an array of up to Size entries (actual # of entries given by cnt)
   // Sizes are 1, 3, 7, 31
@@ -118,7 +122,7 @@ private:
     }
 
     // return optional value found in entries given a key
-    inline std::optional<V> find(const K& k) {
+    std::optional<V> find(const K& k) {
       if (cnt <= 31) { // regular node
 	if (KeyEqual{}(entries[0].key, k)) // shortcut for common case
 	   return entries[0].value;
@@ -148,8 +152,7 @@ private:
     // copy and remove
     Node(long idx, node* old, const K& k) : cnt(old->cnt - 1) {
       if (cnt == 31) copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k, idx);
-      else 
-	copy_and_remove(entries, old->entries, cnt+1, k, idx);
+      else copy_and_remove(entries, old->entries, cnt+1, k, idx);
     }
   };
   using node = Node<0>;
@@ -157,84 +160,83 @@ private:
   // If a node overflows (cnt > 31), then it becomes a big node and its content
   // is stored indirectly in an std::vector.
   struct BigNode {
-    //using entries_type = parlay::sequence<KV>;
-    using entries_type = std::vector<KV>;
+    using entries_type = parlay::sequence<KV>;
     int cnt;
     entries_type entries;
 
     BigNode(node* old, const K& k, const V& v) : cnt(old->cnt + 1) {
-      //entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt); 
-      entries = entries_type(cnt);
+      entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
+      //entries = entries_type(cnt);
       if (old->cnt == 31) copy_and_insert(entries, old->entries, old->cnt, k, v);
       else copy_and_insert(entries, ((BigNode*) old)->entries, old->cnt, k, v);
     }
 
     template <typename F>
     BigNode(long idx, node* old, const K& k, const F& f) : cnt(old->cnt) {
-      //entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt); 
-      entries = entries_type(cnt);
-      copy_and_update(entries, ((BigNode*) old)->entries, cnt, k, f, idx);
-    }
+      entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
+      //entries = entries_type(cnt);
+      copy_and_update(entries, ((BigNode*) old)->entries, cnt, k, f, idx);  }
 
     BigNode(long idx, node* old, const K& k) : cnt(old->cnt - 1) {
-      //entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt); 
-      entries = entries_type(cnt);
-      copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k, idx);
-    }
+      entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
+      //entries = entries_type(cnt);
+      copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k, idx); }
   };
 
-  //memory pool for each node size
-  using Pool1 = flck::memory_pool<Node<1>>;
-  using Pool3 = flck::memory_pool<Node<3>>;
-  using Pool7 = flck::memory_pool<Node<7>>;
-  using Pool31 = flck::memory_pool<Node<31>>;
-  using PoolBig = flck::memory_pool<BigNode>;
+  using Node1 = Node<1>;
+  using Node3 = Node<3>;
+  using Node7 = Node<7>;
+  using Node31 = Node<31>;
+  static parlay::memory_pool<Node1> node_pool_1;
+  static parlay::memory_pool<Node3> node_pool_3;
+  static parlay::memory_pool<Node7> node_pool_7;
+  static parlay::memory_pool<Node31> node_pool_31;
+  static parlay::memory_pool<BigNode> big_node_pool;
 
-  // the following functions branch to construct the right sized node
   static node* insert_to_node(node* old, const K& k, const V& v) {
-    if (old == nullptr) return (node*) Pool1::New(old, k, v);
-    if (old->cnt < 3) return (node*) Pool3::New(old, k, v);
-    else if (old->cnt < 7) return (node*) Pool7::New(old, k, v);
-    else if (old->cnt < 31) return (node*) Pool31::New(old, k, v);
-    else return (node*) PoolBig::New(old, k, v);
+    if (old == nullptr) return (node*) node_pool_1.new_obj(old, k, v);
+    if (old->cnt < 3) return (node*) node_pool_3.new_obj(old, k, v);
+    else if (old->cnt < 7) return (node*) node_pool_7.new_obj(old, k, v);
+    else if (old->cnt < 31) return (node*) node_pool_31.new_obj(old, k, v);
+    else return (node*) big_node_pool.new_obj(old, k, v);
   }
 
   template <typename F>
   static node* update_node(node* old, const K& k, const F& f, long idx) {
     assert(old != nullptr);
-    if (old->cnt == 1) return (node*) Pool1::New(idx, old, k, f);
-    if (old->cnt <= 3) return (node*) Pool3::New(idx, old, k, f);
-    else if (old->cnt <= 7) return (node*) Pool7::New(idx, old, k, f);
-    else if (old->cnt <= 31) return (node*) Pool31::New(idx, old, k, f);
-    else return (node*) PoolBig::New(idx, old, k, f);
+    if (old == nullptr) return (node*) node_pool_1.new_obj(idx, old, k, f);
+    if (old->cnt < 3) return (node*) node_pool_3.new_obj(idx, old, k, f);
+    else if (old->cnt < 7) return (node*) node_pool_7.new_obj(idx, old, k, f);
+    else if (old->cnt < 31) return (node*) node_pool_31.new_obj(idx,old, k, f);
+    else return (node*) big_node_pool.new_obj(idx, old, k, f);
   }
 
   static node* remove_from_node(node* old, const K& k, long idx) {
     assert(old != nullptr);
     if (old->cnt == 1) return (node*) nullptr;
-    if (old->cnt == 2) return (node*) Pool1::New(idx, old, k);
-    else if (old->cnt <= 4) return (node*) Pool3::New(idx, old, k);
-    else if (old->cnt <= 8) return (node*) Pool7::New(idx, old, k);
-    else if (old->cnt <= 32) return (node*) Pool31::New(idx, old, k);
-    else return (node*) PoolBig::New(idx, old, k);
+    if (old->cnt == 2) return (node*) node_pool_1.new_obj(idx, old, k);
+    else if (old->cnt <= 4) return (node*) node_pool_3.new_obj(idx, old, k);
+    else if (old->cnt <= 8) return (node*) node_pool_7.new_obj(idx, old, k);
+    else if (old->cnt <= 32) return (node*) node_pool_31.new_obj(idx, old, k);
+    else return (node*) big_node_pool.new_obj(idx, old, k);
   }
 
   static void retire_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) Pool1::Retire((Node<1>*) old);
-    else if (old->cnt <= 3) Pool3::Retire((Node<3>*) old);
-    else if (old->cnt <= 7) Pool7::Retire((Node<7>*) old);
-    else if (old->cnt <= 31) Pool31::Retire((Node<31>*) old);
-    else PoolBig::Retire((BigNode*) old);
+    else if (old->cnt == 1) node_pool_1.retire((Node1*) old);
+    else if (old->cnt <= 3) node_pool_3.retire((Node3*) old);
+    else if (old->cnt <= 7) node_pool_7.retire((Node7*) old);
+    else if (old->cnt <= 31) node_pool_31.retire((Node31*) old);
+    else big_node_pool.retire((BigNode*) old);
   }
 
   static void destruct_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) Pool1::Delete((Node<1>*) old);
-    else if (old->cnt <= 3) Pool3::Delete((Node<3>*) old);
-    else if (old->cnt <= 7) Pool7::Delete((Node<7>*) old);
-    else if (old->cnt <= 31) Pool31::Delete((Node<31>*) old);
-    else PoolBig::Delete((BigNode*) old);
+    else if (old->cnt == 1) node_pool_1.destruct((Node1*) old);
+    else if (old->cnt <= 3) node_pool_3.destruct((Node3*) old);
+    else if (old->cnt <= 7) node_pool_7.destruct((Node7*) old);
+    else if (old->cnt <= 31) node_pool_31.destruct((Node31*) old);
+    else big_node_pool.destruct((BigNode*) old);
   }
 
   // *********************************************
@@ -331,9 +333,11 @@ public:
   std::optional<V> find(const K& k) {
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
-    return flck::with_epoch([&] {
+    return parlay::with_epoch([&] {
       node* x = s->load();
       if (x == nullptr) return std::optional<V>();
+      //if (KeyEqual{}(x->entries[0].key, k))
+      //  return std::optional<V>(x->entries[0].value);
       return std::optional<V>(x->find(k));
     });
   }
@@ -341,23 +345,23 @@ public:
   bool insert(const K& k, const V& v) {
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
-    return flck::with_epoch([&] {
-      return flck::try_loop([&] {return try_insert_at(s, k, v);});});
+    return parlay::with_epoch([&] {
+      return parlay::try_loop([&] {return try_insert_at(s, k, v);});});
   }
 
   template <typename F>
   bool upsert(const K& k, const F& f) {
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
-    return flck::with_epoch([&] {
-      return flck::try_loop([&] {return try_upsert_at(s, k, f);});});
+    return parlay::with_epoch([&] {
+      return parlay::try_loop([&] {return try_upsert_at(s, k, f);});});
   }
 
   bool remove(const K& k) {
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
-    return flck::with_epoch([&] {
-      return flck::try_loop([&] {return try_remove_at(s, k);});});
+    return parlay::with_epoch([&] {
+      return parlay::try_loop([&] {return try_remove_at(s, k);});});
   }
 
   long size() {
@@ -369,3 +373,17 @@ public:
     return parlay::reduce(s);
   }
 };
+
+template <typename K, typename V, typename H, typename E>
+parlay::memory_pool<typename unordered_map<K,V,H,E>::Node1> unordered_map<K,V,H,E>::node_pool_1;
+template <typename K, typename V, typename H, typename E>
+parlay::memory_pool<typename unordered_map<K,V,H,E>::Node3> unordered_map<K,V,H,E>::node_pool_3;
+template <typename K, typename V, typename H, typename E>
+parlay::memory_pool<typename unordered_map<K,V,H,E>::Node7> unordered_map<K,V,H,E>::node_pool_7;
+template <typename K, typename V, typename H, typename E>
+parlay::memory_pool<typename unordered_map<K,V,H,E>::Node31> unordered_map<K,V,H,E>::node_pool_31;
+template <typename K, typename V, typename H, typename E>
+parlay::memory_pool<typename unordered_map<K,V,H,E>::BigNode> unordered_map<K,V,H,E>::big_node_pool;
+
+} // namespace parlay
+#endif //PARLAYHASH_H_
