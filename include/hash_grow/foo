@@ -1,0 +1,1455 @@
+commit 50ec93ff3e08fdcd673a5c3ec556260752c9765a
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Jun 13 22:02:28 2023 -0400
+
+    removed random line from CMakeFile
+
+commit 4e5eac9aeb369a42b642ee2e63da45e09d5d3b17
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Jun 13 21:42:47 2023 -0400
+
+    added lock based version of flock_hash (using compiler flag), and an upsert that takes a function to apply to old value
+
+commit 1240b101402a6cd34fcba074cf506dd342873058
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Jun 12 23:32:40 2023 -0400
+
+    cleanup of flock_grow
+
+commit 62b28a7fa283bb76aaf773c332580b1db0bff11d
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Jun 12 17:43:49 2023 -0400
+
+    flock_grow now working
+
+commit f1a4f3231dfb5360784c3e7d299dbf7d989c4c44
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Jun 7 23:49:32 2023 -0400
+
+    fixed -p 1 argument to fully run sequentially
+
+commit 1c638985b8f275dd412f10d611b19253b87f3df5
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Jun 7 23:03:55 2023 -0400
+
+    added growt (from Peter Sanders), seems to have bugs
+
+commit bb61711b26b938bb1236cc79d313a0da09318185
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Jun 7 18:33:39 2023 -0400
+
+    reorganized hash tests, added several more
+
+commit b5886506130731038374b19f7db41e71a9c93b2c
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Jun 6 00:36:49 2023 -0400
+
+    more cleanup, some performance improvements
+
+commit f5529dbddfc90a9d580e4e57138a3e9da73d227d
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Jun 5 00:10:01 2023 -0400
+
+    cleanup
+
+commit 2219f1bd99c6b17fd3c732686e69f877a0daa356
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jun 1 23:32:38 2023 -0400
+
+    include chrono
+
+commit 766260eaf018d0816429895a0c0bd3a652f1bd5d
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jun 1 22:44:33 2023 -0400
+
+    changes
+
+commit 72d9de867839a10bc8528a21bc497577232e1240
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jun 1 22:39:08 2023 -0400
+
+    rename
+
+commit 8a25d47c5105d6f8cd5ff1ab485be072fff61d0b
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jun 1 21:46:49 2023 -0400
+
+    small test
+
+commit 81c94a140f0189751713edec1a9022d07f29a2df
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Tue Mar 14 03:22:04 2023 +0000
+
+    missing header
+
+commit d68f594c343e24fee3435f9ceb3567c3d1531acd
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Mar 13 22:41:18 2023 -0400
+
+    bad header
+
+commit 2ad51ee92e2ebf8b5f3bf193ce99e5d621b2c2a9
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Feb 9 22:27:36 2023 -0500
+
+    cleanup
+
+commit 58f95259b09090a3998e2a9c4beee36eae12a265
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Feb 9 22:21:25 2023 -0500
+
+    cleanup
+
+commit 68f78f2924c68a6284e5367efd2d82c160d576be
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jan 5 08:54:02 2023 -0500
+
+    cleanup
+
+commit a7250ce91629eecfaf7d1cd105153718bb7f1ca5
+Merge: afdc856 4a16f5f
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jan 5 08:46:32 2023 -0500
+
+    merge
+
+commit afdc856def0fbc79b1ab9dff07063bbcc041f218
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jan 5 08:31:46 2023 -0500
+
+    added avltree
+
+commit adcae3f9054eb242b9720f13613c35ed6a7a74a8
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Jan 4 08:35:06 2023 -0500
+
+    README
+
+commit 8684d5688c3f716f645ff1a6eafd87b6af18789b
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Jan 4 07:45:12 2023 -0500
+
+    updated README
+
+commit eb382a0f4bae31ffabe06b4b78d1b7f392e3ec0f
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Jan 3 14:33:03 2023 -0500
+
+    cleanup
+
+commit ad4076490c9b7cea5c2409810d8a7354f440e13b
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Jan 3 10:10:06 2023 -0500
+
+    cleanup
+
+commit 00afc007791d49171291d8e91eab0a2295cd1b54
+Merge: 96a400d 6d9bc8e
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Jan 3 10:04:38 2023 -0500
+
+    merged flock updates into main
+
+commit 6d9bc8ef08024274228a1d261916d59122576358
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Jan 3 09:42:34 2023 -0500
+
+    working flock
+
+commit 37103873e922fbd739bc7ffdd3b629c04a889fd0
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Jan 3 08:53:59 2023 -0500
+
+    added dlist to runtests
+
+commit 80c267bf027b60589a4159d1774b7d59eacd4143
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Jan 3 08:47:46 2023 -0500
+
+    vl -> verlib
+
+commit 4e4f072dc699fd285a4da69a4665c3043c21e8e2
+Author: Ubuntu <ubuntu@ip-172-31-35-105.ec2.internal>
+Date:   Mon Jan 2 20:26:08 2023 +0000
+
+    timings
+
+commit f3f716cccca77e2539d489373f780c10c0eacc64
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Jan 2 12:04:47 2023 -0500
+
+    made match paper better
+
+commit c405b02871f1c2f59489778668d50ad302c52104
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Sat Dec 31 10:54:49 2022 -0500
+
+    Fixed bugs from previous changes
+
+commit 56297dd8eaa386e9bfe2b26a9ef5081d0ddeaf06
+Merge: 50e01b0 343a6f7
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Dec 30 07:12:49 2022 -0500
+
+    some cleanup and file renaming
+
+commit 50e01b0c658b38d7ea911af9b892136f7806c07f
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Dec 30 06:32:40 2022 -0500
+
+    range queries generate range not just count
+
+commit 343a6f7726e847dd81296eabfa3254cedc476db2
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Thu Dec 29 22:07:19 2022 -0500
+
+    chaging timestamp to atomic_write_once
+
+commit 0c85cad016b3fa82204b6c59edfe9ded810b63df
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Thu Dec 29 19:36:27 2022 -0500
+
+    added atomic_write_once
+
+commit 9213f7db2effed0585878850a9a0d806293d81c6
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Thu Dec 29 17:20:20 2022 -0500
+
+    removed no_stamp from tables/figures
+
+commit 361e9eb160f601ddc30e3054710cc5d3336b373a
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Thu Dec 29 11:04:19 2022 -0500
+
+    updated plots with tsc
+
+commit a51d0825f7ccf45dd9ca1fcee7fc7b2ad97b2744
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Thu Dec 29 11:00:06 2022 -0500
+
+    added new plots
+
+commit 5a5a2cde69f2594c69dc57e529cbb5003530d286
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Thu Dec 29 09:24:15 2022 -0500
+
+    minor changes and fixed indentation
+
+commit 836ff775cd121d80afcc67737aacc4a767062b4d
+Author: Ubuntu <ubuntu@ip-172-31-35-105.ec2.internal>
+Date:   Wed Dec 28 14:48:16 2022 +0000
+
+    added timings
+
+commit 564247146aca62bee1f7c6490fee044719eb6113
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Dec 28 09:04:11 2022 -0500
+
+    small changes
+
+commit 76b9cc3b6530877db1c74fd4cd050a09f1753eb7
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Dec 27 13:35:01 2022 -0500
+
+    fixed cas so can be used inside a lock
+
+commit bbad8a4e70e1af280fe4e6001f3ce5bcb0634116
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Dec 19 03:10:55 2022 -0500
+
+    added hardware clock timestamp
+
+commit b3778fc9dcc0675f87cf63e901322249bc874394
+Merge: c84b9d8 368175e
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Fri Dec 9 02:31:31 2022 -0500
+
+    merge
+
+commit c84b9d815ef691f40bfcd011ae1d98c41d41e17f
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Fri Dec 9 02:29:35 2022 -0500
+
+    adding lfca
+
+commit 368175e5627e44f92094d0ad43249aafc0cc501f
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Dec 8 18:00:02 2022 -0500
+
+    improved arttree by removing internal nodes
+
+commit 36c5c65bdf373650caf536be714bcfe86689c86c
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Thu Dec 8 03:32:03 2022 -0500
+
+    fixed previous fix
+
+commit e09933d75758455e55ed85c2fb901f28ced1ff5f
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Thu Dec 8 03:30:36 2022 -0500
+
+    fixed bug
+
+commit 090f399d623b9c32a76405e72b1dd1783423cc7b
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Thu Dec 8 03:17:14 2022 -0500
+
+    changed to initialize with random inserts and delets
+
+commit 5e24603e5d9ecfdbaef8dbf480a000b0997ec0dc
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Dec 7 12:45:41 2022 -0500
+
+    offset epoch update
+
+commit e646d83f92d2d4faedb9fe3aad0ffe48b5614a3c
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Dec 7 11:14:08 2022 -0500
+
+    fixed missing with_epoch in with_snapshot
+
+commit 0d804b6e09e49ae92b16990b83f59a3d27ca804a
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Wed Dec 7 01:06:15 2022 -0500
+
+    added CAtree
+
+commit c645c9289b390f104ce5c7e750599f44f38f4f4c
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Dec 6 14:40:23 2022 -0500
+
+    timing code
+
+commit 879f76609f2d1bebbff1a6280068df71514e042a
+Author: Ubuntu <ubuntu@ip-172-31-35-105.ec2.internal>
+Date:   Tue Dec 6 12:20:49 2022 +0000
+
+    script
+
+commit 63aaccb997b8e6c6d0309bc99603b0ef7465455c
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Dec 6 06:50:20 2022 -0500
+
+    various small changes
+
+commit 0675299399644502474de17997633cf1a9ae3b0a
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Dec 5 20:23:58 2022 -0500
+
+    added memory management for kv pairs
+
+commit cf78bf7d7fb38bb417575afe6a73f6b1f6fc20bd
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Dec 5 20:08:15 2022 -0500
+
+    added key value pairs to arttree
+
+commit 05a3c941a8a1094ef517bb2479df64feff68120c
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Dec 5 09:00:51 2022 -0500
+
+    new graphing scripts
+
+commit a83bf7844da7993e4c405b25371c38eb99faf538
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Dec 5 09:00:27 2022 -0500
+
+    changes
+
+commit cb3dab0c8aea1fb8d31514f797394303566ed2e0
+Author: Ubuntu <ubuntu@ip-172-31-35-105.ec2.internal>
+Date:   Sun Dec 4 22:39:08 2022 +0000
+
+    timings
+
+commit ee1f544d21aac4e3c7dc39528263a1747bbe7d96
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Sun Dec 4 19:07:43 2022 +0000
+
+    times and stats
+
+commit 8c1770acd53a6a7b76b711b2f7c324e5c90b5f82
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sun Dec 4 11:51:49 2022 -0500
+
+    timings
+
+commit 0588f7c0cc6d5e9795a00d5f12c9c750cac4ed10
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sun Dec 4 10:58:12 2022 -0500
+
+    performance fixes
+
+commit ee7080aa7e8f4557ab9fdcbde535c9eb48f52505
+Merge: 6d3af25 d5bd45a
+Author: Ubuntu <ubuntu@ip-172-31-35-105.ec2.internal>
+Date:   Sat Dec 3 23:51:46 2022 +0000
+
+    updated timing on 64 cores of ec2
+
+commit 6d3af25d7bf9da5b76fe45be7c71bbe25ef21c2c
+Author: Ubuntu <ubuntu@ip-172-31-35-105.ec2.internal>
+Date:   Sat Dec 3 23:51:32 2022 +0000
+
+    updated timing on 64 cores of ec2
+
+commit d5bd45a3d940597c95b46f392f6617fa35b21641
+Merge: 867c5b8 e126a7b
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Sat Dec 3 23:25:57 2022 +0000
+
+    updates times on 32 core ec2
+
+commit 867c5b82e89015df858aeb5119d9fed078b85106
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Sat Dec 3 23:25:45 2022 +0000
+
+    updates times on 32 core ec2
+
+commit e126a7b69fe1cdcaf9385cf60fe948b2a337b838
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sat Dec 3 18:22:35 2022 -0500
+
+    timings on aware after fixes
+
+commit 335ad9adbf7e3e9cfeea4e665ce064b43ea94cb1
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sat Dec 3 17:27:02 2022 -0500
+
+    performance of versioned_opt.h
+
+commit 2356eb7b6e54e7a0089b58d26170d3441c91bd61
+Author: Ubuntu <ubuntu@ip-172-31-35-105.ec2.internal>
+Date:   Sat Dec 3 19:37:45 2022 +0000
+
+    timings
+
+commit edb159061d896da2937cb8fe7f92d22678461a1f
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Sat Dec 3 19:28:23 2022 +0000
+
+    timings
+
+commit 49bf757cd554c4b858426c9b99c33001833b52ee
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sat Dec 3 13:25:32 2022 -0500
+
+    fixed bug in mfind, repeatedly finding same key
+
+commit ffc4319c2abfde4a751ddc5b646272261f1a3aaf
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sat Dec 3 08:12:24 2022 -0500
+
+    fixed range search size
+
+commit 869cca957ece02aa7f8536ec6ea05d8994c8b9c3
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Sat Dec 3 13:11:59 2022 +0000
+
+    timings on 64 cores
+
+commit dda318bba07956022e32ed33ed0e05479c7b8075
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Sat Dec 3 13:10:40 2022 +0000
+
+    timings on 64 cores
+
+commit 2129aa061944378c424a629ce9dfbc509d0a0627
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Fri Dec 2 15:51:56 2022 +0000
+
+    added versioned_opt to replace versioned?
+
+commit a43e44254858d9057461023e87db60703888e49f
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Thu Dec 1 09:32:56 2022 -0500
+
+    merged timestamp and null bits
+
+commit 5ddabf25909b53baddffff5de0175d7302801e4f
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Wed Nov 30 14:31:21 2022 -0500
+
+    adding lfca
+
+commit 9bc6b318f890ab5f57831a6128dd2261e062439a
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Wed Nov 30 01:28:06 2022 -0500
+
+    updated tables
+
+commit 15e508bdcf297e33b6fa22e7560db19e48357c5a
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Wed Nov 30 00:46:32 2022 -0500
+
+    fixed setbench's arttree
+
+commit 868db5d470a2b9cd6a18173caa3f9fef3dd16668
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Nov 28 22:46:24 2022 -0500
+
+    changes
+
+commit 2c066259897e80b692a17f563300c3bc40d0031a
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Nov 28 09:45:03 2022 -0500
+
+    added 64core version of times
+
+commit deed57e0dee96b3b5293211ae9a7e993030f3270
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Nov 28 05:09:11 2022 -0500
+
+    lfca code
+
+commit 9b5cfbb44cb071eab3cb8e6e208054203a086c1c
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Nov 28 04:18:06 2022 -0500
+
+    fixed linearizable snapshot test case
+
+commit 4559f22e87df6fc65b2cb1a6aa5137aa691f24d3
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Nov 28 04:07:44 2022 -0500
+
+    added trevor's abtree to benchmark
+
+commit e4c0912ee392cf24eb88fff654c5dce7db434a54
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Nov 28 03:21:08 2022 -0500
+
+    updated graphing script
+
+commit ce3a2a8748a3f556575bac8f4cbe3f0c86a94035
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Nov 28 03:16:38 2022 -0500
+
+    added new tables
+
+commit c295c38356d9fbd00d745c6f8019e18505d21076
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Sun Nov 27 17:07:50 2022 +0000
+
+    timings and merged hash_block/set.h with hash_block_lf/set.h
+
+commit bd9c8b302e8417d450473cab51545fcaceaa8692
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Sat Nov 26 14:32:24 2022 +0000
+
+    timings
+
+commit 6c36ab675ad2f5e3c2fd4e7d8f290b1753723763
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sat Nov 26 08:13:16 2022 -0500
+
+    changed criteria for incrementing epoch, and merged list/list_ro
+
+commit 450447edc01ebb875a0e01ec7519f58da9020776
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Fri Nov 25 14:01:13 2022 +0000
+
+    small change to improve time
+
+commit 068f86ff83ca19aa22570ba26347c5fc430ca982
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Nov 24 19:31:59 2022 -0500
+
+    updates
+
+commit bf5dba58102cddf5a3a31ed34e772fe162c80e25
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Thu Nov 24 20:36:04 2022 +0000
+
+    timings
+
+commit a0773bbba464a0f977c96b81957648403cf2aa65
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Nov 24 12:47:08 2022 -0500
+
+    fixed abort code
+
+commit 8ba1343b1359391746412835d613aff8ac96a8df
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Nov 24 10:34:10 2022 -0500
+
+    typo in runtests
+
+commit 38884072897ae624dd69c474b8bf7d884eb12382
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Nov 24 10:08:21 2022 -0500
+
+    fixed bug with nested destructs
+
+commit e52c0a34ec04cec787930d93ce6097029d0a343b
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Tue Nov 22 19:55:37 2022 +0000
+
+    timings on 64 cores
+
+commit d59bad329da05e4f9390bc9cbc32172234b0cb37
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Tue Nov 22 18:19:16 2022 +0000
+
+    cleanup cmakefiles
+
+commit 9c8520cd5d20c27ac15217a5c6f26604f9787cd9
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Tue Nov 22 18:06:43 2022 +0000
+
+    renaming
+
+commit b1ad8afe57dd01a53a347a11771a36c6f5dcbea2
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Tue Nov 22 16:12:57 2022 +0000
+
+    timings
+
+commit ee1ebddb60378447317e1709c21b708084eb2534
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Tue Nov 22 13:59:26 2022 +0000
+
+    fixed range (i.e. no side effects)
+
+commit 3feb0e53ffa83984c558f18f0941193258d770f2
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Tue Nov 22 13:00:34 2022 +0000
+
+    fixes for lazy stamps
+
+commit bc22ca40898f55aeee9d2bf2e41cecf7b39f5b86
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Thu Nov 17 15:19:14 2022 +0000
+
+    changes
+
+commit 486644ec617d7e72854c6372e3300088c0e4e939
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Thu Nov 17 00:52:44 2022 +0000
+
+    added timings on c6i.32xlarge (64 cores, 128 threads)
+
+commit b537322538791d7568d31b55e217a0e50298ca52
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Nov 16 17:34:44 2022 -0500
+
+    added verlib.h
+
+commit 0ea15ec517768a05500105b6ade6b6990a4de5b3
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Nov 16 13:01:39 2022 -0500
+
+    wrapped namespaces and changed names and filenames to be consistent with paper
+
+commit eb199615d7a47a131d82975b417d3bc33d617445
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Nov 16 13:00:49 2022 -0500
+
+    wrapped namespaces and changed names and filenames to be consistent with paper
+
+commit 49721300fa8b067b155051137eb509b3bce3c0b0
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Tue Nov 15 15:57:39 2022 +0000
+
+    lazy stamps
+
+commit f88417d0efa4b9608550fad6d978b28f4a530c63
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Nov 15 06:08:46 2022 -0500
+
+    lazy stamp
+
+commit 3bceb33b943c8455950bc18cc9482f08520f51b3
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Fri Nov 11 17:23:31 2022 -0500
+
+    fixed indentataion
+
+commit 0fea2cd53896f46cd0b844a61dfb45ad497e626a
+Merge: d4acbcb 4078396
+Author: Hao Wei <hao.wei5838@gmail.com>
+Date:   Thu Nov 10 16:55:16 2022 +0000
+
+    Merge branch 'lockcleanup' of github.com:cmuparlay/flock-private into lockcleanup
+
+commit d4acbcb000b3a710de6ec02cda4528cbae77764e
+Author: Hao Wei <hao.wei5838@gmail.com>
+Date:   Thu Nov 10 16:55:01 2022 +0000
+
+    parameter tuning
+
+commit 40783965f803fa90c117e844235139f30b5511eb
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Thu Nov 10 02:19:11 2022 -0500
+
+    new tables
+
+commit 7bb7034ccfb33954508d18b4608d4325d9449244
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Wed Oct 26 09:54:31 2022 -0400
+
+    added cache line padding
+
+commit 14bb24e2c8c0fa47521e6e5e3c0e852c2bc7f181
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Wed Oct 26 08:35:04 2022 -0400
+
+    updated tables
+
+commit 1c08344df33d96ebf09754b355de71f5a91820a8
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Wed Oct 26 08:32:21 2022 -0400
+
+    new tables
+
+commit 71566e43f5a95e8b14f7a2a255a70544022a23b2
+Author: Hao Wei <hao.wei5838@gmail.com>
+Date:   Wed Oct 26 02:12:16 2022 +0000
+
+    changes
+
+commit 53f2cab8bbc8564bac13f2cd2bbe51c1c5e1171c
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Tue Oct 25 14:50:58 2022 -0400
+
+    added no inc timestamps
+
+commit 90baeaff0fd539f9774e05be5850e7bb074c75f8
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Tue Oct 25 10:20:48 2022 -0400
+
+    added new tables
+
+commit e7271a14835185f7180d865dcc3556e4046025de
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Tue Oct 25 09:49:49 2022 -0400
+
+    small change to runtests
+
+commit a2bc14b8b2a38bb187b2f165e728efb178f4b634
+Merge: 29a095c 6db4de1
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Tue Oct 25 09:24:00 2022 -0400
+
+    merge
+
+commit 29a095c14535214cf8e3e4f99b561828645f1ebf
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Tue Oct 25 09:22:34 2022 -0400
+
+    updated run tests
+
+commit 6db4de1532141699df9168f1bdf974a515fe75f6
+Author: Hao Wei <hao.wei5838@gmail.com>
+Date:   Tue Oct 25 13:21:37 2022 +0000
+
+    updated runtests and added timings
+
+commit bc48b5cf65e504a820017288693977b6de8c1fcf
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Mon Oct 24 06:41:54 2022 -0400
+
+    updated graphing script
+
+commit 37e140f14188c6b4c0e676218adbf717102697f2
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Mon Oct 24 06:35:31 2022 -0400
+
+    added script for creating tables
+
+commit 78411a8882bdfd6e098fd2fce84d80c19cbc13b4
+Author: Hao Wei <yuanhao1@cs.cmu.edu>
+Date:   Sat Oct 22 06:36:45 2022 -0400
+
+    updated testing script
+
+commit d5c6f08c9e85d1ff57040ec845405c45ccee96c7
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Sat Oct 22 06:21:24 2022 -0400
+
+    bug fixes
+
+commit 1981c77c0e987d5ea4ffad708b2e3eb60e4f4d7b
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Sat Oct 22 05:28:32 2022 -0400
+
+    simplfying vcas implementation
+
+commit f73a306d9d83bcc9ed3aed1dd35417b880b5314f
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Sat Oct 22 05:11:09 2022 -0400
+
+    Added vcas for persist_simple and fixed some bugs
+
+commit bd8eb691b94f6693f1b332c7b548c3e99c472b8b
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Sat Oct 22 02:43:12 2022 -0400
+
+    bug fixes in vcas persistent
+
+commit 92fd193c09b209a5870d37e48ff6415b7f726196
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Oct 21 11:38:01 2022 -0400
+
+    added timings
+
+commit 29e56d2913a9246b25c283943ad2ba756089598d
+Merge: 84f8a40 b7258a4
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Fri Oct 21 15:20:47 2022 +0000
+
+    merge
+
+commit 84f8a40d27afeb3322ec686c773b6ffcd8fae72a
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Fri Oct 21 15:20:28 2022 +0000
+
+    timings on 32 cores
+
+commit b7258a4ae10ede4555d32872a975608bbefd1dfc
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Oct 21 10:22:22 2022 -0400
+
+    missing _ in script
+
+commit 21d5d897a2c59c54d54e08404eefbd6f02598f84
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Oct 21 09:18:24 2022 -0400
+
+    small changes to timing script
+
+commit 202aa22b79ee44a1683e989fc7faffbddb19962a
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Oct 21 09:03:13 2022 -0400
+
+    updates to timing script
+
+commit 15ed8db43af49f30437108e1b7b8a5331b37c206
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Oct 21 08:37:40 2022 -0400
+
+    various small changes, including range search for lists and hash tables
+
+commit 471c5fed0a3e71796ff3c4dc686e6e6b32529b91
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 23:57:41 2022 -0400
+
+    changes
+
+commit 16a4d97035b2b26b6ccdfd96c5a144b639981a64
+Author: Hao Wei <hao.wei5838@gmail.com>
+Date:   Fri Oct 21 03:48:20 2022 +0000
+
+    added TATAS to set_stamp
+
+commit e9a0407fda2073511800e0e65675573e5c566e5f
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 23:26:12 2022 -0400
+
+    more bug fixes in linked list
+
+commit 5aa7afbdbea3610008411d30881be2bc35a7ec3c
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 23:13:10 2022 -0400
+
+    bug fix
+
+commit 9d5a80ce2c26112ed53a514b721b54cad4cab8b8
+Merge: 8820ac6 7491762
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 22:50:46 2022 -0400
+
+    Merge branch 'lockcleanup' of github.com:cmuparlay/flock-private into lockcleanup
+
+commit 8820ac6b95c312144af769755992e8c4020cbd4d
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 22:50:18 2022 -0400
+
+    bug fix in persistent_recorded_once
+
+commit 7491762e73f0893b83a45d67712e5f878421aee8
+Author: Hao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 22:18:06 2022 -0400
+
+    fixing testing script
+
+commit 258c9353bec6c83b6254210599a6170fe81d469f
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 22:19:37 2022 -0400
+
+    added destruct_no_log to epoch.h
+
+commit 72380d13df392fa7ec0b6adb8b41ec05c22034ba
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 21:56:04 2022 -0400
+
+    bug fixes
+
+commit d3cb79ec9584b708d0d800a0af24406397690dd2
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 15:44:17 2022 -0400
+
+    updated CMake and added script for sanity checks
+
+commit c11a9dc8224f72595edb1f4926b6037a164eb7b3
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 11:07:26 2022 -0400
+
+    added lock-free hashtable
+
+commit b314042ce446e896bc4f45412e6e576e74362750
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 10:59:43 2022 -0400
+
+    added preliminary vcas implementations
+
+commit 24803d5a67b6cb8e1e19764cf9a5272d8993bedb
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 10:41:23 2022 -0400
+
+    bug fix
+
+commit d10bd17a4cc93abfcdeb1083a5fa5d5fb2d2ad95
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Oct 20 10:15:29 2022 -0400
+
+    Fixed snapshot test case
+
+commit cde63b7a712323e58cfaa5867c390b72fa747673
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Oct 19 18:26:56 2022 -0400
+
+    some fixes
+
+commit 990cced6a0643ae0d202a57ef807580571470414
+Merge: 9800bba 6301c7e
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Oct 19 16:09:03 2022 -0400
+
+    merge
+
+commit 9800bba72d8afefa14ad7f1c6b0236d9e38a5fc1
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Oct 19 16:07:00 2022 -0400
+
+    changes
+
+commit 6301c7ec9cf5e5aa0491d3f324ecdecdaea1ae11
+Author: Yuanhao Wei <yuanhao1@cs.cmu.edu>
+Date:   Tue Oct 18 11:52:49 2022 -0400
+
+    fixed testing code
+
+commit 639e80ff30b95501b6340474a94c650450469b8d
+Merge: b843fc5 4504824
+Author: Hao Wei <hao.wei5838@gmail.com>
+Date:   Tue Oct 18 14:49:27 2022 +0000
+
+    Merge branch 'lockcleanup' of github.com:cmuparlay/flock-private into lockcleanup
+
+commit b843fc5b06299506fe0fbc426c6c600dbf038588
+Author: Hao Wei <hao.wei5838@gmail.com>
+Date:   Tue Oct 18 14:49:19 2022 +0000
+
+    added sanity checks for persistence
+
+commit 4504824ca41768c31c52742ff0b20c03f6219d73
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Oct 18 10:38:31 2022 -0400
+
+    various fixes, updates
+
+commit 3d3fe72ad052186d9ac91f70d4b4abb937d8e123
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sun Oct 16 18:39:22 2022 -0400
+
+    added multifinds
+
+commit 0b2306728748820ef4636225dd9022cd69e39795
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Oct 14 16:20:13 2022 -0400
+
+    added ifdefs for timestamps
+
+commit cb02bedc0a3e8216b6325e49be6f5b32125070e6
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Oct 14 14:46:05 2022 -0400
+
+    compiler flags, delete version links
+
+commit d4b31a9578913621335c46d2015c8221c31e789a
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Thu Oct 13 22:14:03 2022 +0000
+
+    fixes
+
+commit 9be1e243749c18b848d9bc9d3266953509d170e9
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Thu Oct 13 17:04:11 2022 +0000
+
+    fix
+
+commit 1f664872cb9749021b4b665aa78e3f956d9d500f
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Thu Oct 13 17:03:55 2022 +0000
+
+    fix
+
+commit 8a7b7a41cbc69d826d450cbbf9cafbb955765904
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Thu Oct 13 16:58:08 2022 +0000
+
+    added indirect only version
+
+commit 8cb93de9ec9b438e9fe3de7ba909ef30da788100
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Wed Oct 12 22:43:41 2022 +0000
+
+    fixes
+
+commit 77e6ce0e49f3fd240c94802d63b89979263b6cf6
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Wed Oct 12 22:11:57 2022 +0000
+
+    some fixes
+
+commit 2cdae03e7d515e01c5bf4910cc1faac44e3e7bb8
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Oct 12 15:53:39 2022 -0400
+
+    added simple_persistent
+
+commit 431a428aecc7331e07aafd49fede802c0c12fea0
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Fri Oct 7 21:08:33 2022 +0000
+
+    art range query
+
+commit 7374e3be008b3aaf9af0a1d2fdb74fcfc76cf727
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Oct 6 12:55:00 2022 -0400
+
+    changed range to take a function
+
+commit c83d0f1e45b94eae0ecfd0dac88b5e67086a0fbe
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Oct 4 12:42:12 2022 -0400
+
+    removed limits in blockleaftree
+
+commit 72452a55ebc4aa0f5e417cb761605796c6397fd7
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Mon Oct 3 16:26:00 2022 +0000
+
+    getting rid of limits so can use with arbitrary types
+
+commit 38b3ea517a998680372b64490d1389fa446e9970
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Sat Oct 1 00:26:43 2022 +0000
+
+    timings
+
+commit d89b2c4e84e5192e99246b6e1c3de777e19e8975
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Fri Sep 30 23:15:18 2022 +0000
+
+    timings
+
+commit b43ed53eaec7894f23dd1848cc1b0b6f37403f36
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Sep 30 18:19:57 2022 -0400
+
+    fixed list_ro
+
+commit e916b1b4757ff1f693b025879c9ca392bc441d21
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Sep 30 12:45:12 2022 -0400
+
+    added range query to btree and test harness
+
+commit 13622bfd0a5999f6156da013dc56fe8b556f9405
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Sep 26 10:33:10 2022 -0400
+
+    minor changes
+
+commit f01e372dea1f31e485ee3d1d1115901c78b03835
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Sep 23 10:12:44 2022 -0400
+
+    clean
+
+commit 4af267bacaee6a774621bc3e1dd77f127a764b05
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Sep 23 10:12:09 2022 -0400
+
+    added list_ro, and some small improvements
+
+commit 2e4becdc3a187b5254aea7d936b9245f06c681cb
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Sep 22 09:38:40 2022 -0400
+
+    arttree, removed loop
+
+commit a6a20d69bbe842ace4446309dcbbdd691b3ab36c
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Sep 21 11:56:06 2022 -0400
+
+    forgot to add hash_multi
+
+commit 6c0b638dac998425bf3c3ed654e1169364c89e6c
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Sep 21 09:43:51 2022 -0400
+
+    added -test and -short to runall
+
+commit fddf4e15068fc8d5a0d687de7c7d3bba2e1d6ed3
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Sep 20 12:39:00 2022 -0400
+
+    some cleanup
+
+commit f2688abcd48a1b89b035298fad25f2b05fc031d5
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Sep 19 15:20:20 2022 -0400
+
+    some fixes
+
+commit d430fe0962fbaeff7e3a1141938419c4876be995
+Merge: 14e4095 a74dcd9
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Sep 16 11:09:32 2022 -0400
+
+    new timings
+
+commit 14e409544ab413fa51afcba39a4c1ace05482410
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Sep 16 08:40:29 2022 -0400
+
+    multi hash
+
+commit a74dcd9dab0a13a0e1bdedc77f0bb093be53372d
+Author: Hao Wei <hao.wei5838@gmail.com>
+Date:   Thu Sep 15 15:00:32 2022 +0000
+
+    more optimizations
+
+commit b70c7926fa2accb0d69deff4e458e969bd08cdce
+Author: Hao Wei <hao.wei5838@gmail.com>
+Date:   Thu Sep 15 14:04:23 2022 +0000
+
+    minor changes
+
+commit e57da9ca2b306255bbc0134927edf785d614e6e1
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Sep 7 08:14:02 2022 -0400
+
+    more cleanup, fixed bug in persistent btree
+
+commit dc710c03f9738f23340bb292b1741e4300b989a0
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Sep 6 16:37:52 2022 -0400
+
+    removed some garbage
+
+commit b64a6107dafb81e549c8cb3e365c81bfebf9b9db
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Sep 6 15:40:47 2022 -0400
+
+    fix in arttree, apparently due to g++ bug
+
+commit d80187489cf3dfc859c1a25fa8446b9ce9e070ee
+Merge: 7ffb1cb 59116d7
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Sep 6 12:20:21 2022 -0400
+
+    timings
+
+commit 7ffb1cb4aead06401ec16f9ff10f3a82c1b85ba6
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Sep 6 10:07:23 2022 -0400
+
+    fixes
+
+commit 59116d7a873a378e4def32d0b07482c88fecefa7
+Author: Hao Wei <yuanhao1@cs.cmu.edu>
+Date:   Tue Sep 6 04:14:53 2022 -0400
+
+    Fixed bug in store()
+
+commit d49d30d08d5de733e8fecd7c07fcdac96fbc5f15
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Sep 5 16:19:20 2022 -0400
+
+    various small changes
+
+commit ae16e1d7e82e6cb4997f4c26eb5137b13c45a6d3
+Author: Hao Wei <yuanhao1@cs.cmu.edu>
+Date:   Fri Sep 2 04:35:04 2022 -0400
+
+    fixed bug in persistent.h's store function. Also reduces contention
+
+commit a0d06d6ce73b27d9616a659ef3b8965439f7573d
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Aug 31 14:07:15 2022 -0400
+
+    various small changes
+
+commit d84bfa500d333ff9194697d570b86d97aabc9ce0
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Aug 31 09:26:23 2022 -0400
+
+    combined lock + persistent
+
+commit 16731cd1f83b98c6a320e285fcec075ea985cb00
+Author: Hao Wei <yuanhao1@cs.cmu.edu>
+Date:   Wed Aug 31 02:48:48 2022 -0400
+
+    fixed segmentation fault
+
+commit ed524b36bdb18326b509995f7bfb90f9b49240f2
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Tue Aug 30 09:54:40 2022 -0400
+
+    small improvements
+
+commit fc03f25afff269df06000981a7d6b9cb4d9720fb
+Merge: 8b03eab b0561fc
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Aug 29 12:33:32 2022 -0400
+
+    merged in experimental
+
+commit 8b03eab3fa0569af0abc022b84e8254e978ea629
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Aug 29 10:50:20 2022 -0400
+
+    missing file
+
+commit 303fcd6a05e516631283e379b135574c34a797ca
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Aug 29 10:48:44 2022 -0400
+
+    missing files
+
+commit 010618793518b5f3be7ff75347eb556fa28793b4
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Aug 29 10:42:24 2022 -0400
+
+    mostly done with cleanup
+
+commit be06c2bb714a0913377501315f2198d927bb1cee
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Aug 29 08:11:20 2022 -0400
+
+    more cleanup
+
+commit b0561fc2242643890b86d061a6cecb32f31aa7b5
+Author: Hao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Aug 25 16:02:40 2022 -0400
+
+    minor bug fixes
+
+commit 9041b8f0a46152d0f8374b9067d323f5a364725f
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Aug 25 11:59:26 2022 -0400
+
+    locks
+
+commit 99fc54100460ace05e895ee6f506af6d6f4b9afc
+Author: Hao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Aug 25 10:45:24 2022 -0400
+
+    cleaned up code
+
+commit c541396325040385a2f852eed5c2cb4669a9a2a4
+Author: Hao Wei <yuanhao1@cs.cmu.edu>
+Date:   Thu Aug 25 10:35:15 2022 -0400
+
+    removed lock from shortcut_indirect
+
+commit 196871a579e97c99117a5a1e315b953e967313fa
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Aug 22 09:56:31 2022 -0400
+
+    no snap on btree query
+
+commit eff3a1fa24c332cead8b12f6883d17e0bc99257f
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Jul 6 12:02:13 2022 -0400
+
+    small changes
+
+commit 4d0e308d98315763ec82ef3454d8de5805e5e602
+Author: Hao Wei <yuanhao1@cs.cmu.edu>
+Date:   Tue Jul 5 08:33:37 2022 -0400
+
+    Fix btree
+
+commit 96a400d70cec4cc1fca6d57cc3175011a2e05939
+Author: Ubuntu <ubuntu@ip-172-31-18-131.us-east-2.compute.internal>
+Date:   Tue Jul 5 12:17:56 2022 +0000
+
+    fixed btree
+
+commit 4a16f5f7f1fc50bca6a9d8587e0c7dad1e933962
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Wed Jun 29 17:35:02 2022 -0400
+
+    fixed btree
+
+commit 22a3943a380b4ba47912213e6738d02a58cf2217
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Thu May 19 02:05:52 2022 +0000
+
+    fixed some .h file refs
+
+commit 578428a9725df65bf824e8e118198f542d611c5e
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Thu May 19 02:05:23 2022 +0000
+
+    fixed some .h file refs
+
+commit 80967510095c64c1727d7de85ca0321cc8e35d53
+Author: Ubuntu <ubuntu@ip-172-31-40-46.ec2.internal>
+Date:   Thu May 19 01:56:39 2022 +0000
+
+    fixes
+
+commit afdcfe55cdd7507c2a19a6e0b30f3115e183cd58
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Mar 18 18:31:57 2022 -0400
+
+    patched main
+
+commit 01f6d45ad896858a1ed607f3a5272ec3f196d1c1
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Mar 18 18:26:37 2022 -0400
+
+    cleanup of test_sets.h
+
+commit a7dda4f6d2a168d22d5c886842218d5b7482ce08
+Merge: a23141c 534c098
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Mar 18 16:02:55 2022 -0400
+
+    merged in some changes from experimental
+
+commit 534c098e54dbb2ab967ae88add8c630c837711dd
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Fri Feb 25 15:27:44 2022 -0500
+
+    timestamps
+
+commit 3b52479858837eaceb4faa62d5de81b7952d0f64
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Jan 24 03:04:23 2022 -0500
+
+    testing testing
+
+commit a23141c461613062d622909685f59666342d1757
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Jan 24 03:03:30 2022 -0500
+
+    testing
+
+commit 2fec2856520af2825fac638e1693bd57c20fd51f
+Author: Hao-Wei <hao.wei5838@gmail.com>
+Date:   Mon Jan 24 03:02:43 2022 -0500
+
+    testing 1 2 3
+
+commit a99855f44d70be616fab248f9dc09266b476473f
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Jan 17 16:46:53 2022 -0500
+
+    have epochs update timestamps
+
+commit 6bc3b8ac40235372326cf44cfbc440b4870fdd3b
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Jan 17 13:38:05 2022 -0500
+
+    snapshots seem to now work on structures with ABA
+
+commit 8e9fcc816828967293391dd442050cacabf6d360
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sat Jan 15 22:23:05 2022 -0500
+
+    various extensions to snapshotting
+
+commit 34e726859d81ee37c5207a5af6c43e299b816fb0
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jan 13 22:25:42 2022 -0500
+
+    some cleanup
+
+commit 2dd06a025aac3842cf353c106c500e17b8a60fef
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Mon Jan 10 16:22:28 2022 -0500
+
+    various fixes, trying to make multiversioning faster
+
+commit a782d9c1ec71be4aef9da1f5679da7637ad63abd
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sun Jan 9 22:13:32 2022 -0500
+
+    forgot to add rebalance.h
+
+commit 523b3086c599ed86e9a8851a9860370ce8fe2c06
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sun Jan 9 22:11:19 2022 -0500
+
+    cleanup of cmake, and avoid strong load in persistent ds's
+
+commit 138ed5acbee2b1fd01db8de28cdb85ccef15c794
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sat Jan 8 21:29:29 2022 -0500
+
+    added hash locked versions
+
+commit 2deb744a45f8a967b701764b686666eb79167bc1
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sat Jan 8 19:57:27 2022 -0500
+
+    fix
+
+commit 2a844278257ad26ad9467ef8b7cb043f7ad2f6c0
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sat Jan 8 19:54:11 2022 -0500
+
+    added experimental branch
+
+commit 66fd0316b81ee60644edc6d1cbff43e4e9498068
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sat Jan 8 17:38:15 2022 -0500
+
+    added CMakeLists.txt for setbench
+
+commit 91f7750263bd3a14b721e6c15330195ef05dd936
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Sat Jan 8 15:30:23 2022 -0500
+
+    converted main branch to use cmake
+
+commit f9db682f3a505c3744d2659c3defc203e5a29d4a
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jan 6 17:20:42 2022 -0500
+
+    README
+
+commit cc9e4a95f66d5b5f0a45605a2b41d2b1a8becff1
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jan 6 16:44:44 2022 -0500
+
+    cleaned up main branch without ae scripts
+
+commit d540135b6d5dec5703a3542ea348c582f2d9e2e4
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jan 6 16:41:33 2022 -0500
+
+    initial files
+
+commit 61aa96654d072f264007e09904b5ad822cac076c
+Author: Guy Blelloch <guyb@cs.cmu.edu>
+Date:   Thu Jan 6 16:31:40 2022 -0500
+
+    Initial commit
