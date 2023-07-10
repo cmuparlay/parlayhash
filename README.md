@@ -1,6 +1,6 @@
 # parlayhash : A Header Only Fast Concurrent Hash Table.
 
-A concurrent hash table with constant time finds and lock-free updates.
+A concurrent hash table with **wait-free finds** and **lock-free updates**.
 It supports the following interface:
 
 - `unordered_map<K,V,Hash=std::hash<K>,Equal=std::equal_to<K>>(n)` :

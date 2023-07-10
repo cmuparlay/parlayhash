@@ -8,8 +8,7 @@
 #include <chrono>
 #include <assert.h>
 #include <parlay/alloc.h>
-#include "parlay/thread_ids.h"
-//#include "parlay/type_allocator.h"
+#include "thread_ids.h"
 
 #pragma once
 
