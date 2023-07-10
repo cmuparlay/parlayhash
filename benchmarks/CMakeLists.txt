@@ -13,3 +13,7 @@ add_benchmark(std other "" "")
 add_benchmark(std_sharded other "" "")
 add_benchmark(libcuckoo other "" "")
 add_benchmark(growt other "" "-mcx16")
+
+#add_subdirectory(abseil-cpp)
+#add_benchmark(abseil absl::flat_hash_map "")
+#add_benchmark(abseil_sharded absl::flat_hash_map "")

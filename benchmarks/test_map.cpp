@@ -228,7 +228,7 @@ int main(int argc, char* argv[]) {
 
   long n = P.getOptionIntValue("-n", 0);
   int p = P.getOptionIntValue("-p", parlay::num_workers());  
-  int rounds = P.getOptionIntValue("-r", 1);
+  int rounds = P.getOptionIntValue("-r", 2);
   double zipfian_param = P.getOptionDoubleValue("-z", -1.0);
   int update_percent = P.getOptionIntValue("-u", -1);
   double trial_time = P.getOptionDoubleValue("-t", 1.0);
