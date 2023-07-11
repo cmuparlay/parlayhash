@@ -1,8 +1,9 @@
 #include <atomic>
 #include <vector>
 #include <limits>
-#include <parlay/alloc.h>
-#include <parlay/primitives.h>
+
+#include "parlay/alloc.h"
+#include "parlay/primitives.h"
 
 #ifndef PARLAY_EPOCH_H_
 #define PARLAY_EPOCH_H_
