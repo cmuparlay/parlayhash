@@ -17,6 +17,7 @@
 #define PARLAY_THREAD_IDS_
 
 #include <atomic>
+#include <cassert>
 #include <vector>
 
 namespace parlay {
