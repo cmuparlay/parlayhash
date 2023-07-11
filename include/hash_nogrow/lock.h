@@ -1,3 +1,7 @@
+#include <atomic>
+#include <cstddef>
+#include <vector>
+
 // creates 2^16 lock slots.
 // locks.try_lock(i, f) will hash i to the h(i) % 2^16th lock.
 // If the lock is not taken then f is run and the try_lock returns the
