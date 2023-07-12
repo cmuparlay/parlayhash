@@ -24,4 +24,5 @@ cc_library(
         ":epoch",
         ":lock",
     ],
+    visibility = ["//visibility:public"],
 )
