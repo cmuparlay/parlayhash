@@ -13,11 +13,6 @@ cc_library(
 )
 
 cc_library(
-    name = "thread_ids",
-    hdrs = ["thread_ids.h"],
-)
-
-cc_library(
     name = "unordered_map",
     hdrs = ["unordered_map.h"],
     deps = [
