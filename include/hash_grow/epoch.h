@@ -1,44 +1,30 @@
-// MIT license (https://opensource.org/license/mit/)
-// Initial Author: Guy Blelloch
-// Developed as part of cmuparlay/parlaylib
-
 #include <atomic>
 #include <vector>
 #include <limits>
-#include <chrono>
-#include <assert.h>
-#include <parlay/alloc.h>
-#include "thread_ids.h"
 
-#pragma once
+#include "parlay/alloc.h"
+#include "parlay/primitives.h"
+
+#ifndef PARLAY_EPOCH_H_
+#define PARLAY_EPOCH_H_
 
 #ifndef NDEBUG
-// checks for corruption of bytes before and after the structure, as well as double frees
-// requires some extra memory to pad front and back
+// Checks for corruption of bytes before and after allocated structures, as well as double frees.
+// Requires some extra memory to pad the front and back of a structure.
 #define EpochMemCheck 1
 #endif
 
-// If defined allows with_epoch to be nested (only outermost will set the epoch).
-// Incurs slight overhead due to extra test, but allows wrapping a with_epoch
-// around multiple operations which each do a with_epoch.
-// This saves time since setting epoch number only needs to be fenced once on the outside.
-//#define NestedEpochs 1
-
-// Supports before_epoch_hooks and after_epoch_hooks, which are thunks
-// that get run just before incrementing the epoch number and just after.
-// The user set them with:
-//    flck::internal::epoch.before_epoch_hooks.push_back(<mythunk>);
-//    flck::internal::epoch.after_epoch_hooks.push_back(<myotherthunk>);
+//#define USE_MALLOC 1
 
 // ***************************
 // epoch structure
 // ***************************
 
-namespace flck {
+namespace epoch {
 
-  thread_local long my_id = -1;
-  long get_my_id() {return parlay::thread_id.get();}
-  
+  int worker_id() {return parlay::worker_id(); }
+  int num_workers() {return parlay::num_workers();}
+
 struct alignas(64) epoch_s {
 	
   // functions to run when epoch is incremented
@@ -53,7 +39,7 @@ struct alignas(64) epoch_s {
   std::vector<announce_slot> announcements;
   std::atomic<long> current_epoch;
   epoch_s() {
-    int workers = parlay::thread_id.max_id;
+    int workers = num_workers();
     announcements = std::vector<announce_slot>(workers);
     current_epoch = 0;
   }
@@ -61,19 +47,17 @@ struct alignas(64) epoch_s {
   long get_current() {
     return current_epoch.load();
   }
-
+  
   long get_my_epoch() {
-    size_t id = get_my_id();
-    return announcements[id].last;
+    return announcements[worker_id()].last;
   }
 
   void set_my_epoch(long e) {
-    size_t id = get_my_id();
-    announcements[id].last = e;
+    announcements[worker_id()].last = e;
   }
 
   int announce() {
-    size_t id = get_my_id();
+    size_t id = worker_id();
     while (true) {
       long current_e = get_current();
       long tmp = current_e;
@@ -88,8 +72,8 @@ struct alignas(64) epoch_s {
   }
 
   void update_epoch() {
-    size_t id = get_my_id();
-    int workers = parlay::thread_id.max_current_id();
+    size_t id = worker_id();
+    int workers = num_workers();
     long current_e = get_current();
     bool all_there = true;
     // check if everyone is done with earlier epochs
@@ -123,9 +107,16 @@ struct Link {
   // x should point to the skip field of a link
   void undo_retire(bool* x) { *x = true;}
   void undo_allocate(bool* x) { *x = false;}
-  
-  using list_allocator = typename parlay::type_allocator<Link>;
 
+#ifdef USE_MALLOC
+  Link* allocate_link() {return (Link*) malloc(sizeof(Link));}
+  void free_link(Link* x) {return free(x);}
+#else
+  using list_allocator = typename parlay::type_allocator<Link>;
+  Link* allocate_link() {return list_allocator::alloc();}
+  void free_link(Link* x) {return list_allocator::free(x);}
+#endif
+  
   using namespace std::chrono;
 
 template <typename xT>
@@ -133,7 +124,7 @@ struct alignas(64) memory_pool {
 private:
 
   static constexpr double milliseconds_between_epoch_updates = 20.0;
-  //long update_threshold;
+  long update_threshold;
   using sys_time = time_point<std::chrono::system_clock>;
 
   // each thread keeps one of these
@@ -143,7 +134,7 @@ private:
     long epoch; // epoch on last retire, updated on a retire
     long count; // number of retires so far, reset on updating the epoch
     sys_time time; // time of last epoch update
-    old_current() : old(nullptr), current(nullptr), epoch(0), count(0), time(system_clock::now()) {}
+    old_current() : old(nullptr), current(nullptr), epoch(0) {}
   };
 
   // only used for debugging (i.e. EpochMemCheck=1).
@@ -154,14 +145,14 @@ private:
     std::atomic<long> tail;
   };
 
-  static std::vector<old_current> pools;
-  //int workers;
+  std::vector<old_current> pools;
+  int workers;
 
-  static bool* add_to_current_list(void* p) {
-    auto i = get_my_id();
+  bool* add_to_current_list(void* p) {
+    auto i = worker_id();
     auto &pid = pools[i];
     advance_epoch(i, pid);
-    Link* lnk = list_allocator::alloc();
+    Link* lnk = allocate_link();
     lnk->next = pid.current;
     lnk->value = p;
     lnk->skip = false;
@@ -170,7 +161,7 @@ private:
   }
 
   // destructs and frees a linked list of objects 
-  static void clear_list(Link* ptr) {
+  void clear_list(Link* ptr) {
     while (ptr != nullptr) {
       Link* tmp = ptr;
       ptr = ptr->next;
@@ -186,11 +177,11 @@ private:
 #endif
 	Delete((T*) tmp->value);
       }
-      list_allocator::free(tmp);
+      free_link(tmp);
     }
   }
 
-  static void advance_epoch(int i, old_current& pid) {
+  void advance_epoch(int i, old_current& pid) {
     if (pid.epoch + 1 < epoch.get_current()) {
       clear_list(pid.old);
       pid.old = pid.current;
@@ -199,77 +190,82 @@ private:
     }
     // a heuristic
     auto now = system_clock::now();
-    int workers = parlay::thread_id.max_current_id();
-    if (--pid.count == 0  ||
+    if (++pid.count == update_threshold  ||
 	duration_cast<milliseconds>(now - pid.time).count() >
 	milliseconds_between_epoch_updates * (1 + ((float) i)/workers)) {
-      long update_threshold = 10 * workers;
-      pid.count = update_threshold;
+      pid.count = 0;
       pid.time = now;
       epoch.update_epoch();
     }
   }
 
-
-public:
-  using T = xT;
 #ifdef  EpochMemCheck
-  using Allocator = parlay::type_allocator<paddedT>;
+  using nodeT = paddedT;
 #else
-  using Allocator = parlay::type_allocator<T>;
+  using nodeT = xT;
+#endif
+
+#ifdef USE_MALLOC
+  nodeT* allocate_node() {return (nodeT*) malloc(sizeof(nodeT));}
+  void free_node(nodeT* x) {return free(x);}
+#else
+  using Allocator = parlay::type_allocator<nodeT>;
+  nodeT* allocate_node() { return Allocator::alloc();}
+  void free_node(nodeT* x) { return Allocator::free(x);}
 #endif
   
+public:
+  using T = xT;
+  
   memory_pool() {
-    //workers = parlay::num_workers();
-    //long update_threshold = 10 * workers;
-    //pools = std::vector<old_current>(parlay::num_workers());
-    //for (int i = 0; i < workers; i++) {
-    //  pools[i].count = parlay::hash64(i) % update_threshold;
-    //  pools[i].time = system_clock::now();
+    workers = num_workers();
+    update_threshold = 10 * workers;
+    pools = std::vector<old_current>(workers);
+    for (int i = 0; i < workers; i++) {
+      pools[i].count = parlay::hash64(i) % update_threshold;
+      pools[i].time = system_clock::now();
+    }
   }
 
   memory_pool(const memory_pool&) = delete;
   ~memory_pool() {} // clear(); }
 
   // noop since epoch announce is used for the whole operation
-  static void acquire(T* p) { }
+  void acquire(T* p) { }
   
-  static void reserve(size_t n) { Allocator::reserve(n);}
-  static void stats() { Allocator::print_stats();}
-
-  static paddedT* pad_from_T(T* p) {
+  paddedT* pad_from_T(T* p) {
      size_t offset = ((char*) &((paddedT*) p)->value) - ((char*) p);
      return (paddedT*) (((char*) p) - offset);
   }
   
   // destructs and frees the object immediately
-  static void Delete(T* p) {
+  void Delete(T* p) {
      p->~T();
 #ifdef EpochMemCheck
      paddedT* x = pad_from_T(p);
      x->head = 55;
-     Allocator::free(x);
+     free_node(x);
 #else
-     Allocator::free(p);
+     free_node(p);
 #endif
   }
 
   template <typename ... Args>
-  static T* New(Args... args) {
+  T* New(Args... args) {
 #ifdef EpochMemCheck
-    paddedT* x = Allocator::alloc();
+    paddedT* x = allocate_node();
     x->pad = x->head = x->tail = 10;
     T* newv = &x->value;
     new (newv) T(args...);
     assert(check_not_corrupted(newv));
 #else
-    T* newv = Allocator::alloc();
+    T* newv = allocate_node();
     new (newv) T(args...);
 #endif
     return newv;
   }
 
-  static bool check_not_corrupted(T* ptr) {
+  bool check_not_corrupted(T* ptr) {
 #ifdef EpochMemCheck
     paddedT* x = pad_from_T(ptr);
     if (x->pad != 10) std::cout << "memory_pool: pad word corrupted" << std::endl;
@@ -282,33 +278,27 @@ public:
 			   
   template <typename F, typename ... Args>
   // f is a function that initializes a new object before it is shared
-  static T* new_init(F f, Args... args) {
-    T* x = new_obj(args...);
+  T* new_init(F f, Args... args) {
+    T* x = New(args...);
     f(x);
     return x;
   }
 
   // retire and return a pointer if want to undo the retire
-  static bool* Retire(T* p) {
+  bool* Retire(T* p) {
     return add_to_current_list((void*) p);}
   
-  // clears all the lists and terminates the underlying allocator
+  // clears all the lists 
   // to be used on termination
-  static void clear() {
+  void clear() {
     epoch.update_epoch();
     for (int i=0; i < pools.size(); i++) {
       clear_list(pools[i].old);
       clear_list(pools[i].current);
       pools[i].old = pools[i].current = nullptr;
     }
-    Allocator::finish();
   }
 };
-
-  template <typename T>
-  std::vector<typename memory_pool<T>::old_current> memory_pool<T>::pools(parlay::thread_id.max_id);
-
-  thread_local bool in_epoch = false;
 
   template <typename Thunk>
   auto with_epoch(Thunk f) {
@@ -339,6 +329,6 @@ public:
     }
   }
 
-} // end namespace flck
+} // end namespace epoch
 
-
+#endif //PARLAY_EPOCH_H_

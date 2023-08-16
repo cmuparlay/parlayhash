@@ -54,6 +54,9 @@
 // There can be concurrent reads on the old value, hence the const to prevent
 // any read-write races.
 
+#ifndef PARLAYHASH_H_
+#define PARLAYHASH_H_
+
 #include <atomic>
 #include <optional>
 #include <parlay/primitives.h>
@@ -61,6 +64,8 @@
 #include "lock.h"
 #define USE_CAS 1
 
+namespace parlay {
+  
 template <typename K,
 	  typename V,
 	  class Hash = std::hash<K>,
@@ -211,59 +216,63 @@ private:
   };
 
   //memory pool for each node size
-  using Pool1 = flck::memory_pool<Node<1>>;
-  using Pool3 = flck::memory_pool<Node<3>>;
-  using Pool7 = flck::memory_pool<Node<7>>;
-  using Pool31 = flck::memory_pool<Node<31>>;
-  using PoolBig = flck::memory_pool<BigNode>;
+  using Node1 = Node<1>;
+  using Node3 = Node<3>;
+  using Node7 = Node<7>;
+  using Node31 = Node<31>;
+  static epoch::memory_pool<Node1> Pool1;
+  static epoch::memory_pool<Node3> Pool3;
+  static epoch::memory_pool<Node7> Pool7;
+  static epoch::memory_pool<Node31> Pool31;
+  static epoch::memory_pool<BigNode> PoolBig;
   
   // the following functions branch to construct the right sized node
   struct table_version;
   static node* insert_to_node(table_version* t, node* old, const K& k, const V& v) {
-    if (old == nullptr) return (node*) Pool1::New(old, k, v);
-    if (old->cnt < 3) return (node*) Pool3::New(old, k, v);
-    if (old->cnt < 7) return (node*) Pool7::New(old, k, v);
+    if (old == nullptr) return (node*) Pool1.New(old, k, v);
+    if (old->cnt < 3) return (node*) Pool3.New(old, k, v);
+    if (old->cnt < 7) return (node*) Pool7.New(old, k, v);
     if (old->cnt > overflow_size) expand_table(t);
-    if (old->cnt < 31) return (node*) Pool31::New(old, k, v);
-    return (node*) PoolBig::New(old, k, v);
+    if (old->cnt < 31) return (node*) Pool31.New(old, k, v);
+    return (node*) PoolBig.New(old, k, v);
   }
 
   template <typename F>
   static node* update_node(node* old, const K& k, const F& f) {
     assert(old != nullptr);
-    if (old->cnt == 1) return (node*) Pool1::New(old, k, f);
-    if (old->cnt <= 3) return (node*) Pool3::New(old, k, f);
-    else if (old->cnt <= 7) return (node*) Pool7::New(old, k, f);
-    else if (old->cnt <= 31) return (node*) Pool31::New(old, k, f);
-    else return (node*) PoolBig::New(old, k, f);
+    if (old->cnt == 1) return (node*) Pool1.New(old, k, f);
+    if (old->cnt <= 3) return (node*) Pool3.New(old, k, f);
+    else if (old->cnt <= 7) return (node*) Pool7.New(old, k, f);
+    else if (old->cnt <= 31) return (node*) Pool31.New(old, k, f);
+    else return (node*) PoolBig.New(old, k, f);
   }
 
   static node* remove_from_node(node* old, const K& k) {
     assert(old != nullptr);
     if (old->cnt == 1) return (node*) nullptr;
-    if (old->cnt == 2) return (node*) Pool1::New(old, k);
-    else if (old->cnt <= 4) return (node*) Pool3::New(old, k);
-    else if (old->cnt <= 8) return (node*) Pool7::New(old, k);
-    else if (old->cnt <= 32) return (node*) Pool31::New(old, k);
-    else return (node*) PoolBig::New(old, k);
+    if (old->cnt == 2) return (node*) Pool1.New(old, k);
+    else if (old->cnt <= 4) return (node*) Pool3.New(old, k);
+    else if (old->cnt <= 8) return (node*) Pool7.New(old, k);
+    else if (old->cnt <= 32) return (node*) Pool31.New(old, k);
+    else return (node*) PoolBig.New(old, k);
   }
 
   static void retire_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) Pool1::Retire((Node<1>*) old);
-    else if (old->cnt <= 3) Pool3::Retire((Node<3>*) old);
-    else if (old->cnt <= 7) Pool7::Retire((Node<7>*) old);
-    else if (old->cnt <= 31) Pool31::Retire((Node<31>*) old);
-    else PoolBig::Retire((BigNode*) old);
+    else if (old->cnt == 1) Pool1.Retire((Node<1>*) old);
+    else if (old->cnt <= 3) Pool3.Retire((Node<3>*) old);
+    else if (old->cnt <= 7) Pool7.Retire((Node<7>*) old);
+    else if (old->cnt <= 31) Pool31.Retire((Node<31>*) old);
+    else PoolBig.Retire((BigNode*) old);
   }
 
   static void destruct_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) Pool1::Delete((Node<1>*) old);
-    else if (old->cnt <= 3) Pool3::Delete((Node<3>*) old);
-    else if (old->cnt <= 7) Pool7::Delete((Node<7>*) old);
-    else if (old->cnt <= 31) Pool31::Delete((Node<31>*) old);
-    else PoolBig::Delete((BigNode*) old);
+    else if (old->cnt == 1) Pool1.Delete((Node<1>*) old);
+    else if (old->cnt <= 3) Pool3.Delete((Node<3>*) old);
+    else if (old->cnt <= 7) Pool7.Delete((Node<7>*) old);
+    else if (old->cnt <= 31) Pool31.Delete((Node<31>*) old);
+    else PoolBig.Delete((BigNode*) old);
   }
 
   // *********************************************
@@ -315,7 +324,7 @@ private:
 
   // memory pool for maintaining the table versions
   // allocated dynamically although at most log(final_size) of them
-  using Table_Pool = flck::memory_pool<table_version>;
+  static epoch::memory_pool<table_version> Table_Pool;
 
   // the current table version
   // points to next larger table version if one exists
@@ -335,7 +344,7 @@ private:
       // if fail on lock, someone else is working on it, so skip
       locks.try_lock((long) ht, [&] {
 	 if (ht->next == nullptr) {
-	   ht->next = Table_Pool::New(ht);
+	   ht->next = Table_Pool.New(ht);
 	   //std::cout << "expand to: " << n * exp_factor << std::endl;
 	 }
 	 return true;});
@@ -428,7 +437,7 @@ private:
 	// and retire the old table
 	if (++next->finished_block_count == next->block_status.size()) {
 	  current_table_version = next;
-	  Table_Pool::Retire(t);
+	  Table_Pool.Retire(t);
 	}
       } else {
 	// If working then wait until Done
@@ -520,20 +529,20 @@ public:
   // The public interface
   // *********************************************
 
-  unordered_map(size_t n) : current_table_version(Table_Pool::New(n)) {}
+  unordered_map(size_t n) : current_table_version(Table_Pool.New(n)) {}
 
   ~unordered_map() {
     auto& buckets = current_table_version.load()->buckets;
     parlay::parallel_for (0, buckets.size(), [&] (size_t i) {
       retire_node(buckets[i].load());});
-    Table_Pool::Retire(current_table_version.load());
+    Table_Pool.Retire(current_table_version.load());
   }
 
   std::optional<V> find(const K& k) {
     table_version* ht = current_table_version.load();
     bucket* s = ht->get_bucket(k);
     __builtin_prefetch (s);
-    return flck::with_epoch([=] {return find_at(ht, s, k);});
+    return epoch::with_epoch([=] {return find_at(ht, s, k);});
   }
 
   bool insert(const K& k, const V& v) {
@@ -541,8 +550,8 @@ public:
     long idx = ht->get_index(k);
     bucket* s = &ht->buckets[idx];
     __builtin_prefetch (s);
-    return flck::with_epoch([=] {
-      return flck::try_loop([=] {
+    return epoch::with_epoch([=] {
+      return epoch::try_loop([=] {
 	  copy_if_needed(idx);
           return try_insert_at(ht, s, k, v);});});
   }
@@ -552,8 +561,8 @@ public:
     long idx = ht->get_index(k);
     bucket* s = &ht->buckets[idx];
     __builtin_prefetch (s);
-    return flck::with_epoch([=] {
-      return flck::try_loop([=] {
+    return epoch::with_epoch([=] {
+      return epoch::try_loop([=] {
           copy_if_needed(idx); // checks if table needs to grow
           return try_upsert_at(ht, s, k, v);});});
   }
@@ -562,8 +571,8 @@ public:
     table_version* ht = current_table_version.load();
     bucket* s = ht->get_bucket(k);
     __builtin_prefetch (s);
-    return flck::with_epoch([=] {
-      return flck::try_loop([=] {
+    return epoch::with_epoch([=] {
+      return epoch::try_loop([=] {
           return try_remove_at(ht, s, k);});});
   }
 
@@ -583,3 +592,19 @@ public:
   }
 };
 
+template <typename K, typename V, typename H, typename E>
+epoch::memory_pool<typename unordered_map<K,V,H,E>::Node1> unordered_map<K,V,H,E>::Pool1;
+template <typename K, typename V, typename H, typename E>
+epoch::memory_pool<typename unordered_map<K,V,H,E>::Node3> unordered_map<K,V,H,E>::Pool3;
+template <typename K, typename V, typename H, typename E>
+epoch::memory_pool<typename unordered_map<K,V,H,E>::Node7> unordered_map<K,V,H,E>::Pool7;
+template <typename K, typename V, typename H, typename E>
+epoch::memory_pool<typename unordered_map<K,V,H,E>::Node31> unordered_map<K,V,H,E>::Pool31;
+template <typename K, typename V, typename H, typename E>
+epoch::memory_pool<typename unordered_map<K,V,H,E>::BigNode> unordered_map<K,V,H,E>::PoolBig;
+
+template <typename K, typename V, typename H, typename E>
+epoch::memory_pool<typename unordered_map<K,V,H,E>::table_version> unordered_map<K,V,H,E>::Table_Pool;
+
+} // namespace parlay
+#endif //PARLAYHASH_GROW_H_
