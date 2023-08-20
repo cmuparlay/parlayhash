@@ -215,64 +215,53 @@ private:
     }
   };
 
-  //memory pool for each node size
-  using Node1 = Node<1>;
-  using Node3 = Node<3>;
-  using Node7 = Node<7>;
-  using Node31 = Node<31>;
-  static epoch::memory_pool<Node1> Pool1;
-  static epoch::memory_pool<Node3> Pool3;
-  static epoch::memory_pool<Node7> Pool7;
-  static epoch::memory_pool<Node31> Pool31;
-  static epoch::memory_pool<BigNode> PoolBig;
-  
   // the following functions branch to construct the right sized node
   struct table_version;
   static node* insert_to_node(table_version* t, node* old, const K& k, const V& v) {
-    if (old == nullptr) return (node*) Pool1.New(old, k, v);
-    if (old->cnt < 3) return (node*) Pool3.New(old, k, v);
-    if (old->cnt < 7) return (node*) Pool7.New(old, k, v);
+    if (old == nullptr) return (node*) epoch::get_pool<Node<1>>().New(old, k, v);
+    if (old->cnt < 3) return (node*) epoch::get_pool<Node<3>>().New(old, k, v);
+    if (old->cnt < 7) return (node*) epoch::get_pool<Node<7>>().New(old, k, v);
     if (old->cnt > overflow_size) expand_table(t);
-    if (old->cnt < 31) return (node*) Pool31.New(old, k, v);
-    return (node*) PoolBig.New(old, k, v);
+    if (old->cnt < 31) return (node*) epoch::get_pool<Node<31>>().New(old, k, v);
+    return (node*) epoch::get_pool<BigNode>().New(old, k, v);
   }
 
   template <typename F>
   static node* update_node(node* old, const K& k, const F& f) {
     assert(old != nullptr);
-    if (old->cnt == 1) return (node*) Pool1.New(old, k, f);
-    if (old->cnt <= 3) return (node*) Pool3.New(old, k, f);
-    else if (old->cnt <= 7) return (node*) Pool7.New(old, k, f);
-    else if (old->cnt <= 31) return (node*) Pool31.New(old, k, f);
-    else return (node*) PoolBig.New(old, k, f);
+    if (old->cnt == 1) return (node*) epoch::get_pool<Node<1>>().New(old, k, f);
+    if (old->cnt <= 3) return (node*) epoch::get_pool<Node<3>>().New(old, k, f);
+    else if (old->cnt <= 7) return (node*) epoch::get_pool<Node<7>>().New(old, k, f);
+    else if (old->cnt <= 31) return (node*) epoch::get_pool<Node<31>>().New(old, k, f);
+    else return (node*) epoch::get_pool<BigNode>().New(old, k, f);
   }
 
   static node* remove_from_node(node* old, const K& k) {
     assert(old != nullptr);
     if (old->cnt == 1) return (node*) nullptr;
-    if (old->cnt == 2) return (node*) Pool1.New(old, k);
-    else if (old->cnt <= 4) return (node*) Pool3.New(old, k);
-    else if (old->cnt <= 8) return (node*) Pool7.New(old, k);
-    else if (old->cnt <= 32) return (node*) Pool31.New(old, k);
-    else return (node*) PoolBig.New(old, k);
+    if (old->cnt == 2) return (node*) epoch::get_pool<Node<1>>().New(old, k);
+    else if (old->cnt <= 4) return (node*) epoch::get_pool<Node<3>>().New(old, k);
+    else if (old->cnt <= 8) return (node*) epoch::get_pool<Node<7>>().New(old, k);
+    else if (old->cnt <= 32) return (node*) epoch::get_pool<Node<31>>().New(old, k);
+    else return (node*) epoch::get_pool<BigNode>().New(old, k);
   }
 
   static void retire_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) Pool1.Retire((Node<1>*) old);
-    else if (old->cnt <= 3) Pool3.Retire((Node<3>*) old);
-    else if (old->cnt <= 7) Pool7.Retire((Node<7>*) old);
-    else if (old->cnt <= 31) Pool31.Retire((Node<31>*) old);
-    else PoolBig.Retire((BigNode*) old);
+    else if (old->cnt == 1) epoch::get_pool<Node<1>>().Retire((Node<1>*) old);
+    else if (old->cnt <= 3) epoch::get_pool<Node<3>>().Retire((Node<3>*) old);
+    else if (old->cnt <= 7) epoch::get_pool<Node<7>>().Retire((Node<7>*) old);
+    else if (old->cnt <= 31) epoch::get_pool<Node<31>>().Retire((Node<31>*) old);
+    else epoch::get_pool<BigNode>().Retire((BigNode*) old);
   }
 
   static void destruct_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) Pool1.Delete((Node<1>*) old);
-    else if (old->cnt <= 3) Pool3.Delete((Node<3>*) old);
-    else if (old->cnt <= 7) Pool7.Delete((Node<7>*) old);
-    else if (old->cnt <= 31) Pool31.Delete((Node<31>*) old);
-    else PoolBig.Delete((BigNode*) old);
+    else if (old->cnt == 1) epoch::get_pool<Node<1>>().Delete((Node<1>*) old);
+    else if (old->cnt <= 3) epoch::get_pool<Node<3>>().Delete((Node<3>*) old);
+    else if (old->cnt <= 7) epoch::get_pool<Node<7>>().Delete((Node<7>*) old);
+    else if (old->cnt <= 31) epoch::get_pool<Node<31>>().Delete((Node<31>*) old);
+    else epoch::get_pool<BigNode>().Delete((BigNode*) old);
   }
 
   // *********************************************
@@ -322,10 +311,6 @@ private:
     }
   };
 
-  // memory pool for maintaining the table versions
-  // allocated dynamically although at most log(final_size) of them
-  static epoch::memory_pool<table_version> Table_Pool;
-
   // the current table version
   // points to next larger table version if one exists
   std::atomic<table_version*> current_table_version;
@@ -342,9 +327,9 @@ private:
     if (ht->next == nullptr) {
       long n = ht->buckets.size();
       // if fail on lock, someone else is working on it, so skip
-      locks.try_lock((long) ht, [&] {
+      get_locks().try_lock((long) ht, [&] {
 	 if (ht->next == nullptr) {
-	   ht->next = Table_Pool.New(ht);
+	   ht->next = epoch::get_pool<table_version>().New(ht);
 	   //std::cout << "expand to: " << n * exp_factor << std::endl;
 	 }
 	 return true;});
@@ -393,7 +378,7 @@ private:
   void copy_bucket_lock(table_version* t, table_version* next, long i) {
     long exp_start = i * exp_factor;
     bucket* bck = &(t->buckets[i]);
-    while (!locks.try_lock((long) bck, [=] {
+    while (!get_locks().try_lock((long) bck, [=] {
       // Clear exp_factor buckets in the next table to put them in.
       for (int j = exp_start; j < exp_start + exp_factor; j++)
         next->buckets[j] = nullptr;
@@ -437,7 +422,7 @@ private:
 	// and retire the old table
 	if (++next->finished_block_count == next->block_status.size()) {
 	  current_table_version = next;
-	  Table_Pool.Retire(t);
+	  epoch::get_pool<table_version>().Retire(t);
 	}
       } else {
 	// If working then wait until Done
@@ -468,7 +453,7 @@ private:
     if (s->load() == old_node &&
 	s->compare_exchange_strong(old_node, new_node))
 #else  // use try_lock
-    if (locks.try_lock((long) s, [=] {
+      if (get_locks().try_lock((long) s, [=] {
 	    if (s->load() != old_node) return false;
 	    *s = new_node;
 	    return true;})) 
@@ -507,7 +492,7 @@ private:
 #ifndef USE_LOCKS
       return try_update(s, old_node, update_node(old_node, k, f), false);
 #else  // use try_lock
-    if (locks.try_lock((long) s, [=] {
+    if (get_locks().try_lock((long) s, [=] {
         if (s->load() != old_node) return false;
 	*s = update_node(old_node, k, f); // f applied within lock
 	return true;})) {
@@ -529,13 +514,13 @@ public:
   // The public interface
   // *********************************************
 
-  unordered_map(size_t n) : current_table_version(Table_Pool.New(n)) {}
+  unordered_map(size_t n) : current_table_version(epoch::get_pool<table_version>().New(n)) {}
 
   ~unordered_map() {
     auto& buckets = current_table_version.load()->buckets;
     parlay::parallel_for (0, buckets.size(), [&] (size_t i) {
       retire_node(buckets[i].load());});
-    Table_Pool.Retire(current_table_version.load());
+    epoch::get_pool<table_version>().Retire(current_table_version.load());
   }
 
   std::optional<V> find(const K& k) {
@@ -591,20 +576,6 @@ public:
     return parlay::reduce(s);
   }
 };
-
-template <typename K, typename V, typename H, typename E>
-epoch::memory_pool<typename unordered_map<K,V,H,E>::Node1> unordered_map<K,V,H,E>::Pool1;
-template <typename K, typename V, typename H, typename E>
-epoch::memory_pool<typename unordered_map<K,V,H,E>::Node3> unordered_map<K,V,H,E>::Pool3;
-template <typename K, typename V, typename H, typename E>
-epoch::memory_pool<typename unordered_map<K,V,H,E>::Node7> unordered_map<K,V,H,E>::Pool7;
-template <typename K, typename V, typename H, typename E>
-epoch::memory_pool<typename unordered_map<K,V,H,E>::Node31> unordered_map<K,V,H,E>::Pool31;
-template <typename K, typename V, typename H, typename E>
-epoch::memory_pool<typename unordered_map<K,V,H,E>::BigNode> unordered_map<K,V,H,E>::PoolBig;
-
-template <typename K, typename V, typename H, typename E>
-epoch::memory_pool<typename unordered_map<K,V,H,E>::table_version> unordered_map<K,V,H,E>::Table_Pool;
 
 } // namespace parlay
 #endif //PARLAYHASH_GROW_H_

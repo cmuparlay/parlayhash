@@ -1,4 +1,4 @@
-#include "absl/container/flat_hash_map.h"
+#include <unordered_map>
 
 template <typename K,
 	  typename V,
@@ -6,13 +6,14 @@ template <typename K,
 	  class KeyEqual = std::equal_to<K>>
 struct unordered_map {
 
-  using Table = absl::flat_hash_map<K, V, Hash, KeyEqual>;
+  using Table = std::unordered_map<K, V, Hash, KeyEqual>;
   Table table;
 
   std::optional<V> find(const K& k) {
     auto r = table.find(k);
     if (r != table.end()) return (*r).second;
     else return std::optional<V>();
+    
   }
 
   bool insert(const K& k, const V& v) {
@@ -25,5 +26,6 @@ struct unordered_map {
 
   unordered_map(size_t n) : table(Table(n)) {}
 
+  void print() {}
   long size() {return table.size();}
 };

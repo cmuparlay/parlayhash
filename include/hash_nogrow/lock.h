@@ -2,6 +2,11 @@
 #include <cstddef>
 #include <vector>
 
+#ifndef PARLAYLOCK_H_
+#define PARLAYLOCK_H_
+
+namespace parlay {
+
 // creates 2^16 lock slots.
 // locks.try_lock(i, f) will hash i to the h(i) % 2^16th lock.
 // If the lock is not taken then f is run and the try_lock returns the
@@ -36,4 +41,11 @@ public:
   }
 };
 
-lock_set locks;
+  extern inline lock_set& get_locks() {
+    static lock_set locks;
+    return locks;
+  }
+
+}
+
+#endif // PARLAYLOCK_H_

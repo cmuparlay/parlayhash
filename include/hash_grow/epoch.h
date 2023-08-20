@@ -22,8 +22,8 @@
 
 namespace epoch {
 
-  int worker_id() {return parlay::worker_id(); }
-  int num_workers() {return parlay::num_workers();}
+  inline int worker_id() {return parlay::worker_id(); }
+  inline int num_workers() {return parlay::num_workers();}
 
 struct alignas(64) epoch_s {
 	
@@ -92,7 +92,10 @@ struct alignas(64) epoch_s {
   }
 };
 
-epoch_s epoch;
+  extern inline epoch_s& get_epoch() {
+    static epoch_s epoch;
+    return epoch;
+  }
 
 // ***************************
 // epoch pools
@@ -105,16 +108,16 @@ struct Link {
 };
 
   // x should point to the skip field of a link
-  void undo_retire(bool* x) { *x = true;}
-  void undo_allocate(bool* x) { *x = false;}
+  inline void undo_retire(bool* x) { *x = true;}
+  inline void undo_allocate(bool* x) { *x = false;}
 
 #ifdef USE_MALLOC
-  Link* allocate_link() {return (Link*) malloc(sizeof(Link));}
-  void free_link(Link* x) {return free(x);}
+  inline Link* allocate_link() {return (Link*) malloc(sizeof(Link));}
+  inline void free_link(Link* x) {return free(x);}
 #else
   using list_allocator = typename parlay::type_allocator<Link>;
-  Link* allocate_link() {return list_allocator::alloc();}
-  void free_link(Link* x) {return list_allocator::free(x);}
+  inline Link* allocate_link() {return list_allocator::alloc();}
+  inline void free_link(Link* x) {return list_allocator::free(x);}
 #endif
   
   using namespace std::chrono;
@@ -169,9 +172,9 @@ private:
 #ifdef EpochMemCheck
 	paddedT* x = pad_from_T((T*) tmp->value);
 	if (x->head != 10 || x->tail != 10) {
-	  if (x->head == 55) std::cout << "double free" << std::endl;
-	  else std::cout << "corrupted head" << std::endl;
-	  if (x->tail != 10) std::cout << "corrupted tail" << std::endl;
+	  if (x->head == 55) std::cerr << "double free" << std::endl;
+	  else std::cerr << "corrupted head" << std::endl;
+	  if (x->tail != 10) std::cerr << "corrupted tail" << std::endl;
 	  assert(false);
 	}
 #endif
@@ -182,11 +185,11 @@ private:
   }
 
   void advance_epoch(int i, old_current& pid) {
-    if (pid.epoch + 1 < epoch.get_current()) {
+    if (pid.epoch + 1 < get_epoch().get_current()) {
       clear_list(pid.old);
       pid.old = pid.current;
       pid.current = nullptr;
-      pid.epoch = epoch.get_current();
+      pid.epoch = get_epoch().get_current();
     }
     // a heuristic
     auto now = system_clock::now();
@@ -195,7 +198,7 @@ private:
 	milliseconds_between_epoch_updates * (1 + ((float) i)/workers)) {
       pid.count = 0;
       pid.time = now;
-      epoch.update_epoch();
+      get_epoch().update_epoch();
     }
   }
 
@@ -268,9 +271,9 @@ public:
   bool check_not_corrupted(T* ptr) {
 #ifdef EpochMemCheck
     paddedT* x = pad_from_T(ptr);
-    if (x->pad != 10) std::cout << "memory_pool: pad word corrupted" << std::endl;
-    if (x->head != 10) std::cout << "memory_pool: head word corrupted" << std::endl;
-     if (x->tail != 10) std::cout << "memory_pool: tail word corrupted" << std::endl;
+    if (x->pad != 10) std::cerr << "memory_pool: pad word corrupted" << std::endl;
+    if (x->head != 10) std::cerr << "memory_pool: head word corrupted" << std::endl;
+     if (x->tail != 10) std::cerr << "memory_pool: tail word corrupted" << std::endl;
     return (x->pad == 10 && x->head == 10 && x->tail == 10);
 #endif
     return true;
@@ -291,7 +294,7 @@ public:
   // clears all the lists 
   // to be used on termination
   void clear() {
-    epoch.update_epoch();
+    get_epoch().update_epoch();
     for (int i=0; i < pools.size(); i++) {
       clear_list(pools[i].old);
       clear_list(pools[i].current);
@@ -302,13 +305,13 @@ public:
 
   template <typename Thunk>
   auto with_epoch(Thunk f) {
-    int id = epoch.announce();
+    int id = get_epoch().announce();
     if constexpr (std::is_void_v<std::invoke_result_t<Thunk>>) {
       f();
-      epoch.unannounce(id);
+      get_epoch().unannounce(id);
     } else {
       auto v = f();
-      epoch.unannounce(id);
+      get_epoch().unannounce(id);
       return v;
     }
   }
@@ -319,7 +322,7 @@ public:
     int cnt = 0;
     while (true)  {
       if (cnt++ == 10000000000ul/(delay*max_multiplier)) {
-	std::cout << "problably in an infinite retry loop" << std::endl;
+	std::cerr << "problably in an infinite retry loop" << std::endl;
 	abort(); 
       }
       auto r = f();
@@ -327,6 +330,12 @@ public:
       multiplier = std::min(2*multiplier, max_multiplier);
       for (volatile int i=0; i < delay * multiplier; i++);
     }
+  }
+
+  template <typename T>
+  extern inline epoch::memory_pool<T>& get_pool() {
+    static epoch::memory_pool<T> pool;
+    return pool;
   }
 
 } // end namespace epoch

@@ -1,4 +1,5 @@
-#include "absl/container/flat_hash_map.h"
+#include <folly/concurrency/ConcurrentHashMap.h>
+#include <unordered_map>
 
 template <typename K,
 	  typename V,
@@ -6,7 +7,7 @@ template <typename K,
 	  class KeyEqual = std::equal_to<K>>
 struct unordered_map {
 
-  using Table = absl::flat_hash_map<K, V, Hash, KeyEqual>;
+  using Table = folly::ConcurrentHashMap<int, int, Hash, KeyEqual>;
   Table table;
 
   std::optional<V> find(const K& k) {
@@ -25,5 +26,6 @@ struct unordered_map {
 
   unordered_map(size_t n) : table(Table(n)) {}
 
+  void print() {}
   long size() {return table.size();}
 };

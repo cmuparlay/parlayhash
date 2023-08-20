@@ -183,60 +183,50 @@ private:
       copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k, idx); }
   };
 
-  using Node1 = Node<1>;
-  using Node3 = Node<3>;
-  using Node7 = Node<7>;
-  using Node31 = Node<31>;
-  static epoch::memory_pool<Node1> node_pool_1;
-  static epoch::memory_pool<Node3> node_pool_3;
-  static epoch::memory_pool<Node7> node_pool_7;
-  static epoch::memory_pool<Node31> node_pool_31;
-  static epoch::memory_pool<BigNode> big_node_pool;
-
   static node* insert_to_node(node* old, const K& k, const V& v) {
-    if (old == nullptr) return (node*) node_pool_1.New(old, k, v);
-    if (old->cnt < 3) return (node*) node_pool_3.New(old, k, v);
-    else if (old->cnt < 7) return (node*) node_pool_7.New(old, k, v);
-    else if (old->cnt < 31) return (node*) node_pool_31.New(old, k, v);
-    else return (node*) big_node_pool.New(old, k, v);
+    if (old == nullptr) return (node*) epoch::get_pool<Node<1>>().New(old, k, v);
+    if (old->cnt < 3) return (node*) epoch::get_pool<Node<3>>().New(old, k, v);
+    else if (old->cnt < 7) return (node*) epoch::get_pool<Node<7>>().New(old, k, v);
+    else if (old->cnt < 31) return (node*) epoch::get_pool<Node<31>>().New(old, k, v);
+    else return (node*) epoch::get_pool<BigNode>().New(old, k, v);
   }
 
   template <typename F>
   static node* update_node(node* old, const K& k, const F& f, long idx) {
     assert(old != nullptr);
-    if (old == nullptr) return (node*) node_pool_1.New(idx, old, k, f);
-    if (old->cnt < 3) return (node*) node_pool_3.New(idx, old, k, f);
-    else if (old->cnt < 7) return (node*) node_pool_7.New(idx, old, k, f);
-    else if (old->cnt < 31) return (node*) node_pool_31.New(idx,old, k, f);
-    else return (node*) big_node_pool.New(idx, old, k, f);
+    if (old == nullptr) return (node*) epoch::get_pool<Node<1>>().New(idx, old, k, f);
+    if (old->cnt < 3) return (node*) epoch::get_pool<Node<3>>().New(idx, old, k, f);
+    else if (old->cnt < 7) return (node*) epoch::get_pool<Node<7>>().New(idx, old, k, f);
+    else if (old->cnt < 31) return (node*) epoch::get_pool<Node<31>>().New(idx,old, k, f);
+    else return (node*) epoch::get_pool<BigNode>().New(idx, old, k, f);
   }
 
   static node* remove_from_node(node* old, const K& k, long idx) {
     assert(old != nullptr);
     if (old->cnt == 1) return (node*) nullptr;
-    if (old->cnt == 2) return (node*) node_pool_1.New(idx, old, k);
-    else if (old->cnt <= 4) return (node*) node_pool_3.New(idx, old, k);
-    else if (old->cnt <= 8) return (node*) node_pool_7.New(idx, old, k);
-    else if (old->cnt <= 32) return (node*) node_pool_31.New(idx, old, k);
-    else return (node*) big_node_pool.New(idx, old, k);
+    if (old->cnt == 2) return (node*) epoch::get_pool<Node<1>>().New(idx, old, k);
+    else if (old->cnt <= 4) return (node*) epoch::get_pool<Node<3>>().New(idx, old, k);
+    else if (old->cnt <= 8) return (node*) epoch::get_pool<Node<7>>().New(idx, old, k);
+    else if (old->cnt <= 32) return (node*) epoch::get_pool<Node<31>>().New(idx, old, k);
+    else return (node*) epoch::get_pool<BigNode>().New(idx, old, k);
   }
 
   static void retire_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) node_pool_1.Retire((Node1*) old);
-    else if (old->cnt <= 3) node_pool_3.Retire((Node3*) old);
-    else if (old->cnt <= 7) node_pool_7.Retire((Node7*) old);
-    else if (old->cnt <= 31) node_pool_31.Retire((Node31*) old);
-    else big_node_pool.Retire((BigNode*) old);
+    else if (old->cnt == 1) epoch::get_pool<Node<1>>().Retire((Node<1>*) old);
+    else if (old->cnt <= 3) epoch::get_pool<Node<3>>().Retire((Node<3>*) old);
+    else if (old->cnt <= 7) epoch::get_pool<Node<7>>().Retire((Node<7>*) old);
+    else if (old->cnt <= 31) epoch::get_pool<Node<31>>().Retire((Node<31>*) old);
+    else epoch::get_pool<BigNode>().Retire((BigNode*) old);
   }
 
   static void destruct_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) node_pool_1.Delete((Node1*) old);
-    else if (old->cnt <= 3) node_pool_3.Delete((Node3*) old);
-    else if (old->cnt <= 7) node_pool_7.Delete((Node7*) old);
-    else if (old->cnt <= 31) node_pool_31.Delete((Node31*) old);
-    else big_node_pool.Delete((BigNode*) old);
+    else if (old->cnt == 1) epoch::get_pool<Node<1>>().Delete((Node<1>*) old);
+    else if (old->cnt <= 3) epoch::get_pool<Node<3>>().Delete((Node<3>*) old);
+    else if (old->cnt <= 7) epoch::get_pool<Node<7>>().Delete((Node<7>*) old);
+    else if (old->cnt <= 31) epoch::get_pool<Node<31>>().Delete((Node<31>*) old);
+    else epoch::get_pool<BigNode>().Delete((BigNode*) old);
   }
 
   // *********************************************
@@ -272,7 +262,7 @@ private:
     if (s->load() == old_node &&
 	s->compare_exchange_strong(old_node, new_node)) {
 #else  // use try_lock
-    if (locks.try_lock((long) s, [=] {
+    if (get_locks().try_lock((long) s, [=] {
 	    if (s->load() != old_node) return false;
 	    *s = new_node;
 	    return true;})) {
@@ -301,7 +291,7 @@ private:
 #ifndef USE_LOCKS
       return try_update(s, old_node, update_node(old_node, k, f, idx), false);
 #else  // use try_lock
-    if (locks.try_lock((long) s, [=] {
+    if (get_locks().try_lock((long) s, [=] {
         if (s->load() != old_node) return false;
 	*s = update_node(old_node, k, f, idx); // f applied within lock
 	return true;})) {
@@ -373,17 +363,6 @@ public:
     return parlay::reduce(s);
   }
 };
-
-template <typename K, typename V, typename H, typename E>
-epoch::memory_pool<typename unordered_map<K,V,H,E>::Node1> unordered_map<K,V,H,E>::node_pool_1;
-template <typename K, typename V, typename H, typename E>
-epoch::memory_pool<typename unordered_map<K,V,H,E>::Node3> unordered_map<K,V,H,E>::node_pool_3;
-template <typename K, typename V, typename H, typename E>
-epoch::memory_pool<typename unordered_map<K,V,H,E>::Node7> unordered_map<K,V,H,E>::node_pool_7;
-template <typename K, typename V, typename H, typename E>
-epoch::memory_pool<typename unordered_map<K,V,H,E>::Node31> unordered_map<K,V,H,E>::node_pool_31;
-template <typename K, typename V, typename H, typename E>
-epoch::memory_pool<typename unordered_map<K,V,H,E>::BigNode> unordered_map<K,V,H,E>::big_node_pool;
 
 } // namespace parlay
 #endif //PARLAYHASH_H_

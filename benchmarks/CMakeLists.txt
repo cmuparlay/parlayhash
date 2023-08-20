@@ -9,11 +9,24 @@ endfunction()
 
 add_benchmark(hash_nogrow include "" "")
 add_benchmark(hash_grow include "" "")
-add_benchmark(std other "" "")
+add_benchmark(std_hash other "" "")
 add_benchmark(std_sharded other "" "")
 add_benchmark(libcuckoo other "" "")
 add_benchmark(growt other "" "-mcx16")
 
+#find_package(absl)
 add_subdirectory(abseil-cpp)
 add_benchmark(abseil other absl::flat_hash_map "")
 add_benchmark(abseil_sharded other absl::flat_hash_map "")
+
+find_package(folly)
+if (folly_FOUND)
+  add_benchmark(folly_hash other "folly;glog;dl;pthread;double-conversion;fmt;gflags" "")
+endif()
+
+find_package(TBB)
+IF (TBB_FOUND)
+  add_benchmark(tbb_hash other TBB::tbb "")
+endif()
+
+

@@ -4,12 +4,11 @@
 #include <cassert>
 #include <cctype>
 #include <cinttypes>
-#include <cstdint>
 #include <cstdio>
 #include <cstring>
 
 #include <algorithm>
-#include <array>
+#include <array>            // IWYU pragma: keep
 #include <iterator>
 #include <fstream>
 #include <string>
@@ -18,6 +17,9 @@
 #include "primitives.h"
 #include "sequence.h"
 #include "slice.h"
+
+
+// IWYU pragma: no_include <tuple>
 
 namespace parlay {
 
@@ -345,11 +347,11 @@ inline chars to_chars(const char* s) {
 }
 
 template<typename A, typename B>
-chars to_chars(const std::pair<A, B>& P) {
+chars to_chars(const std::pair<A, B>& p) {
   sequence<chars> s = {
-      to_chars('('), to_chars(P.first),
+      to_chars('('), to_chars(p.first),
       to_chars(std::string(", ")),
-      to_chars(P.second), to_chars(')')};
+      to_chars(p.second), to_chars(')')};
   return flatten(s);
 }
 
