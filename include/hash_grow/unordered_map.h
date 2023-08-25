@@ -73,17 +73,22 @@ template <typename K,
 struct unordered_map {
 
 private:
-  static constexpr int log_exp_factor = 3;
-  static constexpr int exp_factor = 1 << log_exp_factor;
-  static constexpr int block_size = 64;
-  static constexpr int overflow_size = 8;
+  // set to grow by factor of 8 (2^3)
+  static constexpr int log_grow_factor = 3;
+  static constexpr int grow_factor = 1 << log_grow_factor;
 
-  struct KV {K key; V value;};
+  // groups of block_size buckets are copied over by a single thread
+  static constexpr int block_size = 64;
+
+  // size of bucket that triggers growth
+  static constexpr int overflow_size = 8; 
+
+  using KV = std::pair<K,V>;
 
   template <typename Range>
   static int find_in_range(const Range& entries, long cnt, const K& k) {
     for (int i=0; i < cnt; i++)
-      if (KeyEqual{}(entries[i].key, k)) return i;
+      if (KeyEqual{}(entries[i].first, k)) return i;
     return -1;
   }
 
@@ -100,34 +105,19 @@ private:
 
   template <typename Range, typename RangeIn, typename F>
   static void copy_and_update(Range& out, const RangeIn& entries, long cnt,
-			      const K& k, const F& f) {
-    int i = 0;
-    while (!KeyEqual{}(k, entries[i].key) && i < cnt) {
-      assert(i < cnt);
-      out[i] = entries[i];
-      i++;
-    }
-    out[i].key = entries[i].key;
-    out[i].value = f(entries[i].value);
-    i++;
-    while (i < cnt) {
-      out[i] = entries[i];
-      i++;
-    }
+			      const K& k, const F& f, long idx) {
+    assert(cnt > 0);
+    for (int i = 0; i < idx; i++) out[i] = entries[i];
+    out[idx].first = entries[idx].first;
+    out[idx].second = f(entries[idx].second);
+    for (int i = idx+1; i < cnt; i++) out[i] = entries[i];
   }
 
   template <typename Range, typename RangeIn>
-  static void copy_and_remove(Range& out, const RangeIn& entries, long cnt, const K& k) {
-    int i = 0;
-    while (!KeyEqual{}(k, entries[i].key)) {
-      assert(i < cnt);
-      out[i] = entries[i];
-      i++;
-    }
-    while (i < cnt-1) {
-      out[i] = entries[i+1];
-      i++;
-    }
+  static void copy_and_remove(Range& out, const RangeIn& entries, long cnt, const K& k, long idx) {
+    assert(cnt > 1);
+    for (int i = 0; i < idx; i++) out[i] = entries[i];
+    for (int i = idx; i < cnt-1; i++) out[i] = entries[i+1];
   }
 
   // Each bucket points to a Node of some Size, or to a BigNode (defined below)
@@ -138,10 +128,10 @@ private:
     using node = Node<0>;
     int cnt;
     KV entries[Size];
-    KV& get_entry(int i) {
-      if (cnt <= 31) return entries[i];
-      // if bigger than 31, then it is a BigNode
-      else return ((BigNode*) this)->entries[i];
+
+    KV* get_entries() {
+      if (cnt < 31) return entries;
+      else return ((BigNode*) this)->entries.begin();
     }
 
     // return index of key in entries, or -1 if not found
@@ -153,15 +143,15 @@ private:
     // return optional value found in entries given a key
     inline std::optional<V> find(const K& k) {
       if (cnt <= 31) { // regular node
-	if (KeyEqual{}(entries[0].key, k)) // shortcut for common case
-	   return entries[0].value;
+	if (KeyEqual{}(entries[0].first, k)) // shortcut for common case
+	   return entries[0].second;
 	int i = find_in_range(entries+1, cnt-1, k);
 	if (i == -1) return {};
-	else return entries[i].value;
+	else return entries[i].second;
       } else { // big node
 	int i = find_in_range(((BigNode*) this)->entries, cnt, k);
 	if (i == -1) return {};
-	else return ((BigNode*) this)->entries[i].value;
+	else return ((BigNode*) this)->entries[i].second;
       }
     }
 
@@ -173,16 +163,15 @@ private:
 
     // copy and update
     template <typename F>
-    Node(node* old, const K& k, const F& f) : cnt(old->cnt) {
+    Node(long idx, node* old, const K& k, const F& f) : cnt(old->cnt) {
       assert(old != nullptr);
-      copy_and_update(entries, old->entries, cnt, k, f);
+      copy_and_update(entries, old->entries, cnt, k, f, idx);
     }
 
     // copy and remove
-    Node(node* old, const K& k) : cnt(old->cnt - 1) {
-      if (cnt == 31) copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k);
-      else 
-	copy_and_remove(entries, old->entries, cnt+1, k);
+    Node(long idx, node* old, const K& k) : cnt(old->cnt - 1) {
+      if (cnt == 31) copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k, idx);
+      else copy_and_remove(entries, old->entries, cnt+1, k, idx);
     }
   };
 
@@ -204,15 +193,13 @@ private:
     }
 
     template <typename F>
-    BigNode(node* old, const K& k, const F& f) : cnt(old->cnt) {
-      entries = entries_type(cnt);
-      copy_and_update(entries, ((BigNode*) old)->entries, cnt, k, f);
-    }
+    BigNode(long idx, node* old, const K& k, const F& f) : cnt(old->cnt) {
+      entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
+      copy_and_update(entries, ((BigNode*) old)->entries, cnt, k, f, idx);  }
 
-    BigNode(node* old, const K& k) : cnt(old->cnt - 1) {
-      entries = entries_type(cnt);
-      copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k);
-    }
+    BigNode(long idx, node* old, const K& k) : cnt(old->cnt - 1) {
+      entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
+      copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k, idx); }
   };
 
   // the following functions branch to construct the right sized node
@@ -236,14 +223,14 @@ private:
     else return (node*) epoch::memory_pool<BigNode>::New(old, k, f);
   }
 
-  static node* remove_from_node(node* old, const K& k) {
+  static node* remove_from_node(node* old, const K& k, long idx) {
     assert(old != nullptr);
     if (old->cnt == 1) return (node*) nullptr;
-    if (old->cnt == 2) return (node*) epoch::memory_pool<Node<1>>::New(old, k);
-    else if (old->cnt <= 4) return (node*) epoch::memory_pool<Node<3>>::New(old, k);
-    else if (old->cnt <= 8) return (node*) epoch::memory_pool<Node<7>>::New(old, k);
-    else if (old->cnt <= 32) return (node*) epoch::memory_pool<Node<31>>::New(old, k);
-    else return (node*) epoch::memory_pool<BigNode>::New(old, k);
+    if (old->cnt == 2) return (node*) epoch::memory_pool<Node<1>>::New(idx, old, k);
+    else if (old->cnt <= 4) return (node*) epoch::memory_pool<Node<3>>::New(idx, old, k);
+    else if (old->cnt <= 8) return (node*) epoch::memory_pool<Node<7>>::New(idx, old, k);
+    else if (old->cnt <= 32) return (node*) epoch::memory_pool<Node<31>>::New(idx, old, k);
+    else return (node*) epoch::memory_pool<BigNode>::New(idx, old, k);
   }
 
   static void retire_node(node* old) {
@@ -303,8 +290,8 @@ private:
     table_version(table_version* t)
       : next(nullptr),
 	finished_block_count(0),
-	num_bits(t->num_bits + log_exp_factor),
-	size(t->size * exp_factor),
+	num_bits(t->num_bits + log_grow_factor),
+	size(t->size * grow_factor),
 	buckets(parlay::sequence<std::atomic<node*>>::uninitialized(size)),
 	block_status(parlay::sequence<std::atomic<status>>(t->size/block_size)) {
       std::fill(block_status.begin(), block_status.end(), Empty);
@@ -330,7 +317,7 @@ private:
       get_locks().try_lock((long) ht, [&] {
 	 if (ht->next == nullptr) {
 	   ht->next = epoch::memory_pool<table_version>::New(ht);
-	   //std::cout << "expand to: " << n * exp_factor << std::endl;
+	   //std::cout << "expand to: " << n * grow_factor << std::endl;
 	 }
 	 return true;});
     }
@@ -340,26 +327,26 @@ private:
   // note this is not thread safe...i.e. only this thread should be
   // updating the bucket corresponding to the key.
   void copy_element(table_version* t, KV& key_value) {
-    size_t idx = t->get_index(key_value.key);
+    size_t idx = t->get_index(key_value.first);
     node* x = t->buckets[idx].load();
     assert(!is_forwarded(x));
-    t->buckets[idx] = insert_to_node(t, x , key_value.key, key_value.value);
+    t->buckets[idx] = insert_to_node(t, x , key_value.first, key_value.second);
     destruct_node(x);
   }
 
   void copy_bucket_cas(table_version* t, table_version* next, long i) {
-    long exp_start = i * exp_factor;
-    // Clear exp_factor buckets in the next table to put them in.
-    for (int j = exp_start; j < exp_start + exp_factor; j++)
+    long exp_start = i * grow_factor;
+    // Clear grow_factor buckets in the next table to put them in.
+    for (int j = exp_start; j < exp_start + grow_factor; j++)
       next->buckets[j] = nullptr;
-    // copy bucket to exp_factor new buckets in next table
+    // copy bucket to grow_factor new buckets in next table
     while (true) {
       node* bucket = t->buckets[i].load();
       assert(!is_forwarded(bucket));
       int cnt = (bucket == nullptr) ? 0 : bucket->cnt;
       // copy each element
       for (int j=0; j < cnt; j++) 
-	copy_element(next, bucket->get_entry(j));
+	copy_element(next, bucket->get_entries()[j]);
       bool succeeded = t->buckets[i].compare_exchange_strong(bucket,forwarded_node());
       if (succeeded) {
 	retire_node(bucket);
@@ -367,7 +354,7 @@ private:
       }
       // If the cas failed then someone updated bucket in the meantime so need to retry.
       // Before retrying need to clear out already added buckets..
-      for (int j = exp_start; j < exp_start + exp_factor; j++) {
+      for (int j = exp_start; j < exp_start + grow_factor; j++) {
 	auto x = next->buckets[j].load();
 	next->buckets[j] = nullptr;
 	destruct_node(x);
@@ -376,18 +363,18 @@ private:
   }
 
   void copy_bucket_lock(table_version* t, table_version* next, long i) {
-    long exp_start = i * exp_factor;
+    long exp_start = i * grow_factor;
     bucket* bck = &(t->buckets[i]);
     while (!get_locks().try_lock((long) bck, [=] {
-      // Clear exp_factor buckets in the next table to put them in.
-      for (int j = exp_start; j < exp_start + exp_factor; j++)
+      // Clear grow_factor buckets in the next table to put them in.
+      for (int j = exp_start; j < exp_start + grow_factor; j++)
         next->buckets[j] = nullptr;
       node* bucket = t->buckets[i].load();
       assert(!is_forwarded(bucket));
       int cnt = (bucket == nullptr) ? 0 : bucket->cnt;
       // copy each element
       for (int j=0; j < cnt; j++) 
-	copy_element(next, bucket->get_entry(j));
+	copy_element(next, bucket->get_entries()[j]);
       t->buckets[i] = forwarded_node();
       return true;}))
       for (volatile int i=0; i < 200; i++);
@@ -447,23 +434,22 @@ private:
     return x->find(k);
   }
 
-    // try to install a new node in slot s
-  static std::optional<bool> try_update(bucket* s, node* old_node, node* new_node, bool ret_val) {
-#ifdef USE_CAS
+  // try to install a new node in bucket s
+  static bool try_update(bucket* s, node* old_node, node* new_node) {
+#ifndef USE_LOCKS
     if (s->load() == old_node &&
-	s->compare_exchange_strong(old_node, new_node))
+	s->compare_exchange_strong(old_node, new_node)) {
 #else  // use try_lock
-      if (get_locks().try_lock((long) s, [=] {
+    if (get_locks().try_lock((long) s, [=] {
 	    if (s->load() != old_node) return false;
 	    *s = new_node;
-	    return true;})) 
+	    return true;})) {
 #endif
-      {
       retire_node(old_node);
-      return ret_val;
+      return true;
     } 
     destruct_node(new_node);
-    return {};
+    return false;
   }
 
   static void get_active_bucket(table_version* &t, bucket* &s, const K& k, node* &old_node) {
@@ -475,12 +461,12 @@ private:
   }
 
   static std::optional<std::optional<V>>
-  try_insert_at(bucket* s, const K& k, const V& v) {
+  try_insert_at(table_version* t, bucket* s, const K& k, const V& v) {
     node* old_node = s->load();
     get_active_bucket(t, s, k, old_node);
     auto x = (old_node == nullptr) ? std::nullopt : old_node->find(k);
     if (x.has_value()) return std::optional(x);
-    if (try_update(s, old_node, insert_to_node(old_node, k, v)))
+    if (try_update(s, old_node, insert_to_node(t, old_node, k, v)))
       return std::optional(std::optional<V>());
     else return {};
   }
@@ -489,16 +475,20 @@ private:
   static std::optional<bool> try_upsert_at(table_version* t, bucket* s, const K& k, F& f) {
     node* old_node = s->load();
     get_active_bucket(t, s, k, old_node);
-    bool found = old_node != nullptr && old_node->find_index(k) != -1;
+    long idx;
+    bool found = old_node != nullptr && (idx = old_node->find_index(k)) != -1;
     if (!found)
-      return try_update(s, old_node, insert_to_node(old_node, k, f(std::optional<V>())), true);
+      if (try_update(s, old_node, insert_to_node(t, old_node, k, f(std::optional<V>()))))
+	return true;
+      else return {};
     else
 #ifndef USE_LOCKS
-      return try_update(s, old_node, update_node(old_node, k, f), false);
+      if (try_update(s, old_node, update_node(old_node, k, f, idx))) return false;
+      else return {};
 #else  // use try_lock
     if (get_locks().try_lock((long) s, [=] {
         if (s->load() != old_node) return false;
-	*s = update_node(old_node, k, f); // f applied within lock
+	*s = update_node(old_node, k, f, idx); // f applied within lock
 	return true;})) {
       retire_node(old_node);
       return false;
@@ -506,11 +496,14 @@ private:
 #endif
   }
 
-  static std::optional<bool> try_remove_at(table_version* t, bucket* s, const K& k) {
+  static std::optional<std::optional<V>> try_remove_at(table_version* t, bucket* s, const K& k) {
     node* old_node = s->load();
     get_active_bucket(t, s, k, old_node);
-    if (old_node == nullptr || old_node->find_index(k) == -1) return false;
-    return try_update(s, old_node, remove_from_node(old_node, k), true);
+    int i = (old_node == nullptr) ? -1 : old_node->find_index(k);
+    if (i == -1) return std::optional(std::optional<V>());
+    if (try_update(s, old_node, remove_from_node(old_node, k, i)))
+      return std::optional(std::optional<V>(old_node->get_entries()[i].second));
+    else return {};
   }
 
   // forces all buckets to be copied to next table
@@ -550,9 +543,10 @@ public:
     bucket* s = &ht->buckets[idx];
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {
-      return epoch::try_loop([=] {
+      auto y = epoch::try_loop([=] {
 	  copy_if_needed(idx);
-          return try_insert_at(ht, s, k, v);});});
+          return try_insert_at(ht, s, k, v);});
+      return !y.has_value();});
   }
 
   bool upsert(const K& k, const V& v) {
@@ -571,8 +565,8 @@ public:
     bucket* s = ht->get_bucket(k);
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {
-      return epoch::try_loop([=] {
-          return try_remove_at(ht, s, k);});});
+      auto y = epoch::try_loop([=] {return try_remove_at(ht, s, k);});
+      return y.has_value();});
   }
 
   long size() {
@@ -595,7 +589,7 @@ public:
     	         node* x = table[i].load();
 		 long cnt = (x == nullptr) ? 0 : x->cnt;
     		 return parlay::delayed::tabulate(cnt, [=] (long j) {
-		   return entries(x)[j];});});});
+		   return x->get_entries()[j];});});});
     return parlay::flatten(s);
   }
 };

@@ -123,6 +123,11 @@ private:
     int cnt;
     KV entries[Size];
 
+    KV* get_entries() {
+      if (cnt < 31) return entries;
+      else return ((BigNode*) this)->entries.begin();
+    }
+
     // return index of key in entries, or -1 if not found
     int find_index(const K& k) {
       if (cnt <= 31) return find_in_range(entries, cnt, k);
@@ -174,7 +179,6 @@ private:
 
     BigNode(node* old, const K& k, const V& v) : cnt(old->cnt + 1) {
       entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
-      //entries = entries_type(cnt);
       if (old->cnt == 31) copy_and_insert(entries, old->entries, old->cnt, k, v);
       else copy_and_insert(entries, ((BigNode*) old)->entries, old->cnt, k, v);
     }
@@ -182,19 +186,12 @@ private:
     template <typename F>
     BigNode(long idx, node* old, const K& k, const F& f) : cnt(old->cnt) {
       entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
-      //entries = entries_type(cnt);
       copy_and_update(entries, ((BigNode*) old)->entries, cnt, k, f, idx);  }
 
     BigNode(long idx, node* old, const K& k) : cnt(old->cnt - 1) {
       entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
-      //entries = entries_type(cnt);
       copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k, idx); }
   };
-
-  static KV* entries(node* x) {
-    if (x->cnt < 31) return x->entries;
-    else return ((BigNode*) x)->entries.begin();
-  }
 
   static node* insert_to_node(node* old, const K& k, const V& v) {
     if (old == nullptr) return (node*) epoch::memory_pool<Node<1>>::New(old, k, v);
@@ -326,7 +323,7 @@ private:
       int i = (old_node == nullptr) ? -1 : old_node->find_index(k);
       if (i == -1) return std::optional(std::optional<V>());
       if (try_update(s, old_node, remove_from_node(old_node, k, i)))
-	return std::optional(std::optional<V>(entries(old_node)[i].second));
+	return std::optional(std::optional<V>(old_node->get_entries()[i].second));
       else return {};
   }
 
@@ -393,7 +390,7 @@ public:
     	         node* x = table[i].load();
 		 long cnt = (x == nullptr) ? 0 : x->cnt;
     		 return parlay::delayed::tabulate(cnt, [=] (long j) {
-		   return entries(x)[j];});});});
+		   return x->get_entries()[j];});});});
     return parlay::flatten(s);
   }
 
