@@ -123,7 +123,7 @@ struct Link {
   using namespace std::chrono;
 
 template <typename xT>
-struct alignas(64) memory_pool {
+struct alignas(64) memory_pool_ {
 private:
 
   static constexpr double milliseconds_between_epoch_updates = 20.0;
@@ -220,7 +220,7 @@ private:
 public:
   using T = xT;
   
-  memory_pool() {
+  memory_pool_() {
     workers = num_workers();
     update_threshold = 10 * workers;
     pools = std::vector<old_current>(workers);
@@ -230,8 +230,8 @@ public:
     }
   }
 
-  memory_pool(const memory_pool&) = delete;
-  ~memory_pool() {} // clear(); }
+  memory_pool_(const memory_pool_&) = delete;
+  ~memory_pool_() {} // clear(); }
 
   // noop since epoch announce is used for the whole operation
   void acquire(T* p) { }
@@ -333,10 +333,20 @@ public:
   }
 
   template <typename T>
-  extern inline epoch::memory_pool<T>& get_pool() {
-    static epoch::memory_pool<T> pool;
+  extern inline epoch::memory_pool_<T>& get_pool() {
+    static epoch::memory_pool_<T> pool;
     return pool;
   }
+
+  template <typename T>
+  struct memory_pool {
+    template <typename ... Args>
+    static T* New(Args... args) {
+      return get_pool<T>().New(std::forward<Args>(args)...);}
+    static void Delete(T* p) {get_pool<T>().Delete(p);}
+    static bool* Retire(T* p) {return get_pool<T>().Retire(p);}
+    static void clear() {get_pool<T>().clear();}
+  };
 
 } // end namespace epoch
 

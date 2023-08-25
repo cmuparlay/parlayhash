@@ -239,14 +239,16 @@ int main(int argc, char* argv[]) {
   bool warmup = !P.getOption("-nowarmup");
   bool grow = P.getOption("-grow");
 
+
   std::vector<long> sizes {100000, 10000000};
   std::vector<int> percents{5, 50};
   std::vector<double> zipfians{0, .99};
   if (n != 0) sizes = std::vector<long>{n};
   if (update_percent != -1) percents = std::vector<int>{update_percent};
   if (zipfian_param != -1.0) zipfians = std::vector<double>{zipfian_param};
-  
+
   parlay::sequence<std::tuple<double,double>> results;
+
   for (auto zipfian_param : zipfians) 
     for (auto update_percent : percents) {
       for (auto n : sizes) {

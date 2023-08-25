@@ -218,50 +218,50 @@ private:
   // the following functions branch to construct the right sized node
   struct table_version;
   static node* insert_to_node(table_version* t, node* old, const K& k, const V& v) {
-    if (old == nullptr) return (node*) epoch::get_pool<Node<1>>().New(old, k, v);
-    if (old->cnt < 3) return (node*) epoch::get_pool<Node<3>>().New(old, k, v);
-    if (old->cnt < 7) return (node*) epoch::get_pool<Node<7>>().New(old, k, v);
+    if (old == nullptr) return (node*) epoch::memory_pool<Node<1>>::New(old, k, v);
+    if (old->cnt < 3) return (node*) epoch::memory_pool<Node<3>>::New(old, k, v);
+    if (old->cnt < 7) return (node*) epoch::memory_pool<Node<7>>::New(old, k, v);
     if (old->cnt > overflow_size) expand_table(t);
-    if (old->cnt < 31) return (node*) epoch::get_pool<Node<31>>().New(old, k, v);
-    return (node*) epoch::get_pool<BigNode>().New(old, k, v);
+    if (old->cnt < 31) return (node*) epoch::memory_pool<Node<31>>::New(old, k, v);
+    return (node*) epoch::memory_pool<BigNode>::New(old, k, v);
   }
 
   template <typename F>
   static node* update_node(node* old, const K& k, const F& f) {
     assert(old != nullptr);
-    if (old->cnt == 1) return (node*) epoch::get_pool<Node<1>>().New(old, k, f);
-    if (old->cnt <= 3) return (node*) epoch::get_pool<Node<3>>().New(old, k, f);
-    else if (old->cnt <= 7) return (node*) epoch::get_pool<Node<7>>().New(old, k, f);
-    else if (old->cnt <= 31) return (node*) epoch::get_pool<Node<31>>().New(old, k, f);
-    else return (node*) epoch::get_pool<BigNode>().New(old, k, f);
+    if (old->cnt == 1) return (node*) epoch::memory_pool<Node<1>>::New(old, k, f);
+    if (old->cnt <= 3) return (node*) epoch::memory_pool<Node<3>>::New(old, k, f);
+    else if (old->cnt <= 7) return (node*) epoch::memory_pool<Node<7>>::New(old, k, f);
+    else if (old->cnt <= 31) return (node*) epoch::memory_pool<Node<31>>::New(old, k, f);
+    else return (node*) epoch::memory_pool<BigNode>::New(old, k, f);
   }
 
   static node* remove_from_node(node* old, const K& k) {
     assert(old != nullptr);
     if (old->cnt == 1) return (node*) nullptr;
-    if (old->cnt == 2) return (node*) epoch::get_pool<Node<1>>().New(old, k);
-    else if (old->cnt <= 4) return (node*) epoch::get_pool<Node<3>>().New(old, k);
-    else if (old->cnt <= 8) return (node*) epoch::get_pool<Node<7>>().New(old, k);
-    else if (old->cnt <= 32) return (node*) epoch::get_pool<Node<31>>().New(old, k);
-    else return (node*) epoch::get_pool<BigNode>().New(old, k);
+    if (old->cnt == 2) return (node*) epoch::memory_pool<Node<1>>::New(old, k);
+    else if (old->cnt <= 4) return (node*) epoch::memory_pool<Node<3>>::New(old, k);
+    else if (old->cnt <= 8) return (node*) epoch::memory_pool<Node<7>>::New(old, k);
+    else if (old->cnt <= 32) return (node*) epoch::memory_pool<Node<31>>::New(old, k);
+    else return (node*) epoch::memory_pool<BigNode>::New(old, k);
   }
 
   static void retire_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) epoch::get_pool<Node<1>>().Retire((Node<1>*) old);
-    else if (old->cnt <= 3) epoch::get_pool<Node<3>>().Retire((Node<3>*) old);
-    else if (old->cnt <= 7) epoch::get_pool<Node<7>>().Retire((Node<7>*) old);
-    else if (old->cnt <= 31) epoch::get_pool<Node<31>>().Retire((Node<31>*) old);
-    else epoch::get_pool<BigNode>().Retire((BigNode*) old);
+    else if (old->cnt == 1) epoch::memory_pool<Node<1>>::Retire((Node<1>*) old);
+    else if (old->cnt <= 3) epoch::memory_pool<Node<3>>::Retire((Node<3>*) old);
+    else if (old->cnt <= 7) epoch::memory_pool<Node<7>>::Retire((Node<7>*) old);
+    else if (old->cnt <= 31) epoch::memory_pool<Node<31>>::Retire((Node<31>*) old);
+    else epoch::memory_pool<BigNode>::Retire((BigNode*) old);
   }
 
   static void destruct_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) epoch::get_pool<Node<1>>().Delete((Node<1>*) old);
-    else if (old->cnt <= 3) epoch::get_pool<Node<3>>().Delete((Node<3>*) old);
-    else if (old->cnt <= 7) epoch::get_pool<Node<7>>().Delete((Node<7>*) old);
-    else if (old->cnt <= 31) epoch::get_pool<Node<31>>().Delete((Node<31>*) old);
-    else epoch::get_pool<BigNode>().Delete((BigNode*) old);
+    else if (old->cnt == 1) epoch::memory_pool<Node<1>>::Delete((Node<1>*) old);
+    else if (old->cnt <= 3) epoch::memory_pool<Node<3>>::Delete((Node<3>*) old);
+    else if (old->cnt <= 7) epoch::memory_pool<Node<7>>::Delete((Node<7>*) old);
+    else if (old->cnt <= 31) epoch::memory_pool<Node<31>>::Delete((Node<31>*) old);
+    else epoch::memory_pool<BigNode>::Delete((BigNode*) old);
   }
 
   // *********************************************
@@ -279,31 +279,31 @@ private:
   struct table_version {
     std::atomic<table_version*> next; // points to next version if created
     std::atomic<long> finished_block_count; //number of blocks finished copying
-    long bits;  // log_2 of size
+    long num_bits;  // log_2 of size
     size_t size; // number of buckets
     parlay::sequence<bucket> buckets; // sequence of buckets
     parlay::sequence<std::atomic<status>> block_status; // status of each block while copying
 
+    // the index is the highest num_bits of the 40-bit hash
     long get_index(const K& k) {
-      return (Hash{}(k) >> (40 - bits))  & (size-1u);}
+      return (Hash{}(k) >> (40 - num_bits))  & (size-1u);}
 
     bucket* get_bucket(const K& k) {
       return &buckets[get_index(k)]; }
 
     // initial table version, n indicating initial size
-    // currently n is ignored for testing purposes (to make sure growing works)
     table_version(long n)
       : next(nullptr),
 	finished_block_count(0),
-	bits(1 + parlay::log2_up(std::max<long>(block_size, n))), // init
-	size(1ul << bits), 
+	num_bits(1 + parlay::log2_up(std::max<long>(block_size, n))), // init
+	size(1ul << num_bits), 
 	buckets(parlay::sequence<bucket>(size)) {}
 
-    // expanded table versions copied from smaller version t
+    // expanded table version copied from smaller version t
     table_version(table_version* t)
       : next(nullptr),
 	finished_block_count(0),
-	bits(t->bits + log_exp_factor),
+	num_bits(t->num_bits + log_exp_factor),
 	size(t->size * exp_factor),
 	buckets(parlay::sequence<std::atomic<node*>>::uninitialized(size)),
 	block_status(parlay::sequence<std::atomic<status>>(t->size/block_size)) {
@@ -329,7 +329,7 @@ private:
       // if fail on lock, someone else is working on it, so skip
       get_locks().try_lock((long) ht, [&] {
 	 if (ht->next == nullptr) {
-	   ht->next = epoch::get_pool<table_version>().New(ht);
+	   ht->next = epoch::memory_pool<table_version>::New(ht);
 	   //std::cout << "expand to: " << n * exp_factor << std::endl;
 	 }
 	 return true;});
@@ -422,7 +422,7 @@ private:
 	// and retire the old table
 	if (++next->finished_block_count == next->block_status.size()) {
 	  current_table_version = next;
-	  epoch::get_pool<table_version>().Retire(t);
+	  epoch::memory_pool<table_version>::Retire(t);
 	}
       } else {
 	// If working then wait until Done
@@ -439,11 +439,11 @@ private:
 
   std::optional<V> find_at(table_version* t, bucket* s, const K& k) {
     node* x = s->load();
+    if (x == nullptr) return std::optional<V>();
     if (is_forwarded(x)) {
       table_version* nxt = t->next.load();
       return find_at(nxt, nxt->get_bucket(k), k);
     }
-    if (x == nullptr) return std::optional<V>();
     return x->find(k);
   }
 
@@ -473,12 +473,16 @@ private:
       old_node = s->load();
     }
   }
-  
-  static std::optional<bool> try_insert_at(table_version* t, bucket* s, const K& k, const V& v) {
+
+  static std::optional<std::optional<V>>
+  try_insert_at(bucket* s, const K& k, const V& v) {
     node* old_node = s->load();
     get_active_bucket(t, s, k, old_node);
-    if (old_node != nullptr && old_node->find_index(k) != -1) return false;
-    return try_update(s, old_node, insert_to_node(t, old_node, k, v), true);
+    auto x = (old_node == nullptr) ? std::nullopt : old_node->find(k);
+    if (x.has_value()) return std::optional(x);
+    if (try_update(s, old_node, insert_to_node(old_node, k, v)))
+      return std::optional(std::optional<V>());
+    else return {};
   }
 
   template <typename F>
@@ -509,18 +513,28 @@ private:
     return try_update(s, old_node, remove_from_node(old_node, k), true);
   }
 
+  // forces all buckets to be copied to next table
+  void force_copy() {
+    table_version* ht = current_table_version.load();
+    while (ht->next != nullptr) {
+      for (int i=0; i < ht->size; i++)
+	copy_if_needed(i);
+      ht = current_table_version.load();
+    }
+  }
+
 public:
   // *********************************************
   // The public interface
   // *********************************************
 
-  unordered_map(size_t n) : current_table_version(epoch::get_pool<table_version>().New(n)) {}
+  unordered_map(size_t n) : current_table_version(epoch::memory_pool<table_version>::New(n)) {}
 
   ~unordered_map() {
     auto& buckets = current_table_version.load()->buckets;
     parlay::parallel_for (0, buckets.size(), [&] (size_t i) {
       retire_node(buckets[i].load());});
-    epoch::get_pool<table_version>().Retire(current_table_version.load());
+    epoch::memory_pool<table_version>::Retire(current_table_version.load());
   }
 
   std::optional<V> find(const K& k) {
@@ -562,18 +576,27 @@ public:
   }
 
   long size() {
+    force_copy();
     table_version* ht = current_table_version.load();
-    while (ht->next != nullptr) {
-      for (int i=0; i < ht->size; i++)
-	copy_if_needed(i);
-      ht = current_table_version.load();
-    }
     auto& table = ht->buckets;
     auto s = parlay::tabulate(ht->size, [&] (size_t i) {
 	      node* x = table[i].load();
 	      if (x == nullptr) return 0;
 	      else return x->cnt;});
     return parlay::reduce(s);
+  }
+
+  parlay::sequence<KV> entries() {
+    force_copy();
+    table_version* ht = current_table_version.load();
+    auto& table = ht->buckets;
+    auto s = epoch::with_epoch([&] {
+    	       return parlay::tabulate(ht->size(), [&] (size_t i) {
+    	         node* x = table[i].load();
+		 long cnt = (x == nullptr) ? 0 : x->cnt;
+    		 return parlay::delayed::tabulate(cnt, [=] (long j) {
+		   return entries(x)[j];});});});
+    return parlay::flatten(s);
   }
 };
 
