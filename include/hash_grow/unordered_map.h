@@ -206,9 +206,9 @@ private:
   struct table_version;
   static node* insert_to_node(table_version* t, node* old, const K& k, const V& v) {
     if (old == nullptr) return (node*) epoch::memory_pool<Node<1>>::New(old, k, v);
+    if (old->cnt > overflow_size) expand_table(t);
     if (old->cnt < 3) return (node*) epoch::memory_pool<Node<3>>::New(old, k, v);
     if (old->cnt < 7) return (node*) epoch::memory_pool<Node<7>>::New(old, k, v);
-    if (old->cnt > overflow_size) expand_table(t);
     if (old->cnt < 31) return (node*) epoch::memory_pool<Node<31>>::New(old, k, v);
     return (node*) epoch::memory_pool<BigNode>::New(old, k, v);
   }
