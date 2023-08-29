@@ -39,10 +39,15 @@
 //
 // Define USE_LOCKS to use locks.  The lock-based version only
 // acquires locks on updates.  Locks are faster with high contention
-// workloads that include reads.  The lock-free version is marginally
+// workloads that include reads.  The non-lock version is marginally
 // faster on low-contention uniform workloads, or if updates only.
 // Also the lock-based version can suffer under oversubscription (more
 // user threads than available hardware threads).
+//
+// The non-lock version still can block in two circumstances
+//   - when allocating a new large array (the OS might block anyway)
+//   - when copying a chunk of buckets (64) others block on just those buckets
+// Otherwise updates are lock-free
 //
 // The type for keys and values must be copyable, and might be copied
 // by the hash_table even when not being updated (e.g. when another
@@ -60,9 +65,11 @@
 #include <atomic>
 #include <optional>
 #include <parlay/primitives.h>
+#include <parlay/sequence.h>
+#include <parlay/delayed.h>
 #include "epoch.h"
 #include "lock.h"
-#define USE_CAS 1
+//#define USE_LOCKS 1
 
 namespace parlay {
   
@@ -396,7 +403,7 @@ private:
 	long start = block_num * block_size;
 	// copy block_size buckets
 	for (int i = start; i < start + block_size; i++) {
-#ifdef USE_CAS
+#ifndef USE_LOCKS
 	  copy_bucket_cas(t, next, i);
 #else
 	  copy_bucket_lock(t, next, i);

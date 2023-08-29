@@ -339,7 +339,7 @@ public:
   }
 
   template <typename T>
-  struct memory_pool {
+  struct mem_pool_ {
     template <typename ... Args>
     static T* New(Args... args) {
       return get_pool<T>().New(std::forward<Args>(args)...);}
