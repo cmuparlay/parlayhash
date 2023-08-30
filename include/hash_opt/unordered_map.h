@@ -244,10 +244,10 @@ private:
   // *********************************************
 
   using bucket = std::atomic<node*>;
-  struct alignas(16) entry {
+  struct alignas(64) entry {
     bucket ptr;
     std::atomic<unsigned long> cnt;
-    KV keyval;
+    KV keyval[3];
     entry() : ptr(nullptr), cnt(0) {}
   };
 
@@ -263,7 +263,7 @@ private:
       return &(table[idx]);
     }
     Table(size_t n) {
-      int bits = 1 + parlay::log2_up(n);
+      int bits = parlay::log2_up(n);
       size = 1ul << bits;
       table = parlay::sequence<entry>(size);
     }
@@ -287,10 +287,20 @@ private:
 	    s->ptr = new_node;
 	    return true;})) {
 #endif
-      if (new_node != nullptr && new_node->cnt < 2) {
-	s->keyval = new_node->entries[0];
-	s->cnt = ((s->cnt.load()) & ~1ul) + 3;
-      } else s->cnt = ((s->cnt.load()) & ~1ul) + 2;
+      if (new_node != nullptr && new_node->cnt < 4) {
+	s->keyval[0] = new_node->entries[0];
+	if (new_node->cnt == 1)
+	  s->cnt = ((s->cnt.load()) & ~3ul) + 5;
+	else {
+	  s->keyval[1] = new_node->entries[1];
+	  if (new_node->cnt == 2)
+	    s->cnt = ((s->cnt.load()) & ~3ul) + 6;
+	  else {
+	    s->keyval[2] = new_node->entries[2];
+	    s->cnt = ((s->cnt.load()) & ~3ul) + 7;
+	    }
+	}
+      } else s->cnt = ((s->cnt.load()) & ~3ul) + 4;
       retire_node(old_node);
       return true;
     } 
@@ -358,10 +368,15 @@ public:
     long cnt = s->cnt.load();
     node* x = s->ptr.load();
     if (x == nullptr) return std::optional<V>();
-    if ((cnt & 1ul) && (s->cnt.load() == cnt))
-      if (s->keyval.first == k)
-	return std::optional<V>(s->keyval.second);
-      else return std::optional<V>();
+    if ((cnt & 3ul) && (s->cnt.load() == cnt)) {
+      if (s->keyval[0].first == k)
+	return std::optional<V>(s->keyval[0].second);
+      if ((cnt & 2ul) && s->keyval[1].first == k)
+	return std::optional<V>(s->keyval[1].second);
+      if ((cnt & 3ul) == 3 && s->keyval[2].first == k) 
+	return std::optional<V>(s->keyval[2].second);
+      return std::optional<V>();
+    }
     return epoch::with_epoch([&] {
       node* x = s->ptr.load();
       if (x == nullptr) return std::optional<V>();

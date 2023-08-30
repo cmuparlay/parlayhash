@@ -66,7 +66,7 @@
 #include <parlay/delayed.h>
 #include "epoch.h"
 #include "lock.h"
-//#define USE_LOCKS 1
+#define USE_LOCKS 1
 
 namespace parlay {
   
