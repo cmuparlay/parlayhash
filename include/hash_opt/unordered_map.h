@@ -243,10 +243,14 @@ private:
   // The bucket and table structures
   // *********************************************
 
+  static constexpr int mask_bits = 4;
+  static constexpr unsigned long mask = (1ul << mask_bits)-1ul;
+  static constexpr int num_cached = 3;
+
   struct alignas(64) bucket {
     std::atomic<node*> ptr;
     std::atomic<unsigned long> version;
-    KV keyval[3];
+    KV keyval[num_cached];
     bucket() : ptr(nullptr), version(0) {}
   };
 
@@ -273,32 +277,31 @@ private:
 
   // try to install a new node in bucket s
   static bool try_update(bucket* s, node* old_node, node* new_node) {
-#ifndef USE_LOCKS
-    if (s->ptr.load() == old_node &&
-	s->ptr.compare_exchange_strong(old_node, new_node)) {
-#else  // use try_lock
     if (get_locks().try_lock((long) s, [=] {
-	    if (s->ptr.load() != old_node) return false;
-	    s->ptr = new_node;
-	    return true;})) {
-#endif
-      if (new_node != nullptr && new_node->cnt < 4) {
+      if (s->ptr.load() != old_node) return false;
+      unsigned int version = ((s->version.load() >> mask_bits) + 1ul) << mask_bits;
+      if (new_node != nullptr) s->version = version + 5;
+      s->ptr = new_node;
+      if (new_node != nullptr) {
 	s->keyval[0] = new_node->entries[0];
 	if (new_node->cnt == 1)
-	  s->version = ((s->version.load()) & ~3ul) + 5;
+	  s->version = version + 1;
 	else {
 	  s->keyval[1] = new_node->entries[1];
 	  if (new_node->cnt == 2)
-	    s->version = ((s->version.load()) & ~3ul) + 6;
+	    s->version = version + 2;
 	  else {
 	    s->keyval[2] = new_node->entries[2];
-	    s->version = ((s->version.load()) & ~3ul) + 7;
+	    if (new_node->cnt == 3)
+	      s->version = version + 3;
+	    else s->version = version + 4;
 	  }
 	}
-      } else s->version = ((s->version.load()) & ~3ul) + 4;
+      } else s->version = version;
+      return true;})) {
       retire_node(old_node);
       return true;
-    } 
+    }
     destruct_node(new_node);
     return false;
   }
@@ -357,20 +360,27 @@ public:
     parlay::parallel_for (0, table.size(), [&] (size_t i) {
       retire_node(table[i].ptr.load());});
   }
-  
+
+  std::pair<bool, std::optional<V>> find_in_cache(bucket* s, int cnt, unsigned int version, const K& k) {
+    char buffer[sizeof(KV)];
+    for (int i=0; i < std::min(cnt, num_cached); i++) {
+      memcpy(buffer, &s->keyval[i], sizeof(KV));
+      if (version != s->version.load())
+	return std::make_pair(false, std::optional<V>());
+      if (((KV*) buffer)->first == k)
+	return std::make_pair(true, std::optional<V>(((KV*) buffer)->second));
+    }
+    return std::make_pair(cnt <= num_cached, std::optional<V>());
+  }
+    
   std::optional<V> find(const K& k) {
     bucket* s = hash_table.get_bucket(k);
     long version = s->version.load();
-    node* x = s->ptr.load();
-    if (x == nullptr) return std::optional<V>();
-    if ((version & 3ul) && (s->version.load() == version)) {
-      if (s->keyval[0].first == k)
-	return std::optional<V>(s->keyval[0].second);
-      if ((version & 2ul) && s->keyval[1].first == k)
-	return std::optional<V>(s->keyval[1].second);
-      if ((version & 3ul) == 3 && s->keyval[2].first == k) 
-	return std::optional<V>(s->keyval[2].second);
-      return std::optional<V>();
+    int cnt = version & mask;
+    if (cnt == 0) return std::optional<V>();
+    if (cnt != 5) {
+      auto [ok, x] = find_in_cache(s, cnt, version, k);
+      if (ok) return x;
     }
     return epoch::with_epoch([&] {
       node* x = s->ptr.load();
@@ -381,7 +391,12 @@ public:
 
   bool insert(const K& k, const V& v) {
     bucket* s = hash_table.get_bucket(k);
-    __builtin_prefetch (s);
+    long version = s->version.load();
+    int cnt = version & mask;
+    if (cnt != 5 && cnt != 0) {
+      auto [ok, x] = find_in_cache(s, cnt, version, k);
+      if (ok && x.has_value()) return false;
+    }
     return epoch::with_epoch([&] {
       auto y = epoch::try_loop([&] {return try_insert_at(s, k, v);});
       return !y.has_value();});
@@ -397,7 +412,13 @@ public:
 
   bool remove(const K& k) {
     bucket* s = hash_table.get_bucket(k);
-    __builtin_prefetch (s);
+    long version = s->version.load();
+    int cnt = version & mask;
+    if (cnt == 0) return false;
+    if (cnt <= num_cached) {
+      auto [ok, x] = find_in_cache(s, cnt, version, k);
+      if (ok && !x.has_value())	return false;
+    }
     return epoch::with_epoch([&] {
       auto y = epoch::try_loop([&] {return try_remove_at(s, k);});
       return y.has_value();});
