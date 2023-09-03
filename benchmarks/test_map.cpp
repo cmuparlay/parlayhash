@@ -97,23 +97,10 @@ test_loop(commandLine& C,
       for (int j=i*np; j < (i+1)*np; j++)
 	map.insert(HANDLE a[j], 123); }, 1, true);
 #else
-    //int cnt = 0;
     parlay::parallel_for(0, n, [&] (size_t i) {
 	       map.insert(a[i], 123); });
-
-    // parlay::parallel_for(0, n, [&] (size_t i) {
-    // 				 if (!map.find(a[i]).has_value()) std::cout << "ouch: " << a[i] << std::endl;
-    // 	cnt += map.insert(a[i], 123);
-    // 			       });
-    // auto x = parlay::sort(parlay::map(map.entries(), [] (auto x) {return x.first;}));
-    // auto y = parlay::sort(a.cut(0,n));
-    // std::cout << parlay::to_chars(x) << std::endl;
-    // std::cout << parlay::to_chars(y) << std::endl;
-    
-    // std::cout << "a: " << cnt << std::endl;
 #endif
 
-    std::cout << map.size() << std::endl;
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
     double imops = n / insert_time.count() / 1e6;
     if (!warmup || i>0) 
