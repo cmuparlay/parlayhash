@@ -394,10 +394,13 @@ public:
 
   bool insert(const K& k, const V& v) {
     bucket* s = hash_table.get_bucket(k);
-    __builtin_prefetch (s);
+    int version = s->version.load();
+    auto y = try_cached_insert_at(s, k, v);
+    if (y.has_value()) return !(*y).has_value();
+    //__builtin_prefetch (s);
     std::optional<V> r = epoch::with_epoch([&] {
-      auto [ok, x] = find_in_cache(s, k);
-      if (ok && x.has_value()) return x;
+      //auto [ok, x] = find_in_cache(s, k);
+      //if (ok && x.has_value()) return x;
       return epoch::try_loop([&] () -> std::optional<std::optional<V>> {
         int version = s->version.load();
 	auto y = try_cached_insert_at(s, k, v);
