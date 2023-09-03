@@ -84,35 +84,6 @@ private:
       if (KeyEqual{}(entries[i].first, k)) return i;
     return -1;
   }
-
-  // The following three functions copy a range and
-  // insert/update/remove the specified key.  No ordering is assumed
-  // within the range.  Insert assumes k does not appear, while
-  // update/remove assume it does appear at index idx.
-  template <typename Range, typename RangeIn>
-  static void copy_and_insert(Range& out, const RangeIn& entries, long cnt,
-			      const K& k, const V& v) {
-    assert(cnt >= 0);
-    for (int i=0; i < cnt; i++) out[i] = entries[i];
-    out[cnt] = KV{k,v};
-  }
-
-  template <typename Range, typename RangeIn, typename F>
-  static void copy_and_update(Range& out, const RangeIn& entries, long cnt,
-			      const K& k, const F& f, long idx) {
-    assert(cnt > 0);
-    for (int i = 0; i < idx; i++) out[i] = entries[i];
-    out[idx].first = entries[idx].first;
-    out[idx].second = f(entries[idx].second);
-    for (int i = idx+1; i < cnt; i++) out[i] = entries[i];
-  }
-
-  template <typename Range, typename RangeIn>
-  static void copy_and_remove(Range& out, const RangeIn& entries, long cnt, const K& k, long idx) {
-    assert(cnt > 1);
-    for (int i = 0; i < idx; i++) out[i] = entries[i];
-    for (int i = idx; i < cnt-1; i++) out[i] = entries[i+1];
-  }
   
   // Each bucket points to a Node of some Size, or to a BigNode (defined below)
   // A node contains an array of up to Size entries (actual # of entries given by cnt)
@@ -149,25 +120,6 @@ private:
       }
     }
 
-    // copy and insert
-    Node(node* old, const K& k, const V& v) {
-      cnt = (old == nullptr) ? 1 : old->cnt + 1;
-      copy_and_insert(entries, old->entries, cnt-1, k, v);
-    }
-
-    // copy and update
-    template <typename F>
-    Node(long idx, node* old, const K& k, const F& f) : cnt(old->cnt) {
-      assert(old != nullptr);
-      copy_and_update(entries, old->entries, cnt, k, f, idx);
-    }
-
-    // copy and remove
-    Node(long idx, node* old, const K& k) : cnt(old->cnt - 1) {
-      if (cnt == 31) copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k, idx);
-      else copy_and_remove(entries, old->entries, cnt+1, k, idx);
-    }
-
     Node(int cnt) : cnt(cnt) {}
   };
   using node = Node<0>;
@@ -179,54 +131,11 @@ private:
     int cnt;
     entries_type entries;
 
-    BigNode(node* old, const K& k, const V& v) : cnt(old->cnt + 1) {
-      entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
-      if (old->cnt == 31) copy_and_insert(entries, old->entries, old->cnt, k, v);
-      else copy_and_insert(entries, ((BigNode*) old)->entries, old->cnt, k, v);
-    }
-
-    template <typename F>
-    BigNode(long idx, node* old, const K& k, const F& f) : cnt(old->cnt) {
-      entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
-      copy_and_update(entries, ((BigNode*) old)->entries, cnt, k, f, idx);  }
-
-    BigNode(long idx, node* old, const K& k) : cnt(old->cnt - 1) {
-      entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
-      copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k, idx); }
-
     BigNode(int cnt) : cnt(cnt) {
       entries = parlay::tabulate(cnt, [] (long i) {return KV{};}, cnt);
     }
 
   };
-
-  static node* insert_to_node(node* old, const K& k, const V& v) {
-    if (old == nullptr) return (node*) epoch::memory_pool<Node<1>>::New(old, k, v);
-    if (old->cnt < 3) return (node*) epoch::memory_pool<Node<3>>::New(old, k, v);
-    else if (old->cnt < 7) return (node*) epoch::memory_pool<Node<7>>::New(old, k, v);
-    else if (old->cnt < 31) return (node*) epoch::memory_pool<Node<31>>::New(old, k, v);
-    else return (node*) epoch::memory_pool<BigNode>::New(old, k, v);
-  }
-
-  template <typename F>
-  static node* update_node(node* old, const K& k, const F& f, long idx) {
-    assert(old != nullptr);
-    if (old == nullptr) return (node*) epoch::memory_pool<Node<1>>::New(idx, old, k, f);
-    if (old->cnt < 3) return (node*) epoch::memory_pool<Node<3>>::New(idx, old, k, f);
-    else if (old->cnt < 7) return (node*) epoch::memory_pool<Node<7>>::New(idx, old, k, f);
-    else if (old->cnt < 31) return (node*) epoch::memory_pool<Node<31>>::New(idx,old, k, f);
-    else return (node*) epoch::memory_pool<BigNode>::New(idx, old, k, f);
-  }
-
-  static node* remove_from_node(node* old, const K& k, long idx) {
-    assert(old != nullptr);
-    if (old->cnt == 1) return (node*) nullptr;
-    if (old->cnt == 2) return (node*) epoch::memory_pool<Node<1>>::New(idx, old, k);
-    else if (old->cnt <= 4) return (node*) epoch::memory_pool<Node<3>>::New(idx, old, k);
-    else if (old->cnt <= 8) return (node*) epoch::memory_pool<Node<7>>::New(idx, old, k);
-    else if (old->cnt <= 32) return (node*) epoch::memory_pool<Node<31>>::New(idx, old, k);
-    else return (node*) epoch::memory_pool<BigNode>::New(idx, old, k);
-  }
 
   static void retire_node(node* old) {
     if (old == nullptr);
@@ -273,12 +182,8 @@ private:
   static int get_cnt(vtype version) {
     return (version & mask);
   }
-  static bool is_busy(vtype v) {return v == busy_version;}
-  static bool is_long(int cnt) {return cnt > num_cached;}
 
-  // static node* mark_cached(node* x) {return (node*) (((vtype) x) | 1ul);}
-  // static bool is_cached(node* x) {return ((vtype) x) & 1;}
-  // static node* strip_cached(node* x) {return (node*) (((vtype) x) & ~1ul);}
+  static bool is_busy(vtype v) {return v == busy_version;}
 
   struct alignas(64) bucket {
     std::atomic<node*> ptr;
@@ -291,7 +196,7 @@ private:
     parlay::sequence<bucket> table;
     size_t size;
     bucket* get_bucket(const K& k) {
-      size_t idx = Hash{}(k)  & (size-1u);
+      size_t idx = Hash{}(k) & (size-1u);
       return &(table[idx]);
     }
     Table(size_t n) {
@@ -307,24 +212,31 @@ private:
   // The internal update functions (insert, upsert and remove)
   // *********************************************
 
-  static void load_cache(bucket* s, node* new_node, unsigned int version) {
-    if (new_node != nullptr) {
-      s->version = busy_version;
-      s->keyval[0] = new_node->entries[0];
-      if (new_node->cnt == 1)
-	s->version = version + 1;
-      else {
-	s->keyval[1] = new_node->entries[1];
-	if (new_node->cnt == 2)
-	  s->version = version + 2;
-	else {
-	  s->keyval[2] = new_node->entries[2];
-	  if (new_node->cnt == 3)
-	    s->version = version + 3;
-	  else s->version = version + 4;
-	}
+  // read a snapshot from the cache, and put in buffer
+  // the snapshot is associated with a version
+  struct cache_snapshot {
+    char buffer[sizeof(KV)*num_cached];
+    vtype version;
+    KV* data() {return (KV*) buffer;}
+    cache_snapshot(bucket* s) : version(s->version.load()) {
+      if (!is_busy(version)) {
+	int cnt = std::min(get_cnt(version), num_cached);
+	memcpy(buffer, s->keyval, cnt*sizeof(KV));
+	if (s->version.load() != version)
+	  version = busy_version;
       }
-    } else s->version = version;
+    }
+  };
+
+  // load cache with first num_cached values from new_node
+  static void load_cache(bucket* s, node* new_node, unsigned int version) {
+    if (new_node == nullptr) s->version = version;
+    else {
+      s->version = busy_version;
+      for (int i = 0; i < std::min(new_node->cnt, num_cached); i++)
+	s->keyval[i] = new_node->entries[i];
+      s->version = version + std::min(new_node->cnt, num_cached+1);
+    }  
   }
 
   // try to install a new node in bucket s from an old_node
@@ -335,7 +247,10 @@ private:
 	s->ptr = new_node;
 	load_cache(s, new_node, version);
 	return true;})) {
-      retire_node(old_node);
+      if (new_node != nullptr && new_node->cnt <= num_cached)
+	retire_node(new_node);
+      if (old_node != nullptr && old_node->cnt > num_cached)
+	retire_node(old_node);
       return true;
     }
     destruct_node(new_node);
@@ -350,6 +265,8 @@ private:
 	s->ptr = new_node;
 	load_cache(s, new_node, version);
 	return true;})) {
+      if (new_node != nullptr && new_node->cnt <= num_cached)
+	retire_node(new_node);
       return true;
     }
     destruct_node(new_node);
@@ -357,7 +274,7 @@ private:
   }
 
   static std::optional<std::optional<V>>
-  try_insert_at(bucket* s, const K& k, const V& v) {
+  try_insert_at_(bucket* s, const K& k, const V& v) {
     node* old_node = s->ptr.load();
     auto x = (old_node == nullptr) ? std::nullopt : old_node->find(k);
     if (x.has_value()) return std::optional(x);
@@ -366,36 +283,81 @@ private:
     else return {};
   }
 
-  static std::optional<std::optional<V>>
-  try_cached_insert_at(bucket* s, const K& k, const V& v) {
-    auto [ver, x] = find_in_cache(s, k);
-    if (ver == -1) return {};
-    if (x.has_value()) return std::optional(*x);
-    int cnt = get_cnt(ver);
+  static node* copy_insert_node(KV* old_values, int cnt, const K& k, const V& v) {
     node* new_node = allocate_node(cnt+1);
     KV* values = new_node->get_entries();
-    copy_and_insert(values, s->keyval, cnt, k, v);
-    if (get_locks().try_lock((long) s, [=] {
-        if (s->version.load() != ver) return false;
-	unsigned int version = next_version(s->version.load());
-	s->ptr = new_node;
-	if (new_node != nullptr) s->version = busy_version;
-	load_cache(s, new_node, version);
-	return true;})) {
-      //retire_node(s->ptr.load());
-      return std::optional(std::optional<V>());
+    for (int i=0; i < cnt; i++) values[i] = old_values[i];
+    values[cnt] = KV{k,v};
+    return new_node;
+  }
+
+  static std::optional<std::optional<V>>
+  try_insert_at(bucket* s, const K& k, const V& v) {
+    node* old_node = s->ptr.load();
+    int cnt = 0;
+    KV* old_values = nullptr;
+    std::optional<V> x;
+    if (old_node != nullptr) {
+      cnt = old_node->cnt;
+      x = old_node->find(k);
+      old_values = old_node->get_entries();
     }
-    destruct_node(new_node);
-    return {};
+    if (x.has_value()) return std::optional(x);
+    node* new_node = copy_insert_node(old_values, cnt, k, v);
+    if (try_update(s, old_node, new_node))
+      return std::optional(std::optional<V>());
+    else return {};
+  }
+
+  static std::optional<std::optional<V>>
+  try_cached_insert_at(bucket* s, const K& k, const V& v) {
+    cache_snapshot buffer(s);
+    if (is_busy(buffer.version)) return {};
+    int cnt = get_cnt(buffer.version);
+    int idx = find_in_range(buffer.data(), std::min(cnt, num_cached), k);
+    if (idx != -1) return std::optional(buffer.data()[idx].second);
+    if (cnt > num_cached) return {};
+    KV* old_values = buffer.data();
+    node* new_node = copy_insert_node(old_values, cnt, k, v);
+    if (try_cached_update(s, buffer.version, new_node))
+      return std::optional(std::optional<V>());
+    else return {};
+  }
+
+  static node* copy_remove_node(KV* old_values, int cnt, const K& k, long idx) {
+    if (cnt == 1) return nullptr;
+    node* new_node = allocate_node(cnt-1);
+    KV* values = new_node->get_entries();
+    for (int i = 0; i < idx; i++) values[i] = old_values[i];
+    for (int i = idx; i < cnt-1; i++) values[i] = old_values[i+1];
+    return new_node;
   }
 
   static std::optional<std::optional<V>> try_remove_at(bucket* s, const K& k) {
-      node* old_node = s->ptr.load();
-      int i = (old_node == nullptr) ? -1 : old_node->find_index(k);
-      if (i == -1) return std::optional(std::optional<V>());
-      if (try_update(s, old_node, remove_from_node(old_node, k, i)))
-	return std::optional(std::optional<V>(old_node->get_entries()[i].second));
-      else return {};
+    node* old_node = s->ptr.load();
+    int idx = (old_node == nullptr) ? -1 : old_node->find_index(k);
+    if (idx == -1) return std::optional(std::optional<V>());
+    int cnt = old_node->cnt;
+    KV* old_values = old_node->get_entries();
+    node* new_node = copy_remove_node(old_values, cnt, k, idx);
+    if (try_update(s, old_node, new_node))
+      return std::optional(std::optional<V>(old_values[idx].second));
+    else return {};
+  }
+
+  static std::optional<std::optional<V>>
+  try_cached_remove_at(bucket* s, const K& k) {
+    cache_snapshot buffer(s);
+    if (is_busy(buffer.version)) return {};
+    int cnt = get_cnt(buffer.version);
+    KV* old_values = buffer.data();
+    int idx = find_in_range(old_values, std::min(cnt, num_cached), k);
+    if (idx == -1 && cnt <= num_cached) return std::optional<V>();
+    if (cnt > num_cached) return {};
+    node* new_node = copy_remove_node(old_values, cnt, k, idx);
+    if (try_cached_update(s, buffer.version, new_node))
+      return std::optional<V>(old_values[idx].second);
+    else return {};
   }
 
 public:
@@ -408,7 +370,9 @@ public:
   ~unordered_map() {
     auto& table = hash_table.table;
     parlay::parallel_for (0, table.size(), [&] (size_t i) {
-      retire_node(table[i].ptr.load());});
+      node* ptr = table[i].ptr.load();
+      if (ptr != nullptr && ptr->cnt > num_cached)
+	retire_node(table[i].ptr.load());});
   }
 
   static std::pair<bool, std::optional<V>> find_in_cache(bucket* s, const K& k) {
@@ -443,29 +407,41 @@ public:
   bool insert(const K& k, const V& v) {
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
-    auto r = epoch::with_epoch([&] {
-      auto y = try_cached_insert_at(s, k, v);
-      if (y.has_value()) return *y;
-      return epoch::try_loop([&] {return try_insert_at(s, k, v);});});
+    std::optional<V> r = epoch::with_epoch([&] {
+      auto [ok, x] = find_in_cache(s, k);
+      if (ok && x.has_value()) return x;
+      return epoch::try_loop([&] () -> std::optional<std::optional<V>> {
+        int version = s->version.load();
+	auto y = try_cached_insert_at(s, k, v);
+	if (y.has_value()) return y;
+	if (get_cnt(version) > num_cached || s->version.load() != version)
+	  return try_insert_at(s, k, v);
+	else return std::optional<std::optional<V>>();});});
     return !r.has_value();
   }
 
   bool remove(const K& k) {
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
-    return epoch::with_epoch([&] {
-      auto y = epoch::try_loop([&] () -> std::optional<std::optional<V>> {
-        auto [ok, x] = find_in_cache(s, k);
-	if (ok >= 0 && !x.has_value())
-	  return std::optional(std::optional<V>());
-	return try_remove_at(s, k);});
-      return y.has_value();});
+    std::optional<V> r = epoch::with_epoch([&] {
+      auto [ok, x] = find_in_cache(s, k);
+      if (ok && !x.has_value()) return x;
+      return epoch::try_loop([&] () -> std::optional<std::optional<V>> {
+        int version = s->version.load();
+	auto y = try_cached_remove_at(s, k);
+	if (y.has_value()) return *y;
+	if (get_cnt(version) > num_cached || s->version.load() != version)
+	  return try_remove_at(s, k);
+	else return std::optional<std::optional<V>>();});});
+    return r.has_value();
   }
 
   long size() {
     auto& table = hash_table.table;
     auto s = epoch::with_epoch([&] {
 	       return parlay::tabulate(table.size(), [&] (size_t i) {
+	         int cnt = get_cnt(table[i].version.load());
+		 if (cnt <= num_cached) return cnt;
 		 node* x = table[i].ptr.load();
 		 if (x == nullptr) return 0;
 		 else return x->cnt;});});
@@ -476,10 +452,16 @@ public:
     auto& table = hash_table.table;
     auto s = epoch::with_epoch([&] {
     	       return parlay::tabulate(table.size(), [&] (size_t i) {
-    	         node* x = table[i].ptr.load();
-		 long cnt = (x == nullptr) ? 0 : x->cnt;
+		 cache_snapshot buffer(table + i);
+		 int cnt = get_cnt(buffer.version);
+		 KV* entries = buffer.data();
+		 if (is_busy(buffer.version) || cnt > num_cached) {
+		   node* x = table[i].ptr.load();
+		   cnt = (x == nullptr) ? 0 : x->cnt;
+		   entries = x->get_entries();
+		 }
     		 return parlay::delayed::tabulate(cnt, [=] (long j) {
-		   return x->get_entries()[j];});});});
+		   return entries[j];});});});
     return parlay::flatten(s);
   }
 
