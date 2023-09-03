@@ -243,30 +243,13 @@ private:
   // The bucket and table structures
   // *********************************************
 
-  using vtype = long;
-  
   static constexpr int mask_bits = 4;
-  static constexpr vtype mask = (1l << mask_bits)-1l;
+  static constexpr unsigned long mask = (1ul << mask_bits)-1ul;
   static constexpr int num_cached = 3;
-  static constexpr vtype busy_version = -1;
-
-  static vtype next_version(vtype version) {
-    return ((version >> mask_bits) + 1l) << mask_bits;
-  }
-
-  static int get_cnt(vtype version) {
-    return (version & mask);
-  }
-  static bool is_busy(vtype v) {return v == busy_version;}
-  static bool is_long(int cnt) {return cnt > num_cached;}
-
-  // static node* mark_cached(node* x) {return (node*) (((vtype) x) | 1ul);}
-  // static bool is_cached(node* x) {return ((vtype) x) & 1;}
-  // static node* strip_cached(node* x) {return (node*) (((vtype) x) & ~1ul);}
-
+  
   struct alignas(64) bucket {
     std::atomic<node*> ptr;
-    std::atomic<vtype> version;
+    std::atomic<unsigned long> version;
     KV keyval[num_cached];
     bucket() : ptr(nullptr), version(0) {}
   };
@@ -291,37 +274,36 @@ private:
   // The internal update functions (insert, upsert and remove)
   // *********************************************
 
-  static void load_cache(bucket* s, node* new_node, unsigned int version) {
-    if (new_node != nullptr) {
-      s->keyval[0] = new_node->entries[0];
-      if (new_node->cnt == 1)
-	s->version = version + 1;
-      else {
-	s->keyval[1] = new_node->entries[1];
-	if (new_node->cnt == 2)
-	  s->version = version + 2;
-	else {
-	  s->keyval[2] = new_node->entries[2];
-	  if (new_node->cnt == 3)
-	    s->version = version + 3;
-	  else s->version = version + 4;
-	}
-      }
-    } else s->version = version;
-  }
 
-  // try to install a new node in bucket s from an old_node
+  // try to install a new node in bucket s
   static bool try_update(bucket* s, node* old_node, node* new_node) {
+#ifndef USE_LOCKS
+    if (s->ptr.load() == old_node &&
+	s->ptr.compare_exchange_strong(old_node, new_node)) {
+#else  // use try_lock
     if (get_locks().try_lock((long) s, [=] {
-        if (s->ptr.load() != old_node) return false;
-	unsigned int version = next_version(s->version.load());
-	s->ptr = new_node;
-	if (new_node != nullptr) s->version = busy_version;
-	load_cache(s, new_node, version);
-	return true;})) {
+	    if (s->ptr.load() != old_node) return false;
+	    s->ptr = new_node;
+	    return true;})) {
+#endif
+      int version = ((s->version.load() >> mask_bits) + 1) >> mask_bits;
+      if (new_node != nullptr && new_node->cnt <= num_cached) {
+	s->keyval[0] = new_node->entries[0];
+	if (new_node->cnt == 1)
+	  s->version = version + 1;
+	else {
+	  s->keyval[1] = new_node->entries[1];
+	  if (new_node->cnt == 2)
+	    s->version = version + 2;
+	  else {
+	    s->keyval[2] = new_node->entries[2];
+	    s->version = version + 3;
+	  }
+	}
+      } else s->version = version;
       retire_node(old_node);
       return true;
-    }
+    } 
     destruct_node(new_node);
     return false;
   }
@@ -336,6 +318,30 @@ private:
     else return {};
   }
 
+  template <typename F>
+  static std::optional<bool> try_upsert_at(bucket* s, const K& k, F& f) {
+    node* old_node = s->load();
+    long idx;
+    bool found = old_node != nullptr && (idx = old_node->find_index(k)) != -1;
+    if (!found)
+      if (try_update(s, old_node, insert_to_node(old_node, k, f(std::optional<V>()))))
+	return true;
+      else return {};
+    else
+#ifndef USE_LOCKS
+      if (try_update(s, old_node, update_node(old_node, k, f, idx))) return false;
+      else return {};
+#else  // use try_lock
+    if (get_locks().try_lock((long) s, [=] {
+        if (s->load() != old_node) return false;
+	*s = update_node(old_node, k, f, idx); // f applied within lock
+	return true;})) {
+      retire_node(old_node);
+      return false;
+    } else return {};
+#endif
+  }
+
   static std::optional<std::optional<V>> try_remove_at(bucket* s, const K& k) {
       node* old_node = s->ptr.load();
       int i = (old_node == nullptr) ? -1 : old_node->find_index(k);
@@ -346,7 +352,6 @@ private:
   }
 
 public:
-  
   // *********************************************
   // The public interface
   // *********************************************
@@ -357,33 +362,26 @@ public:
     parlay::parallel_for (0, table.size(), [&] (size_t i) {
       retire_node(table[i].ptr.load());});
   }
-
-  std::pair<bool, std::optional<V>> find_in_cache(bucket* s, const K& k) {
-    char buffer[sizeof(KV)];
-    vtype version = s->version.load();
-    int cnt = get_cnt(version);
-    if (cnt == 0)
-      return std::pair(true, std::optional<V>());
-    if (is_busy(version))
-      return std::pair(false, std::optional<V>());
-    for (int i=0; i < std::min(cnt, num_cached); i++) {
-      memcpy(buffer, &s->keyval[i], sizeof(KV));
-      if (version != s->version.load())
-	return std::pair(false, std::optional<V>());
-      if (((KV*) buffer)->first == k)
-	return std::pair(true, std::optional<V>(((KV*) buffer)->second));
-    }
-    return std::pair(cnt <= num_cached, std::optional<V>());
-  }
-    
+  
   std::optional<V> find(const K& k) {
     bucket* s = hash_table.get_bucket(k);
-    auto [ok, y] = find_in_cache(s, k);
-    if (ok) return y;
+    long version = s->version.load();
+    node* x = s->ptr.load();
+    if (x == nullptr) return std::optional<V>();
+    //int cnt = version & mask;
+    if ((version & mask) && (s->version.load() == version)) {
+      if (s->keyval[0].first == k)
+	return std::optional<V>(s->keyval[0].second);
+      if (version & 2ul && s->keyval[1].first == k)
+	return std::optional<V>(s->keyval[1].second);
+      if ((version & 3ul) == 3 && s->keyval[2].first == k) 
+	return std::optional<V>(s->keyval[2].second);
+      return std::optional<V>();
+    }
     return epoch::with_epoch([&] {
-      node* y = s->ptr.load();
-      if (y == nullptr) return std::optional<V>();
-      return y->find(k);
+      node* x = s->ptr.load();
+      if (x == nullptr) return std::optional<V>();
+      return x->find(k);
     });
   }
 
@@ -391,18 +389,22 @@ public:
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
     return epoch::with_epoch([&] {
-      auto [ok, x] = find_in_cache(s, k);
-      if (ok && x.has_value()) return false;
       auto y = epoch::try_loop([&] {return try_insert_at(s, k, v);});
       return !y.has_value();});
+  }
+
+  template <typename F>
+  bool upsert(const K& k, const F& f) {
+    bucket* s = hash_table.get_bucket(k);
+    __builtin_prefetch (s);
+    return epoch::with_epoch([&] {
+      return epoch::try_loop([&] {return try_upsert_at(s, k, f);});});
   }
 
   bool remove(const K& k) {
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
     return epoch::with_epoch([&] {
-      auto [ok, x] = find_in_cache(s, k);
-      if (ok && !x.has_value()) return false;
       auto y = epoch::try_loop([&] {return try_remove_at(s, k);});
       return y.has_value();});
   }
