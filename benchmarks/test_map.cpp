@@ -92,15 +92,20 @@ test_loop(commandLine& C,
     // initialize the map with n distinct elements
     auto start_insert = std::chrono::system_clock::now();
 #ifdef USE_HANDLE
+    long block_size = 1 + (n-1) / p;
     parlay::parallel_for(0, p, [&] (size_t i) {
       auto handle = map.get_handle();
-      for (int j=i*np; j < (i+1)*np; j++)
+      long s = i * block_size;
+      long e = std::min(s + block_size, n);
+      for (int j = s; j < e; j++)
 	map.insert(HANDLE a[j], 123); }, 1, true);
 #else
     parlay::parallel_for(0, n, [&] (size_t i) {
 	       map.insert(a[i], 123); });
 #endif
-
+    if (map.size() != n)
+      std::cout << "bad intial size = " << map.size() << std::endl;
+    
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
     double imops = n / insert_time.count() / 1e6;
     if (!warmup || i>0) 
@@ -171,7 +176,6 @@ test_loop(commandLine& C,
 	  if (map.remove(HANDLE b[j])) {added--; update_success_count++;}
 	}
 
-
 	// wrap around if ran out of samples
 	if (++j >= (i+1)*mp) j = i*mp;
 	if (++k >= (i+1)*mp) k = i*mp + 1; // offset so different ops on different rounds
@@ -216,7 +220,7 @@ test_loop(commandLine& C,
     if (uratio < .4 || uratio > .6)
       std::cout << "warning: update success ratio = " << uratio << std::endl;
     if (initial_size + added != final_cnt) {
-      std::cout << "bad size: intial size = " << initial_size
+      std::cout << "bad final size: intial size = " << initial_size
 		<< ", added " << added
 		<< ", final size = " << final_cnt 
 		<< std::endl;

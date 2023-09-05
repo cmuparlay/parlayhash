@@ -47,7 +47,7 @@ struct unordered_map {
     return handle_type(table.get_handle());
   }
 
-  unordered_map(size_t n) : table(table_type(n)) {}
+  unordered_map(size_t n) : table(table_type(2*n)) {}
 
   ~unordered_map() {}
 

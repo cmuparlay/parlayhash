@@ -208,61 +208,6 @@ private:
     }
   };
 
-  // Load cache with first num_cached values from new_node.
-  // Mark version as busy before and increment after.
-  static void load_cache(bucket* s, node* new_node) {
-    vtype version = next_version(s->version.load());
-    if (new_node == nullptr) s->version = version;
-    else {
-      s->version = busy_version;
-      for (int i = 0; i < std::min(new_node->cnt, num_cached); i++)
-	s->keyval[i] = new_node->entries[i];
-      s->version = version + std::min(new_node->cnt, num_cached+1);
-    }  
-  }
-
-  // Try to install new_node in bucket s replacing old_node.
-  static bool try_update(bucket* s, node* old_node, node* new_node) {
-    if (get_locks().try_lock((long) s, [=] {
-        if (s->ptr.load() != old_node) return false;
-	s->ptr = new_node;
-	load_cache(s, new_node);
-	return true;})) {
-      if (new_node != nullptr && new_node->cnt <= num_cached)
-	retire_node(new_node);
-      if (old_node != nullptr && old_node->cnt > num_cached)
-	retire_node(old_node);
-      return true;
-    }
-    retire_node(new_node);
-    return false;
-  }
-
-  // Try to install a new node in bucket s replacing its cache
-  // The whole old content must be in the cache.
-  static bool try_cached_update(bucket* s, vtype version, node* new_node) {
-    if (get_locks().try_lock((long) s, [=] {
-        if (s->version.load() != version) return false;
-	s->ptr = new_node;
-	load_cache(s, new_node);
-	return true;})) {
-      if (new_node != nullptr && new_node->cnt <= num_cached)
-	retire_node(new_node);
-      return true;
-    }
-    retire_node(new_node);
-    return false;
-  }
-
-  // create a new node and copy old_values into it along with a new key and value
-  static node* copy_insert_node(KV* old_values, int cnt, const K& k, const V& v) {
-    node* new_node = allocate_node(cnt+1);
-    KV* values = new_node->get_entries();
-    for (int i=0; i < cnt; i++) values[i] = old_values[i];
-    values[cnt] = KV{k,v};
-    return new_node;
-  }
-
   // insert into a bucket from an old node
   static std::optional<std::optional<V>>
   try_insert_at(bucket* s, const K& k, const V& v) {
@@ -276,84 +221,124 @@ private:
       old_values = old_node->get_entries();
     }
     if (x.has_value()) return std::optional(x);
-    node* new_node = copy_insert_node(old_values, cnt, k, v);
-    if (try_update(s, old_node, new_node))
+    node* new_node = allocate_node(cnt+1);
+    KV* values = new_node->get_entries();
+    for (int i=0; i < cnt; i++) values[i] = old_values[i];
+    values[cnt] = KV{k,v};
+    if (get_locks().try_lock((long) s, [=] {
+        if (s->ptr.load() != old_node) return false;
+	s->ptr = new_node;
+	return true;})) {
+      if (old_node != nullptr && old_node->cnt > num_cached)
+	retire_node(old_node);
       return std::optional(std::optional<V>());
-    else return {};
+    }
+    retire_node(new_node);
+    return {};
   }
-
+  
   // insert into a bucket that is fully cached
   static std::optional<std::optional<V>>
   try_cached_insert_at(bucket* s, const K& k, const V& v) {
-    // vtype version = s->version.load();
-    // if (get_cnt(version) == 0) {
-    //   node* new_node = allocate_node(1);
-    //   new_node->entries[0] = KV{k,v};
-    //   if (try_cached_update(s, version, new_node))
-    // 	return std::optional(std::optional<V>());
-    //   else return {};
-    // }
     cache_snapshot buffer(s);
-    if (is_busy(buffer.version)) return {};
-    int cnt = get_cnt(buffer.version);
-    int idx = find_in_range(buffer.data(), std::min(cnt, num_cached), k);
-    if (idx != -1) return std::optional(buffer.data()[idx].second);
+    KV* data = buffer.data();
+    vtype version = buffer.version;
+    if (version) return {};
+    int cnt = get_cnt(version);
+    int idx = find_in_range(data, std::min(cnt, num_cached), k);
+    if (idx != -1) return std::optional(data[idx].second);
     if (cnt > num_cached) return {};
-    KV* old_values = buffer.data();
-    node* new_node = copy_insert_node(old_values, cnt, k, v);
-    if (try_cached_update(s, buffer.version, new_node))
+    node* old_node = allocate_node(cnt);
+    if (old_node != nullptr)
+      for (int i=0; i < cnt; i++) old_node->get_entries()[i] = data[i];
+    if (get_locks().try_lock((long) s, [&] {
+        if (s->version.load() != version) return false;
+	s->ptr = old_node;
+	vtype nxt_version = next_version(version);
+	s->version = busy_version;
+	if (cnt < num_cached) {
+	  s->keyval[cnt] = KV{k,v};
+	  s->version = nxt_version + cnt + 1;
+	} else {
+	  node* new_node = allocate_node(cnt + 1);
+	  for (int i=0; i < cnt; i++)
+	    new_node->get_entries()[i] = data[i];
+	  new_node->get_entries()[cnt] = KV{k,v};
+	  s->ptr = new_node;
+	  s->version = nxt_version + num_cached + 1;
+	}
+	return true;})) {
+      retire_node(old_node);
       return std::optional(std::optional<V>());
-    else return {};
+    } 
+    retire_node(old_node);
+    return {};
   }
 
-  template <typename Range, typename RangeIn>
-  static void copy_and_remove(Range& out, const RangeIn& entries, long cnt, const K& k, long idx) {
-    assert(cnt > 1);
-    for (int i = 0; i < idx; i++) out[i] = entries[i];
-    for (int i = idx; i < cnt-1; i++) out[i] = entries[i+1];
-  }
-
-  static node* copy_remove_node(KV* old_values, int cnt, const K& k, long idx) {
-    node* new_node = nullptr;
-    if (cnt != 1) {
-      new_node = allocate_node(cnt-1);
-      KV* values = new_node->get_entries();
-      copy_and_remove(values, old_values, cnt, k, idx);
-    }
-    return new_node;
-  }
-
-  static std::optional<std::optional<V>> try_remove_at(bucket* s, const K& k) {
+  static std::optional<std::optional<V>>
+  try_remove_at(bucket* s, const K& k) {
     node* old_node = s->ptr.load();
     int idx = (old_node == nullptr) ? -1 : old_node->find_index(k);
     if (idx == -1) return std::optional(std::optional<V>());
     int cnt = old_node->cnt;
     KV* old_values = old_node->get_entries();
-    //node* new_node = copy_remove_node(old_values, cnt, k, idx);
     node* new_node = nullptr;
-    if (cnt != 1) {
+    if (cnt - 1 > num_cached) {
       new_node = allocate_node(cnt-1);
       KV* values = new_node->get_entries();
-      copy_and_remove(values, old_values, cnt, k, idx);
+      for (int i = 0; i < idx; i++) values[i] = old_values[i];
+      for (int i = idx; i < cnt-1; i++) values[i] = old_values[i+1];
     }
-    if (try_update(s, old_node, new_node))
+    if (get_locks().try_lock((long) s, [=] {
+        if (s->ptr.load() != old_node) return false;
+	vtype nxt_version = next_version(s->version.load());
+	if (new_node != nullptr) {
+	  if (idx < num_cached) {
+	    s->version = busy_version;
+	    s->keyval[idx] = new_node->entries[idx];
+	    s->ptr = new_node;
+	    s->version = nxt_version + num_cached +1;
+	  } else s->ptr = new_node;
+	} else {
+	  s->version = busy_version;
+	  if (cnt - 1 != idx) 
+	    s->keyval[idx] = old_values[cnt-1];
+	  s->version = nxt_version + cnt - 1;
+	}
+	return true;})) {
+      if (old_node->cnt > num_cached) retire_node(old_node);
       return std::optional(std::optional<V>(old_values[idx].second));
-    else return {};
+    } else {
+      retire_node(new_node);
+      return {};
+    }
   }
 
   static std::optional<std::optional<V>>
   try_cached_remove_at(bucket* s, const K& k) {
     cache_snapshot buffer(s);
-    if (is_busy(buffer.version)) return {};
-    int cnt = get_cnt(buffer.version);
+    vtype version = buffer.version;
+    if (is_busy(version)) return {};
+    int cnt = get_cnt(version);
     KV* old_values = buffer.data();
     int idx = find_in_range(old_values, std::min(cnt, num_cached), k);
     if (idx == -1 && cnt <= num_cached) return std::optional<V>();
     if (cnt > num_cached) return {};
-    node* new_node = copy_remove_node(old_values, cnt, k, idx);
-    if (try_cached_update(s, buffer.version, new_node))
+    node* old_node = allocate_node(cnt);
+    for (int i=0; i < cnt; i++) old_node->get_entries()[i] = buffer.data()[i];
+    if (get_locks().try_lock((long) s, [=] {
+        if (s->version.load() != version) return false;
+	s->ptr = old_node;
+	vtype nxt_version = next_version(version);
+	s->version = busy_version;
+	if (cnt - 1 < idx) s->keyval[idx] = std::move(s->keyval[cnt - 1]);
+	s->version = nxt_version + cnt - 1;
+	return true;})) {
+      retire_node(old_node);
       return std::optional<V>(old_values[idx].second);
-    else return {};
+    }
+    retire_node(old_node);
+    return {};
   }
 
 public:
