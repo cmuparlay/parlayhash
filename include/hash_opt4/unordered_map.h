@@ -140,8 +140,7 @@ private:
     else if (cnt <= 3) return (node*) epoch::memory_pool<Node<3>>::New(cnt);
     else if (cnt <= 7) return (node*)epoch::memory_pool<Node<7>>::New(cnt);
     else if (cnt <= 31) return (node*) epoch::memory_pool<Node<31>>::New(cnt);
-    else abort();
-    //else return (node*) epoch::memory_pool<BigNode>::New(cnt);
+    else return (node*) epoch::memory_pool<BigNode>::New(cnt);
   }
 
   // *********************************************
@@ -196,8 +195,6 @@ private:
   // read a snapshot from the cache, and put in buffer
   // the snapshot is associated with a version
   struct cache_snapshot {
-    char buffer[sizeof(KV)*num_cached];
-    bool ok;
     KV* data() {return ok ? (KV*) buffer : nullptr;}
     cache_snapshot(bucket* s, vtype version) : ok(true) {
       assert(!is_busy(version));
@@ -205,6 +202,9 @@ private:
       memcpy(buffer, s->keyval, cnt*sizeof(KV));
       if (s->version.load() != version) ok = false;
     }
+  private:
+    char buffer[sizeof(KV)*num_cached];
+    bool ok;
   };
 
   // insert into a bucket from an old node
@@ -277,31 +277,23 @@ private:
     if (s->version.load() != version) return {};
     int idx = old_node->find_index(k);
     if (idx == -1) return std::optional(std::optional<V>());
-    int cnt = old_node->cnt;
     KV* old_values = old_node->get_entries();
-    node* new_node = nullptr;
-    if (cnt - 1 > num_cached) {
-      new_node = allocate_node(cnt-1);
-      KV* values = new_node->get_entries();
-      for (int i = 0; i < idx; i++) values[i] = old_values[i];
-      for (int i = idx; i < cnt-1; i++) values[i] = old_values[i+1];
-    }
+    int new_cnt = old_node->cnt - 1;
+    node* new_node = allocate_node(new_cnt);
+    KV* new_values = new_node->get_entries();
+    for (int i = 0; i < idx; i++) new_values[i] = old_values[i];
+    for (int i = idx; i < new_cnt; i++) new_values[i] = old_values[i+1];
     if (get_locks().try_lock((long) s, [=] {
         if (s->ptr.load() != old_node) return false;
 	vtype nxt_version = next_version(s->version.load());
 	s->version = busy_version;
-	if (new_node != nullptr) {
-	  if (idx < num_cached) 
-	    s->keyval[idx] = new_node->entries[idx];
-	  s->ptr = new_node;
-	  s->version = nxt_version + num_cached +1;
-	} else {
-	  if (cnt - 1 != idx) 
-	    s->keyval[idx] = old_values[cnt-1];
-	  s->version = nxt_version + num_cached;
-	}
+	if (idx < num_cached && idx < new_cnt)
+	  s->keyval[idx] = new_values[idx];
+	s->ptr = new_node;
+	s->version = nxt_version + std::min(new_cnt, num_cached +1);
 	return true;})) {
       retire_node(old_node);
+      if (new_cnt == num_cached) retire_node(new_node);
       return std::optional(std::optional<V>(old_values[idx].second));
     } else {
       retire_node(new_node);
@@ -347,9 +339,10 @@ public:
   ~unordered_map() {
     auto& table = hash_table.table;
     parlay::parallel_for (0, table.size(), [&] (size_t i) {
-      node* ptr = table[i].ptr.load();
-      if (ptr != nullptr && ptr->cnt > num_cached) {
-	retire_node(table[i].ptr.load());}});
+      if (get_cnt(table[i].version.load()) > num_cached) {
+	node* ptr = table[i].ptr.load();
+	if (ptr != nullptr && ptr->cnt > num_cached) 
+	  retire_node(table[i].ptr.load());}});
   }
 
   static std::pair<bool, std::optional<V>> find_in_cache(bucket* s, const K& k) {
@@ -369,33 +362,58 @@ public:
     }
     return std::pair(cnt <= num_cached ? version : -1l, std::optional<V>());
   }
-    
+
+  static std::optional<V> find_ptr(bucket* s, const K& k) {
+    node* y = s->ptr.load();
+    if (y == nullptr) return std::optional<V>();
+      return y->find(k);
+  }
+  
   std::optional<V> find(const K& k) {
     bucket* s = hash_table.get_bucket(k);
     auto [ok, y] = find_in_cache(s, k);
     if (ok >= 0) return y;
-    return epoch::with_epoch([&] {
-      node* y = s->ptr.load();
-      if (y == nullptr) return std::optional<V>();
-      return y->find(k);
-    });
+    return epoch::with_epoch([&] {return find_ptr(s, k);});
   }
+
+  // bool insert_fast(const K& k, const V& v) {
+  //   bucket* s = hash_table.get_bucket(k);
+  //   __builtin_prefetch (s);
+  //   std::optional<V> r = epoch::with_epoch([&] {
+  //   vtype version = s->version.load();
+  //   if (get_cnt(version) <= num_cached) {
+  //     if (get_locks().try_lock((long) s, [=] {
+  //       if (s->version.load() != version) return false;
+  // 	vtype nxt_version = next_version(version);
+  // 	s->version = busy_version;
+  // 	if (cnt == num_cached) {
+  // 	  node* new_node = allocate_node(cnt+1);
+  // 	  KV* new_data = new_node.get_entries();
+  // 	  for (int i=0; i < cnt; i++)
+  // 	    new_data[i] = s->keyval[i];
+  // 	  new_data[i+1] = KV{k,v};
+  // 	  s->ptr = new_node;
+  // 	} else s->keyval[cnt+1] = KV{k,v};
+  // 	s->version = nxt_version + cnt + 1;
+  // 	return true;}))
+  // 	return std::optional(std::optional<V>());
+  //     else return {}
 
   bool insert(const K& k, const V& v) {
     bucket* s = hash_table.get_bucket(k);
-    //int version = s->version.load();
-    //auto y = try_cached_insert_at(s, k, v);
-    //if (y.has_value()) return !(*y).has_value();
     __builtin_prefetch (s);
     std::optional<V> r = epoch::with_epoch([&] {
-      auto [ok, x] = find_in_cache(s, k);
-      if (ok && x.has_value()) return x;
       return epoch::try_loop([&] () -> std::optional<std::optional<V>> {
+	auto [ok, x] = find_in_cache(s, k);
+	if (ok && x.has_value()) return x;
         int version = s->version.load();
-	if (is_busy(version)) return {};
-	if (get_cnt(version) <= num_cached)
+	if (is_busy(version)) {
+	  auto r = find_ptr(s,k);
+	  if (r.has_value()) return r;
+	  else return {};
+	} else if (get_cnt(version) <= num_cached)
 	  return try_cached_insert_at(s, version, k, v);
-	return try_insert_at(s, version, k, v);
+	else return try_insert_at(s, version, k, v);
 	});});
     return !r.has_value();
   }
@@ -408,10 +426,13 @@ public:
       if (ok && !x.has_value()) return x;
       return epoch::try_loop([&] () -> std::optional<std::optional<V>> {
         int version = s->version.load();
-	if (is_busy(version)) return {};
-	if (get_cnt(version) <= num_cached)
+	if (is_busy(version)) {
+	  auto r = find_ptr(s,k);
+	  if (!r.has_value()) return r;
+	  else return {};
+	} else if (get_cnt(version) <= num_cached)
 	  return try_cached_remove_at(s, version, k);
-	return try_remove_at(s, version, k);});});
+	else return try_remove_at(s, version, k);});});
     return r.has_value();
   }
 
@@ -431,10 +452,11 @@ public:
     auto& table = hash_table.table;
     auto s = epoch::with_epoch([&] {
     	       return parlay::tabulate(table.size(), [&] (size_t i) {
-		 cache_snapshot buffer(table + i);
-		 int cnt = get_cnt(buffer.version);
+	         vtype version = table[i].version.load();
+		 cache_snapshot buffer(table.begin() + i, version);
+		 int cnt = get_cnt(version);
 		 KV* entries = buffer.data();
-		 if (is_busy(buffer.version) || cnt > num_cached) {
+		 if (entries == nullptr || cnt > num_cached) {
 		   node* x = table[i].ptr.load();
 		   cnt = (x == nullptr) ? 0 : x->cnt;
 		   entries = x->get_entries();

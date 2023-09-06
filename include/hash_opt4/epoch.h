@@ -13,7 +13,7 @@
 // Requires some extra memory to pad the front and back of a structure.
 #define EpochMemCheck 1
 #endif
-#define EpochMemCheck 1
+//#define EpochMemCheck 1
 
 //#define USE_MALLOC 1
 
@@ -175,7 +175,7 @@ private:
   }
 
   void advance_epoch(int i, old_current& pid) {
-    if (pid.epoch + 2 < get_epoch().get_current()) {
+    if (pid.epoch + 1 < get_epoch().get_current()) {
       clear_list(pid.old);
       pid.old = pid.current;
       pid.current = nullptr;
