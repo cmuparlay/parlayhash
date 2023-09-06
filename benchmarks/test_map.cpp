@@ -103,6 +103,7 @@ test_loop(commandLine& C,
     parlay::parallel_for(0, n, [&] (size_t i) {
 	       map.insert(a[i], 123); });
 #endif
+    std::cout << map.size() << std::endl;
     if (map.size() != n)
       std::cout << "bad intial size = " << map.size() << std::endl;
     

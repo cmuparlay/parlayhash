@@ -13,7 +13,7 @@
 // Requires some extra memory to pad the front and back of a structure.
 #define EpochMemCheck 1
 #endif
-//#define EpochMemCheck 1
+#define EpochMemCheck 1
 
 //#define USE_MALLOC 1
 
@@ -169,18 +169,7 @@ private:
     while (ptr != nullptr) {
       Link* tmp = ptr;
       ptr = ptr->next;
-      if (!tmp->skip) {
-#ifdef EpochMemCheck
-	paddedT* x = pad_from_T((T*) tmp->value);
-	if (x->head != 10 || x->tail != 10) {
-	  if (x->head == 55) std::cerr << "double free" << std::endl;
-	  else std::cerr << "corrupted head" << std::endl;
-	  if (x->tail != 10) std::cerr << "corrupted tail" << std::endl;
-	  assert(false);
-	}
-#endif
-	Delete((T*) tmp->value);
-      }
+      if (!tmp->skip) Delete((T*) tmp->value);
       free_link(tmp);
     }
   }
@@ -244,13 +233,19 @@ public:
   
   // destructs and frees the object immediately
   void Delete(T* p) {
-     p->~T();
+    p->~T();
 #ifdef EpochMemCheck
-     paddedT* x = pad_from_T(p);
-     x->head = 55;
-     free_node(x);
+    paddedT* x = pad_from_T(p);
+    if (x->head != 10 || x->tail != 10) {
+      if (x->head == 55) std::cerr << "double free" << std::endl;
+      else std::cerr << "corrupted head" << std::endl;
+      if (x->tail != 10) std::cerr << "corrupted tail" << std::endl;
+      std::abort();
+    }
+    x->head = 55;
+    free_node(x);
 #else
-     free_node(p);
+    free_node(p);
 #endif
   }
 
@@ -326,7 +321,7 @@ public:
     int multiplier = 1;
     int cnt = 0;
     while (true)  {
-      if (cnt++ == 10000000000ul/(delay*max_multiplier)) {
+      if (cnt++ == 10000000ul/(delay*max_multiplier)) {
 	std::cerr << "problably in an infinite retry loop" << std::endl;
 	abort(); 
       }
