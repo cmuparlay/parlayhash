@@ -101,13 +101,8 @@ test_loop(commandLine& C,
 	map.insert(HANDLE a[j], 123); }, 1, true);
 #else
     parlay::parallel_for(0, n, [&] (size_t i) {
-#ifdef FAST_INSERT
-     map.insert_fast(a[i], 123);
-#else
-     map.insert(a[i], 123); 
-#endif
-   });
-    //map.insert_fast(a[0], 123);
+     map.insert(a[i], 123);
+    });
 #endif
     if (map.size() != n)
       std::cout << "bad intial size = " << map.size() << std::endl;

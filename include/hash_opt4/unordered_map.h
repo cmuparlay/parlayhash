@@ -49,7 +49,7 @@
 #define PARLAYHASH_H_
 
 #define MEM_STATS 1
-#define FAST_INSERT 1
+//#define WAIT_FREE_FINDS 1
 
 #include <atomic>
 #include <optional>
@@ -69,6 +69,11 @@ template <typename K,
 struct unordered_map {
 private:
   using KV = std::pair<K,V>;
+#ifdef WAIT_FREE_FINDS
+    static constexpr bool default_backup = true;
+#else
+    static constexpr bool default_backup = false;
+#endif
 
   template <typename Range>
   static int find_in_range(const Range& entries, long cnt, const K& k) {
@@ -85,7 +90,7 @@ private:
     using node = Node<0>;
     int cnt;
     KV entries[Size];
-
+      
     KV* get_entries() {
       if (cnt < 31) return entries;
       else return ((BigNode*) this)->entries.begin();
@@ -239,7 +244,7 @@ private:
   
   // insert into a bucket that is fully cached
   static std::optional<std::optional<V>>
-  try_cached_insert_at(bucket* s, vtype version, const K& k, const V& v, bool backup = true) {
+  try_cached_insert_at(bucket* s, vtype version, const K& k, const V& v, bool backup) {
     cache_snapshot buffer(s, version);
     KV* data = buffer.data();
     if (data == nullptr) return {};
@@ -256,7 +261,7 @@ private:
     if (get_locks().try_lock((long) s, [&] {
         if (s->version.load() != version) return false;
 	if (backup) s->ptr = old_node;
-	//else s->ptr = (node*) locked_ptr;
+	else s->ptr = (node*) locked_ptr;
 	vtype nxt_version = next_version(version);
 	s->version = busy_version;
 	if (cnt < num_cached) {
@@ -309,7 +314,7 @@ private:
   }
 
   static std::optional<std::optional<V>>
-  try_cached_remove_at(bucket* s, vtype version, const K& k) {
+  try_cached_remove_at(bucket* s, vtype version, const K& k, bool backup) {
     cache_snapshot buffer(s, version);
     KV* data = buffer.data();
     if (data == nullptr) return {};
@@ -317,22 +322,26 @@ private:
     int idx = find_in_range(data, cnt, k);
     if (idx == -1) return std::optional<V>();
     V r = data[idx].second;
-    node* old_node = allocate_node(cnt);
-    for (int i=0; i < cnt; i++)
-      old_node->get_entries()[i] = data[i];
+    node* old_node;
+    if (backup) {
+      old_node = allocate_node(cnt);
+      for (int i=0; i < cnt; i++)
+	old_node->get_entries()[i] = data[i];
+    }
     if (get_locks().try_lock((long) s, [&] {
         if (s->version.load() != version) return false;
 	s->ptr = old_node;
 	vtype nxt_version = next_version(version);
-	s->version = busy_version;
+	if (backup) s->version = busy_version;
+	else s->ptr = (node*) locked_ptr;
 	if (cnt - 1 < idx)
 	  s->keyval[idx] = std::move(s->keyval[cnt - 1]);
 	s->version = nxt_version + cnt - 1;
 	return true;})) {
-      retire_node(old_node);
+      if (backup) retire_node(old_node);
       return std::optional<V>(r);
     }
-    retire_node(old_node);
+    if (backup) retire_node(old_node);
     return {};
   }
 
@@ -403,7 +412,7 @@ public:
       }}); // end while and with_epoch
   }
 
-  bool insert(const K& k, const V& v, bool backup=true) {
+  bool insert(const K& k, const V& v, bool backup = default_backup) {
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
     std::optional<V> r = epoch::with_epoch([&] {
@@ -429,7 +438,7 @@ public:
     return insert(k, v, false);
   }
 
-  bool remove(const K& k) {
+  bool remove(const K& k, bool backup = default_backup) {
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
     std::optional<V> r = epoch::with_epoch([&] {
@@ -445,7 +454,7 @@ public:
 	  }
 	  return {};
 	} else if (get_cnt(version) <= num_cached)
-	  return try_cached_remove_at(s, version, k);
+	  return try_cached_remove_at(s, version, k, backup);
 	else return try_remove_at(s, version, k);});});
     return r.has_value();
   }
