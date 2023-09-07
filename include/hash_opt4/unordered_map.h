@@ -256,6 +256,7 @@ private:
     if (get_locks().try_lock((long) s, [&] {
         if (s->version.load() != version) return false;
 	if (backup) s->ptr = old_node;
+	//else s->ptr = (node*) locked_ptr;
 	vtype nxt_version = next_version(version);
 	s->version = busy_version;
 	if (cnt < num_cached) {
@@ -374,15 +375,32 @@ public:
     if (y == nullptr) return std::optional<V>();
       return y->find(k);
   }
+
+  static constexpr long locked_ptr = -1;
   
   std::optional<V> find(const K& k) {
     bucket* s = hash_table.get_bucket(k);
     auto [ok, y] = find_in_cache(s, k);
     if (ok) return y;
     return epoch::with_epoch([&] {
-      auto [ok, y] = find_in_cache(s, k);
-      if (ok) return y;
-      return find_ptr(s, k);});
+      while (true) {
+	if (get_cnt(s->version.load()) <= num_cached) {	       
+	  auto [ok, y] = find_in_cache(s, k);
+	  if (ok) return y;}
+	node* y = s->ptr.load();
+	if (y == nullptr) return std::optional<V>();
+	if (y != (node*) locked_ptr) return y->find(k);
+	std::optional<V> r;
+	if (get_locks().try_lock((long) s, [&] {
+	    vtype version = s->version.load();
+	    int cnt = get_cnt(version);
+	    if (cnt <= num_cached) {
+	      int idx = find_in_range(s->keyval, cnt, k);
+	      if (idx != -1) r = std::optional<V>(s->keyval[idx].second);
+	    } else r = (s->ptr.load())->find(k);
+	    return true;}))
+	  return r;
+      }}); // end while and with_epoch
   }
 
   bool insert(const K& k, const V& v, bool backup=true) {
@@ -394,9 +412,12 @@ public:
 	if (ok && x.has_value()) return x;
         int version = s->version.load();
 	if (is_busy(version)) {
-	  auto r = find_ptr(s,k);
-	  if (r.has_value()) return r;
-	  else return {};
+	  node* y = s->ptr.load();
+	  if (y != nullptr && y != (node*) locked_ptr) {
+	    auto r =  y->find(k);
+	    if (r.has_value()) return r;
+	  }
+	  return {};
 	} else if (get_cnt(version) <= num_cached)
 	  return try_cached_insert_at(s, version, k, v, backup);
 	else return try_insert_at(s, version, k, v);
@@ -417,9 +438,12 @@ public:
       return epoch::try_loop([&] () -> std::optional<std::optional<V>> {
         int version = s->version.load();
 	if (is_busy(version)) {
-	  auto r = find_ptr(s,k);
-	  if (!r.has_value()) return r;
-	  else return {};
+	  node* y = s->ptr.load();
+	  if (y != nullptr && y != (node*) locked_ptr) {
+	    auto r =  y->find(k);
+	    if (!r.has_value()) return r;
+	  }
+	  return {};
 	} else if (get_cnt(version) <= num_cached)
 	  return try_cached_remove_at(s, version, k);
 	else return try_remove_at(s, version, k);});});
