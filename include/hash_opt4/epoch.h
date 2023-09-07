@@ -301,6 +301,13 @@ public:
       pools[i].old = pools[i].current = nullptr;
     }
   }
+
+  void stats() {
+#ifndef USE_MALLOC
+    Allocator::print_stats();
+#endif
+  }
+
 };
 
   template <typename Thunk>
@@ -321,7 +328,7 @@ public:
     int multiplier = 1;
     int cnt = 0;
     while (true)  {
-      if (cnt++ == 10000000ul/(delay*max_multiplier)) {
+      if (cnt++ == 100000000ul/(delay*max_multiplier)) {
 	std::cerr << "problably in an infinite retry loop" << std::endl;
 	abort(); 
       }
@@ -347,6 +354,7 @@ public:
     static bool* Retire(T* p) {return get_pool<T>().Retire(p);}
     static bool check_not_corrupted(T* p) {return get_pool<T>().check_not_corrupted(p);}
     static void clear() {get_pool<T>().clear();}
+    static void stats() {get_pool<T>().stats();}
   };
 
 } // end namespace epoch

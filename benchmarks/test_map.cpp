@@ -84,7 +84,7 @@ test_loop(commandLine& C,
   parlay::sequence<double> insert_times;
   parlay::sequence<double> bench_times;
     
-  for (int i = 0; i < rounds + warmup; i++) {
+  for (int i = 0; i < rounds + warmup; i++) { {
     map_type map = grow ? map_type(1) : map_type(n);
     size_t np = n/p;
     size_t mp = m/p;
@@ -101,9 +101,14 @@ test_loop(commandLine& C,
 	map.insert(HANDLE a[j], 123); }, 1, true);
 #else
     parlay::parallel_for(0, n, [&] (size_t i) {
-	       map.insert(a[i], 123); });
+#ifdef FAST_INSERT
+     map.insert_fast(a[i], 123);
+#else
+     map.insert(a[i], 123); 
 #endif
-    std::cout << map.size() << std::endl;
+   });
+    //map.insert_fast(a[0], 123);
+#endif
     if (map.size() != n)
       std::cout << "bad intial size = " << map.size() << std::endl;
     
@@ -226,6 +231,13 @@ test_loop(commandLine& C,
 		<< ", final size = " << final_cnt 
 		<< std::endl;
     }
+    }
+#ifdef MEM_STATS
+    if (verbose) {
+      map_type::clear();
+      map_type::stats();
+    }
+#endif
   }
   return std::tuple{ geometric_mean(insert_times),
       geometric_mean(bench_times)};

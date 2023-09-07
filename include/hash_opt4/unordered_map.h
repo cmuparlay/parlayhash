@@ -48,6 +48,9 @@
 #ifndef PARLAYHASH_H_
 #define PARLAYHASH_H_
 
+#define MEM_STATS 1
+#define FAST_INSERT 1
+
 #include <atomic>
 #include <optional>
 #include <parlay/primitives.h>
@@ -220,7 +223,7 @@ private:
     KV* values = new_node->get_entries();
     for (int i=0; i < cnt; i++) values[i] = old_values[i];
     values[cnt] = KV{k,v};
-    if (get_locks().try_lock((long) s, [=] {
+    if (get_locks().try_lock((long) s, [&] {
         if (s->version.load() != version) return false;
 	vtype nxt_version = next_version(version);
 	s->version = busy_version;
@@ -236,20 +239,23 @@ private:
   
   // insert into a bucket that is fully cached
   static std::optional<std::optional<V>>
-  try_cached_insert_at(bucket* s, vtype version, const K& k, const V& v) {
+  try_cached_insert_at(bucket* s, vtype version, const K& k, const V& v, bool backup = true) {
     cache_snapshot buffer(s, version);
     KV* data = buffer.data();
     if (data == nullptr) return {};
     int cnt = get_cnt(version);
     int idx = find_in_range(data, cnt, k);
     if (idx != -1) return std::optional(data[idx].second);
-    node* old_node = allocate_node(cnt);
-    if (old_node != nullptr)
-      for (int i=0; i < cnt; i++)
-	old_node->get_entries()[i] = data[i];
+    node* old_node;
+    if (backup) {
+      old_node = allocate_node(cnt);
+      if (old_node != nullptr)
+	for (int i=0; i < cnt; i++)
+	  old_node->get_entries()[i] = data[i];
+    }
     if (get_locks().try_lock((long) s, [&] {
         if (s->version.load() != version) return false;
-	s->ptr = old_node;
+	if (backup) s->ptr = old_node;
 	vtype nxt_version = next_version(version);
 	s->version = busy_version;
 	if (cnt < num_cached) {
@@ -264,10 +270,10 @@ private:
 	  s->version = nxt_version + num_cached + 1;
 	}
 	return true;})) {
-      retire_node(old_node);
+      if (backup) retire_node(old_node);
       return std::optional(std::optional<V>());
     }
-    retire_node(old_node);
+    if (backup) retire_node(old_node);
     return {};
   }
 
@@ -283,7 +289,7 @@ private:
     KV* new_values = new_node->get_entries();
     for (int i = 0; i < idx; i++) new_values[i] = old_values[i];
     for (int i = idx; i < new_cnt; i++) new_values[i] = old_values[i+1];
-    if (get_locks().try_lock((long) s, [=] {
+    if (get_locks().try_lock((long) s, [&] {
         if (s->ptr.load() != old_node) return false;
 	vtype nxt_version = next_version(s->version.load());
 	s->version = busy_version;
@@ -313,7 +319,7 @@ private:
     node* old_node = allocate_node(cnt);
     for (int i=0; i < cnt; i++)
       old_node->get_entries()[i] = data[i];
-    if (get_locks().try_lock((long) s, [=] {
+    if (get_locks().try_lock((long) s, [&] {
         if (s->version.load() != version) return false;
 	s->ptr = old_node;
 	vtype nxt_version = next_version(version);
@@ -350,17 +356,17 @@ public:
     vtype version = s->version.load();
     int cnt = get_cnt(version);
     if (cnt == 0)
-      return std::pair(version, std::optional<V>());
+      return std::pair(true, std::optional<V>());
     if (is_busy(version))
-      return std::pair(-1l, std::optional<V>());
+      return std::pair(false, std::optional<V>());
     for (int i=0; i < std::min(cnt, num_cached); i++) {
       memcpy(buffer, &s->keyval[i], sizeof(KV));
       if (version != s->version.load())
-	return std::pair(-1l, std::optional<V>());
+	return std::pair(false, std::optional<V>());
       if (((KV*) buffer)->first == k)
-	return std::pair(version, std::optional<V>(((KV*) buffer)->second));
+	return std::pair(true, std::optional<V>(((KV*) buffer)->second));
     }
-    return std::pair(cnt <= num_cached ? version : -1l, std::optional<V>());
+    return std::pair(cnt <= num_cached, std::optional<V>());
   }
 
   static std::optional<V> find_ptr(bucket* s, const K& k) {
@@ -372,34 +378,14 @@ public:
   std::optional<V> find(const K& k) {
     bucket* s = hash_table.get_bucket(k);
     auto [ok, y] = find_in_cache(s, k);
-    if (ok >= 0) return y;
-    return epoch::with_epoch([&] {return find_ptr(s, k);});
+    if (ok) return y;
+    return epoch::with_epoch([&] {
+      auto [ok, y] = find_in_cache(s, k);
+      if (ok) return y;
+      return find_ptr(s, k);});
   }
 
-  // bool insert_fast(const K& k, const V& v) {
-  //   bucket* s = hash_table.get_bucket(k);
-  //   __builtin_prefetch (s);
-  //   std::optional<V> r = epoch::with_epoch([&] {
-  //   vtype version = s->version.load();
-  //   if (get_cnt(version) <= num_cached) {
-  //     if (get_locks().try_lock((long) s, [=] {
-  //       if (s->version.load() != version) return false;
-  // 	vtype nxt_version = next_version(version);
-  // 	s->version = busy_version;
-  // 	if (cnt == num_cached) {
-  // 	  node* new_node = allocate_node(cnt+1);
-  // 	  KV* new_data = new_node.get_entries();
-  // 	  for (int i=0; i < cnt; i++)
-  // 	    new_data[i] = s->keyval[i];
-  // 	  new_data[i+1] = KV{k,v};
-  // 	  s->ptr = new_node;
-  // 	} else s->keyval[cnt+1] = KV{k,v};
-  // 	s->version = nxt_version + cnt + 1;
-  // 	return true;}))
-  // 	return std::optional(std::optional<V>());
-  //     else return {}
-
-  bool insert(const K& k, const V& v) {
+  bool insert(const K& k, const V& v, bool backup=true) {
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
     std::optional<V> r = epoch::with_epoch([&] {
@@ -412,10 +398,14 @@ public:
 	  if (r.has_value()) return r;
 	  else return {};
 	} else if (get_cnt(version) <= num_cached)
-	  return try_cached_insert_at(s, version, k, v);
+	  return try_cached_insert_at(s, version, k, v, backup);
 	else return try_insert_at(s, version, k, v);
 	});});
     return !r.has_value();
+  }
+
+  bool insert_fast(const K& k, const V& v) {
+    return insert(k, v, false);
   }
 
   bool remove(const K& k) {
@@ -466,6 +456,20 @@ public:
     return parlay::flatten(s);
   }
 
+  static void stats() {
+    epoch::memory_pool<Node<1>>::stats();
+    epoch::memory_pool<Node<3>>::stats();
+    epoch::memory_pool<Node<7>>::stats();
+    epoch::memory_pool<Node<31>>::stats();
+  }
+
+
+  static void clear() {
+    epoch::memory_pool<Node<1>>::clear();
+    epoch::memory_pool<Node<3>>::clear();
+    epoch::memory_pool<Node<7>>::clear();
+    epoch::memory_pool<Node<31>>::clear();
+  }
 };
 
 } // namespace parlay
