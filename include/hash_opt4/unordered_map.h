@@ -34,13 +34,6 @@
 //   the other functions, and takes time proportional to the table
 //   size.
 //
-// Implementation: Each bucket points to a structure (Node) containing
-// an array of entries.  Nodes come in varying sizes and on update the
-// node is copied.  Allows arbitrary growing, but only efficient if
-// not much larger than the original given size (i.e. number of
-// buckets is fixed, but number of entries per bucket can grow).  Time
-// is proportional to the size of the bucket.
-//
 // The type for keys and values must be copyable, and might be copied
 // by the hash_table even when not being updated (e.g. when another
 // key in the same bucket is being updated). 
@@ -159,7 +152,7 @@ private:
   
   static constexpr int mask_bits = 8;
   static constexpr vtype mask = (1l << mask_bits)-1l;
-  static constexpr int num_cached = 3;
+  static constexpr int num_cached = 7;
   static constexpr vtype busy_version = -1;
 
   static vtype next_version(vtype version) {
@@ -188,7 +181,7 @@ private:
       return &(table[idx]);
     }
     Table(size_t n) {
-      int bits = parlay::log2_up(n);
+      int bits = parlay::log2_up(n) - 1;
       size = 1ul << bits;
       table = parlay::sequence<bucket>(size);
     }
@@ -322,7 +315,7 @@ private:
     int idx = find_in_range(data, cnt, k);
     if (idx == -1) return std::optional<V>();
     V r = data[idx].second;
-    node* old_node;
+    node* old_node = nullptr;
     if (backup) {
       old_node = allocate_node(cnt);
       for (int i=0; i < cnt; i++)
@@ -330,10 +323,10 @@ private:
     }
     if (get_locks().try_lock((long) s, [&] {
         if (s->version.load() != version) return false;
-	s->ptr = old_node;
+	if (backup) s->ptr = old_node;
+	else s->ptr = (node*) locked_ptr;
 	vtype nxt_version = next_version(version);
 	if (backup) s->version = busy_version;
-	else s->ptr = (node*) locked_ptr;
 	if (cnt - 1 < idx)
 	  s->keyval[idx] = std::move(s->keyval[cnt - 1]);
 	s->version = nxt_version + cnt - 1;
