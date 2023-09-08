@@ -154,6 +154,7 @@ private:
   static constexpr vtype mask = (1l << mask_bits)-1l;
   static constexpr int num_cached = 7;
   static constexpr vtype busy_version = -1;
+  static constexpr long locked_ptr = -1;
 
   static vtype next_version(vtype version) {
     return ((version >> mask_bits) + 1l) << mask_bits;
@@ -338,23 +339,7 @@ private:
     return {};
   }
 
-public:
-  
-  // *********************************************
-  // The public interface
-  // *********************************************
-
-  unordered_map(size_t n) : hash_table(Table(n)) {}
-  ~unordered_map() {
-    auto& table = hash_table.table;
-    parlay::parallel_for (0, table.size(), [&] (size_t i) {
-      if (get_cnt(table[i].version.load()) > num_cached) {
-	node* ptr = table[i].ptr.load();
-	if (ptr != nullptr && ptr->cnt > num_cached) 
-	  retire_node(table[i].ptr.load());}});
-  }
-
-  static std::pair<bool, std::optional<V>> find_in_cache(bucket* s, const K& k) {
+    static std::pair<bool, std::optional<V>> find_in_cache(bucket* s, const K& k) {
     char buffer[sizeof(KV)];
     vtype version = s->version.load();
     int cnt = get_cnt(version);
@@ -372,14 +357,22 @@ public:
     return std::pair(cnt <= num_cached, std::optional<V>());
   }
 
-  static std::optional<V> find_ptr(bucket* s, const K& k) {
-    node* y = s->ptr.load();
-    if (y == nullptr) return std::optional<V>();
-      return y->find(k);
+public:
+  
+  // *********************************************
+  // The public interface
+  // *********************************************
+
+  unordered_map(size_t n) : hash_table(Table(n)) {}
+  ~unordered_map() {
+    auto& table = hash_table.table;
+    parlay::parallel_for (0, table.size(), [&] (size_t i) {
+      if (get_cnt(table[i].version.load()) > num_cached) {
+	node* ptr = table[i].ptr.load();
+	if (ptr != nullptr && ptr->cnt > num_cached) 
+	  retire_node(table[i].ptr.load());}});
   }
 
-  static constexpr long locked_ptr = -1;
-  
   std::optional<V> find(const K& k) {
     bucket* s = hash_table.get_bucket(k);
     auto [ok, y] = find_in_cache(s, k);
@@ -399,6 +392,13 @@ public:
 	    if (cnt <= num_cached) {
 	      int idx = find_in_range(s->keyval, cnt, k);
 	      if (idx != -1) r = std::optional<V>(s->keyval[idx].second);
+	      // if (s->ptr.load() == (node*) locked_ptr) {
+	      // 	node* old_node = allocate_node(cnt);
+	      // 	for (int i=0; i < cnt; i++)
+	      // 	  old_node->get_entries()[i] = s->keyval[i];
+	      // 	s->ptr = old_node;
+	      // 	retire_node(old_node);
+	      // }
 	    } else r = (s->ptr.load())->find(k);
 	    return true;}))
 	  return r;
@@ -425,10 +425,6 @@ public:
 	else return try_insert_at(s, version, k, v);
 	});});
     return !r.has_value();
-  }
-
-  bool insert_fast(const K& k, const V& v) {
-    return insert(k, v, false);
   }
 
   bool remove(const K& k, bool backup = default_backup) {
