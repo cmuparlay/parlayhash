@@ -51,7 +51,6 @@
 #include <parlay/delayed.h>
 #include "epoch.h"
 #include "lock.h"
-#define USE_LOCKS 1
 
 namespace parlay {
   
@@ -152,7 +151,7 @@ private:
   
   static constexpr int mask_bits = 8;
   static constexpr vtype mask = (1l << mask_bits)-1l;
-  static constexpr int num_cached = 7;
+  static constexpr int num_cached = 3;
   static constexpr vtype busy_version = -1;
   static constexpr long locked_ptr = -1;
 
@@ -182,7 +181,7 @@ private:
       return &(table[idx]);
     }
     Table(size_t n) {
-      int bits = parlay::log2_up(n) - 1;
+      int bits = parlay::log2_up(n);
       size = 1ul << bits;
       table = parlay::sequence<bucket>(size);
     }

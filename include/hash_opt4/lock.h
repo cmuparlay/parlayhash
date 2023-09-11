@@ -7,14 +7,14 @@
 
 namespace parlay {
 
-// creates 2^16 lock slots.
+// creates 2^{bucket_bits} lock slots.
 // locks.try_lock(i, f) will hash i to the h(i) % 2^16th lock.
 // If the lock is not taken then f is run and the try_lock returns the
 // boolean result of f then releasing the lock.   Otherwise it returns false.
 struct lock_set {
 private:
   using lck = std::atomic<bool>;
-  const int bucket_bits = 16;
+  const int bucket_bits = 18;
   const size_t mask = ((1ul) << bucket_bits) - 1;
   std::vector<lck> locks;
 

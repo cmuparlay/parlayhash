@@ -101,14 +101,14 @@ test_loop(commandLine& C,
 	map.insert(HANDLE a[j], 123); }, 1, true);
 #else
     parlay::parallel_for(0, n, [&] (size_t i) {
-     map.insert(a[i], 123);
-    });
+     map.insert(a[i], 123);},1000);
 #endif
     if (map.size() != n)
-      std::cout << "bad intial size = " << map.size() << std::endl;
+      std::cout << "bad initial size = " << map.size() << std::endl;
     
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
     double imops = n / insert_time.count() / 1e6;
+    std::cout << "imops: " << imops << std::endl;
     if (!warmup || i>0) 
       insert_times.push_back(imops);
     

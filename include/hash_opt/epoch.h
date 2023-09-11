@@ -13,6 +13,7 @@
 // Requires some extra memory to pad the front and back of a structure.
 #define EpochMemCheck 1
 #endif
+//#define EpochMemCheck 1
 
 //#define USE_MALLOC 1
 
@@ -168,18 +169,7 @@ private:
     while (ptr != nullptr) {
       Link* tmp = ptr;
       ptr = ptr->next;
-      if (!tmp->skip) {
-#ifdef EpochMemCheck
-	paddedT* x = pad_from_T((T*) tmp->value);
-	if (x->head != 10 || x->tail != 10) {
-	  if (x->head == 55) std::cerr << "double free" << std::endl;
-	  else std::cerr << "corrupted head" << std::endl;
-	  if (x->tail != 10) std::cerr << "corrupted tail" << std::endl;
-	  assert(false);
-	}
-#endif
-	Delete((T*) tmp->value);
-      }
+      if (!tmp->skip) Delete((T*) tmp->value);
       free_link(tmp);
     }
   }
@@ -243,13 +233,19 @@ public:
   
   // destructs and frees the object immediately
   void Delete(T* p) {
-     p->~T();
+    p->~T();
 #ifdef EpochMemCheck
-     paddedT* x = pad_from_T(p);
-     x->head = 55;
-     free_node(x);
+    paddedT* x = pad_from_T(p);
+    if (x->head != 10 || x->tail != 10) {
+      if (x->head == 55) std::cerr << "double free" << std::endl;
+      else std::cerr << "corrupted head" << std::endl;
+      if (x->tail != 10) std::cerr << "corrupted tail" << std::endl;
+      std::abort();
+    }
+    x->head = 55;
+    free_node(x);
 #else
-     free_node(p);
+    free_node(p);
 #endif
   }
 
@@ -271,9 +267,13 @@ public:
   bool check_not_corrupted(T* ptr) {
 #ifdef EpochMemCheck
     paddedT* x = pad_from_T(ptr);
-    if (x->pad != 10) std::cerr << "memory_pool: pad word corrupted" << std::endl;
-    if (x->head != 10) std::cerr << "memory_pool: head word corrupted" << std::endl;
-     if (x->tail != 10) std::cerr << "memory_pool: tail word corrupted" << std::endl;
+    if (x->pad != 10 && x->head == 55)
+      std::cerr << "memory_pool: apparent use after free" << std::endl;
+    else {
+      if (x->pad != 10) std::cerr << "memory_pool: pad word corrupted: " << x->pad << std::endl;
+      if (x->head != 10) std::cerr << "memory_pool: head word corrupted: " << x->head << std::endl;
+    }
+    if (x->tail != 10) std::cerr << "memory_pool: tail word corrupted" << std::endl;
     return (x->pad == 10 && x->head == 10 && x->tail == 10);
 #endif
     return true;
@@ -301,6 +301,13 @@ public:
       pools[i].old = pools[i].current = nullptr;
     }
   }
+
+  void stats() {
+#ifndef USE_MALLOC
+    Allocator::print_stats();
+#endif
+  }
+
 };
 
   template <typename Thunk>
@@ -317,11 +324,11 @@ public:
   }
 
   template <typename F>
-  auto try_loop(const F& f, int delay = 200, const int max_multiplier = 10) {
+  auto try_loop(const F& f, int delay = 1, const int max_multiplier = 1000) {
     int multiplier = 1;
     int cnt = 0;
     while (true)  {
-      if (cnt++ == 10000000000ul/(delay*max_multiplier)) {
+      if (cnt++ == 100000000ul/(delay*max_multiplier)) {
 	std::cerr << "problably in an infinite retry loop" << std::endl;
 	abort(); 
       }
@@ -345,7 +352,9 @@ public:
       return get_pool<T>().New(std::forward<Args>(args)...);}
     static void Delete(T* p) {get_pool<T>().Delete(p);}
     static bool* Retire(T* p) {return get_pool<T>().Retire(p);}
+    static bool check_not_corrupted(T* p) {return get_pool<T>().check_not_corrupted(p);}
     static void clear() {get_pool<T>().clear();}
+    static void stats() {get_pool<T>().stats();}
   };
 
 } // end namespace epoch
