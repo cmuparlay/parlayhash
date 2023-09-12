@@ -14,7 +14,7 @@ namespace parlay {
 struct lock_set {
 private:
   using lck = std::atomic<bool>;
-  const int bucket_bits = 18;
+  const int bucket_bits = 16;
   const size_t mask = ((1ul) << bucket_bits) - 1;
   std::vector<lck> locks;
 
@@ -32,7 +32,7 @@ public:
     lck& x = locks[hash64(i) & mask];
     if (x.compare_exchange_strong(old, true)) {
       result = f();
-      x.store(false); //, std::memory_order_release);
+      x.store(false, std::memory_order_release);
     }
     return result;
   }

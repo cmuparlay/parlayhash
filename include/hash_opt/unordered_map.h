@@ -226,7 +226,7 @@ private:
 	vtype nxt_version = next_version(version);
 	s->version = busy_version;
 	s->ptr = new_node;
-	s->version = nxt_version + num_cached + 1;
+	s->version.store(nxt_version + num_cached + 1);
 	return true;})) {
       retire_node(old_node);
       return std::optional(std::optional<V>());
