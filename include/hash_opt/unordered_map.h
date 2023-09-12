@@ -259,14 +259,14 @@ private:
 	s->version = busy_version;
 	if (cnt < num_cached) {
 	  s->keyval[cnt] = KV{k,v};
-	  s->version = nxt_version + cnt + 1;
+	  s->version.store(nxt_version + cnt + 1, std::memory_order_release);
 	} else {
 	  node* new_node = allocate_node(cnt + 1);
 	  for (int i=0; i < cnt; i++)
 	    new_node->get_entries()[i] = data[i];
 	  new_node->get_entries()[cnt] = KV{k,v};
 	  s->ptr = new_node;
-	  s->version = nxt_version + num_cached + 1;
+	  s->version.store(nxt_version + num_cached + 1);
 	}
 	return true;})) {
       if (backup) retire_node(old_node);

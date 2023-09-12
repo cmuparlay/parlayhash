@@ -12,6 +12,12 @@
 #include <parlay/sequence.h>
 #include "lock.h"
 
+//#define SeparateWriteLock 1
+
+#ifdef SeparateWriteLock
+#include "lock.h"
+#endif
+
 namespace parlay {
   
   template <typename K,
@@ -30,12 +36,10 @@ namespace parlay {
 
     struct alignas(64) header {
       std::atomic<long> table_version;
-      long count;
-      long size;
+      int count;
+      int size;
       tag* tags;
       KV* data;
-      //size_t pad[3];
-      //std::atomic<int> lock;
 	
       header(tag* tags, KV* data, long size)
 	: table_version(0), count(0), tags(tags), data(data), size(size) {} //, lock(-1) {}
@@ -84,32 +88,31 @@ namespace parlay {
 	} 
       }
 
-      // bool try_lock(long version) {
-      // 	int x = -1;
-      // 	if (lock.load() != x || table_version.load() != version || !lock.compare_exchange_strong(x, (int) parlay::worker_id()))
-      // 	  return false;
-      // 	if (table_version.load() == version) {
-      // 	  table_version++;
-      // 	  return true;
-      // 	}
-      // 	lock.store(-1);
-      // 	return false;
-      // }
-
-      // void unlock(long version) {
-      // 	table_version.store(version+2);
-      // 	lock.store(-1);
-      // }
-
-      bool try_lock(long version) {
-      	return (!(version & 1) &&
-      		table_version.compare_exchange_strong(version, version+1));
-      	}
-
-      void unlock(long version) {
-      	table_version.store(version+2, std::memory_order_relaxed);
+#ifdef SeparateWriteLock
+      template <typename F>
+      bool try_lock(long version, const F& f) {
+	return get_locks().try_lock((long) data, [=] {
+	   if (version != table_version.load()) return false;
+	   table_version.store(version + 1);
+	   f();
+	   table_version.store(version + 2, std::memory_order_release);
+	   return true;});
       }
-	
+
+#else
+      template <typename F>
+      bool try_lock(long version, const F& f) {
+      	if (!(version & 1) &&
+	    version == table_version.load() &&
+	    table_version.compare_exchange_strong(version, version+1)) {
+	  f();
+	  table_version.store(version+2, std::memory_order_release);
+	  return true;
+	}
+	return false;
+      }
+#endif
+
       bool insert(size_t hash, const K& k, const V& v) {
 	//std::cout << k << std::endl;
 	auto [h1, h2] = split_hash(hash);
@@ -121,14 +124,10 @@ namespace parlay {
 	  auto [ok, found, i] = find_location_snapshot(version, buffer, h1, h2, k);
 	  if (ok && found) return false;
 	  __builtin_prefetch (data + i);
-	  if (get_locks().try_lock((long) data, [=] {
-	         if (version != table_version.load()) return false;
-		 table_version = version + 1;
+	  if (try_lock(version, [=] {
 		 tags[i] = h2;
 		 data[i] = KV{k,v};
-		 count++;
-		 table_version.store(version + 2, std::memory_order_relaxed);
-		 return true;}))
+		 count++;}))
 	    return true;
 	  //for (volatile int i=0; i < delay; i++);
 	  delay = std::min(20000l, 2*delay);
@@ -143,15 +142,10 @@ namespace parlay {
 	  long version = table_version.load();
 	  auto [ok, found, i] = find_location_snapshot(version, buffer, h1, h2, k);
 	  if (ok && !found) return false;
-	  //__builtin_prefetch (data + i);
-	  if (get_locks().try_lock((long) data, [=] {
-   	         if (version != table_version.load()) return false;
-		 table_version = version + 1;
+	  if (try_lock(version, [=] {
 		 tags[i] = empty;
 		 backfill(i);
-		 count--;
-		 table_version.store(version + 2, std::memory_order_relaxed);
-		 return true;}))
+		 count--;}))
 	    return true;
 	  //for (volatile int i=0; i < delay; i++);
 	  delay = std::min(20000l, 2*delay);

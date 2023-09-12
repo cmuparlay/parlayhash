@@ -108,7 +108,6 @@ test_loop(commandLine& C,
     
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
     double imops = n / insert_time.count() / 1e6;
-    std::cout << "imops: " << imops << std::endl;
     if (!warmup || i>0) 
       insert_times.push_back(imops);
     
