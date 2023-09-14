@@ -39,42 +39,60 @@ namespace parlay {
 	return *ptr.load();});
     }
 
-    // void store(const V& v) {
-    //   __builtin_prefetch (this);
-    //   V* new_v = epoch::memory_pool<V>::New(v);
-    //   V* old_v = ptr.load();			 
-    //   if (ptr.compare_exchange_strong(old_v, new_v)) 
-    // 	epoch::memory_pool<V>::Retire(old_v);
-    //   else epoch::memory_pool<V>::Delete(new_v);
-    // }
+    void store(const V& v) {
+      // Does this need a with_epoch?
+      vtype ver = version.load();
+      int delay = 100;
+      while (true) {
+	if (ver == busy_version || version.load() != ver) return;
+	V* node = epoch::memory_pool<V>::New(v);
+	if (get_locks().try_lock((long) this, [&] {
+	    if (version.load() == ver) {
+	      ptr = node;
+	      version = busy_version;
+	      val = v;
+	      version = ver + 1;
+	    }
+	    return true;})) {
+	  epoch::memory_pool<V>::Retire(node);
+	  return;
+	}
+	epoch::memory_pool<V>::Delete(node);
+	for (volatile int i=0; i < delay; i++);
+	delay = std::min(2*delay, 1000);
+      }
+    }
 
     bool cas(const V& expected_v, const V& v) {
-      __builtin_prefetch (this);
-      return epoch::with_epoch([&] {
-	vtype ver = version.load();
-	bool result = true;
-	while (true) {
-	  V current_v = val;
-	  if (ver != busy_version && version.load() != ver) return false;
-	  V* node = epoch::memory_pool<V>::New(v);
-	  if (get_locks().try_lock((long) this, [&] {
-	      current_v = val;						  
-	      if (version.load() != ver ||
-		  !KeyEqual{}(current_v, expected_v))
-		result = false;
-	      else {
-		ptr = node;
-		version = busy_version;
-		val = v;
-		version = ver + 1;
-	      }
-	      return true;})) {
-	    epoch::memory_pool<V>::Retire(node);
-	    return result;
-	  }
-	  epoch::memory_pool<V>::Delete(node);
-	}});
+      // Does this need a with_epoch?
+      vtype ver = version.load();
+      bool result = true;
+      int delay = 100;
+      while (true) {
+	if (ver != busy_version && version.load() != ver)
+	  return false;
+	V* node = epoch::memory_pool<V>::New(v);
+	if (get_locks().try_lock((long) this, [&] {
+	    V current_v = val;						  
+	    if (version.load() != ver ||
+		!KeyEqual{}(current_v, expected_v))
+	      result = false;
+	    else {
+	      ptr = node;
+	      version = busy_version;
+	      val = v;
+	      version = ver + 1;
+	    }
+	    return true;})) {
+	  epoch::memory_pool<V>::Retire(node);
+	  return result;
+	}
+	epoch::memory_pool<V>::Delete(node);
+	for (volatile int i=0; i < delay; i++);
+	delay = std::min(2*delay, 1000);
+      }
     }
+
   };
 
 } // namespace parlay
