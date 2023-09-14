@@ -10,7 +10,8 @@
 #include "parse_command_line.h"
 
 using K = unsigned long;
-using V = unsigned long;
+using V = __int128; 
+//using V = unsigned long;
 using namespace parlay;
 
 #include "unordered_map.h"
@@ -27,7 +28,9 @@ using namespace parlay;
 
 struct IntHash {
     std::size_t operator()(K const& k) const noexcept {
-      return k * UINT64_C(0xbf58476d1ce4e5b9);}
+      auto x = k * UINT64_C(0xbf58476d1ce4e5b9); // linear transform
+      return (x ^ (x >> 31));  // non-linear transform
+    }
 };
 
 using map_type = unordered_map<K,V,IntHash>;
@@ -55,11 +58,11 @@ test_loop(commandLine& C,
 
   // generate 2*n unique numbers in random order
   // get rid of top bit since growt seems to fail if used (must use it itself)
-  auto x = parlay::delayed_tabulate(1.2* 2 * n,[&] (size_t i) {
-		 return (K) (parlay::hash64(i) >> 1) ;}); 
-  auto y = parlay::random_shuffle(parlay::remove_duplicates(x));
-  auto a = parlay::tabulate(2 * n, [&] (size_t i) {return y[i];});
-  //a = parlay::random_shuffle(parlay::tabulate(2 * n, [] (K i) { return i;}));
+  //auto x = parlay::delayed_tabulate(1.2* 2 * n,[&] (size_t i) {
+  //		 return (K) (parlay::hash64(i) >> 1) ;}); 
+  //auto y = parlay::random_shuffle(parlay::remove_duplicates(x));
+  //auto a = parlay::tabulate(2 * n, [&] (size_t i) {return y[i];});
+  auto a = parlay::random_shuffle(parlay::tabulate(2 * n, [] (K i) { return i;}));
 
   // take m numbers from a in uniform or zipfian distribution
   parlay::sequence<K> b;

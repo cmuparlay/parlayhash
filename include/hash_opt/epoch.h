@@ -328,7 +328,7 @@ public:
     int multiplier = 1;
     int cnt = 0;
     while (true)  {
-      if (cnt++ == 100000000ul/(delay*max_multiplier)) {
+      if (cnt++ == 1000000000ul/(delay*max_multiplier)) {
 	std::cerr << "problably in an infinite retry loop" << std::endl;
 	abort(); 
       }
