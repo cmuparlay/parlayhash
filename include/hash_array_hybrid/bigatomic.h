@@ -19,7 +19,6 @@ namespace parlay {
   struct atomic {
 
     using vtype = long;
-    static constexpr vtype busy_version = -1;
 
     std::atomic<V*> ptr;
     std::atomic<vtype> version;
@@ -31,11 +30,11 @@ namespace parlay {
     V load() {
       vtype ver = version.load();
       V v = val;
-      if (ver != busy_version && version.load() == ver) return v;
+      if ((ver & 1) == 0 && version.load() == ver) return v;
       return epoch::with_epoch([&] {
 	vtype ver = version.load();
 	V v = val;
-	if (ver != busy_version && version.load() == ver) return v;
+	if ((ver & 1) == 0 && version.load() == ver) return v;
 	return *ptr.load();});
     }
 
@@ -43,21 +42,25 @@ namespace parlay {
       // Does this need a with_epoch?
       vtype ver = version.load();
       int delay = 100;
+      if (ver & 1) {
+	while (ver == version.load());
+	return;
+      }
       while (true) {
-	if (ver == busy_version || version.load() != ver) return;
 	V* node = epoch::memory_pool<V>::New(v);
 	if (get_locks().try_lock((long) this, [&] {
 	    if (version.load() == ver) {
 	      ptr = node;
-	      version = busy_version;
-	      val = v;
 	      version = ver + 1;
+	      val = v;
+	      version = ver + 2;
 	    }
 	    return true;})) {
 	  epoch::memory_pool<V>::Retire(node);
 	  return;
 	}
 	epoch::memory_pool<V>::Delete(node);
+	if (version.load() > ver + 1) return;
 	for (volatile int i=0; i < delay; i++);
 	delay = std::min(2*delay, 1000);
       }
@@ -68,26 +71,28 @@ namespace parlay {
       vtype ver = version.load();
       bool result = true;
       int delay = 100;
+      if (ver & 1) {
+	while (ver == version.load());
+	return false;
+      }
       while (true) {
-	if (ver != busy_version && version.load() != ver)
-	  return false;
-	V* node = epoch::memory_pool<V>::New(v);
+	V* node = epoch::memory_pool<V>::New(val);
 	if (get_locks().try_lock((long) this, [&] {
-	    V current_v = val;						  
 	    if (version.load() != ver ||
-		!KeyEqual{}(current_v, expected_v))
+		!KeyEqual{}(val, expected_v))
 	      result = false;
 	    else {
 	      ptr = node;
-	      version = busy_version;
-	      val = v;
 	      version = ver + 1;
+	      val = v;
+	      version = ver + 2;
 	    }
 	    return true;})) {
 	  epoch::memory_pool<V>::Retire(node);
 	  return result;
 	}
 	epoch::memory_pool<V>::Delete(node);
+	if (version.load() > ver + 1) return false;
 	for (volatile int i=0; i < delay; i++);
 	delay = std::min(2*delay, 1000);
       }
