@@ -10,8 +10,8 @@
 #include "parse_command_line.h"
 
 using K = unsigned long;
-using V = __int128; 
-//using V = unsigned long;
+//using V = __int128; 
+using V = unsigned long;
 using namespace parlay;
 
 #include "unordered_map.h"
