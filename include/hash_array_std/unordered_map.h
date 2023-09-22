@@ -45,7 +45,7 @@ namespace parlay {
       while (true) {
 	Voption old_v = values[k].load();
 	if (!old_v.first) return false;
-	else if (values[k].exchange(Voption(false, 0)); true)
+	else if (values[k].compare_exchange_strong(old_v, Voption(false, 0)))
 	  return true;
       }
     }

@@ -175,7 +175,7 @@ private:
   }
 
   void advance_epoch(int i, old_current& pid) {
-    if (pid.epoch + 1 < get_epoch().get_current()) {
+    if (pid.epoch + 10 < get_epoch().get_current()) {
       clear_list(pid.old);
       pid.old = pid.current;
       pid.current = nullptr;
