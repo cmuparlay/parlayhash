@@ -92,15 +92,15 @@ namespace parlay {
 	  version.store(ver + 2, std::memory_order_relaxed);
 	  if (ptr.compare_exchange_strong(tagged_node, node)) {
 	    //node->release();
-	    epoch::memory_pool<hold>::Retire(node);
+	    //epoch::memory_pool<hold>::Retire(node);
 	  }
 	}
 	return true;});
     }
 
     void retire_node(hold* p) {
-      if (has_tag(p)) {
-	//if (p != nullptr) {
+      //if (has_tag(p)) {
+	if (p != nullptr) {
 	//remove_tag(p)->release();
 	epoch::memory_pool<hold>::Retire(remove_tag(p));
       }

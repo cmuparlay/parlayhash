@@ -35,14 +35,14 @@ target_compile_options(parlay INTERFACE -g)
 find_package(Threads REQUIRED)
 target_link_libraries(parlay INTERFACE Threads::Threads)
 
-# # Link against jemalloc
-# find_library(JEMALLOC_LIB jemalloc)
-# if(NOT JEMALLOC_LIB)
-#   message(FATAL_ERROR "Could not find jemalloc.")
-# else()
-#   message("-- Found jemalloc: ${JEMALLOC_LIB}")
-#   target_link_libraries(parlay INTERFACE optimized ${JEMALLOC_LIB})
-# endif()
+# Link against jemalloc
+find_library(JEMALLOC_LIB jemalloc)
+if(NOT JEMALLOC_LIB)
+  message(FATAL_ERROR "Could not find jemalloc.")
+else()
+  message("-- Found jemalloc: ${JEMALLOC_LIB}")
+  target_link_libraries(parlay INTERFACE optimized ${JEMALLOC_LIB})
+endif()
 
 add_subdirectory(benchmarks)
 

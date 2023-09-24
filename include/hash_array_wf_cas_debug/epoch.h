@@ -13,9 +13,9 @@
 // Requires some extra memory to pad the front and back of a structure.
 #define EpochMemCheck 1
 #endif
-//#define EpochMemCheck 1
+#define EpochMemCheck 1
 
-//#define USE_MALLOC 1
+#define USE_MALLOC 1
 
 // ***************************
 // epoch structure
@@ -144,6 +144,7 @@ private:
   // only used for debugging (i.e. EpochMemCheck=1).
   struct paddedT {
     long pad;
+    std::atomic<long> epoch;
     std::atomic<long> head;
     xT value;
     std::atomic<long> tail;
@@ -155,6 +156,10 @@ private:
   bool* add_to_current_list(void* p) {
     auto i = worker_id();
     auto &pid = pools[i];
+#ifdef EpochMemCheck
+    paddedT* x = pad_from_T((T*) p);
+    x->epoch = get_epoch().get_my_epoch();
+#endif
     advance_epoch(i, pid);
     Link* lnk = allocate_link();
     lnk->next = pid.current;
@@ -254,6 +259,7 @@ public:
 #ifdef EpochMemCheck
     paddedT* x = allocate_node();
     x->pad = x->head = x->tail = 10;
+    x->epoch = -1;
     T* newv = &x->value;
     new (newv) T(args...);
     assert(check_not_corrupted(newv));
@@ -267,8 +273,11 @@ public:
   bool check_not_corrupted(T* ptr) {
 #ifdef EpochMemCheck
     paddedT* x = pad_from_T(ptr);
-    if (x->pad != 10 && x->head == 55)
-      std::cerr << "memory_pool: apparent use after free" << std::endl;
+    if ((x->pad != 10 && x->head == 55) ||
+	(x->epoch != -1 && get_epoch().get_current() > x->epoch + 1)) {
+      std::cerr << "memory_pool: apparent use after free: " << x->epoch << ", " << get_epoch().get_current() << std::endl;
+      return false;
+    }
     else {
       if (x->pad != 10) std::cerr << "memory_pool: pad word corrupted: " << x->pad << std::endl;
       if (x->head != 10) std::cerr << "memory_pool: head word corrupted: " << x->head << std::endl;
