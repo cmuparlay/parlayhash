@@ -35,7 +35,6 @@ namespace parlay {
     }
 
     void store(const V& v) {
-      // Does this need a with_epoch?
       vtype ver = version.load();
       int delay = 100;
       if (ver & 1) {
@@ -72,9 +71,9 @@ namespace parlay {
 		!KeyEqual{}(current_v, expected_v))
 	      result = false;
 	    else {
-	      version = ver + 1;
+	      version.store(ver + 1);
 	      val = v;
-	      version = ver + 2;
+	      version.store(ver + 2, std::memory_order_relaxed);
 	    }
 	    return true;})) 
 	  return result;

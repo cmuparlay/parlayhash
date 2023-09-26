@@ -20,7 +20,13 @@ namespace parlay {
 
     using vtype = long;
 
-    std::atomic<V*> ptr;
+    struct backup : epoch::link {
+      const V val;
+      V get() {return val;}
+      backup(V v) : val(v) {}
+    };
+
+    std::atomic<backup*> ptr;
     std::atomic<vtype> version;
     V val;
     
@@ -34,8 +40,9 @@ namespace parlay {
       return epoch::with_epoch([&] {
 	vtype ver = version.load();
 	V v = val;
+	//std::atomic_thread_fence(std::memory_order_acquire);
 	if ((ver & 1) == 0 && version.load() == ver) return v;
-	return *ptr.load();});
+	return ptr.load()->get();});
     }
 
     void store(const V& v) {
@@ -47,7 +54,7 @@ namespace parlay {
 	return;
       }
       while (true) {
-	V* node = epoch::memory_pool<V>::New(v);
+	backup* node = epoch::memory_pool<backup>::New(v);
 	if (get_locks().try_lock((long) this, [&] {
 	    if (version.load() == ver) {
 	      ptr = node;
@@ -56,10 +63,10 @@ namespace parlay {
 	      version = ver + 2;
 	    }
 	    return true;})) {
-	  epoch::memory_pool<V>::Retire(node);
+	  epoch::memory_pool<backup>::Retire(node);
 	  return;
 	}
-	epoch::memory_pool<V>::Delete(node);
+	epoch::memory_pool<backup>::Delete(node);
 	if (version.load() > ver + 1) return;
 	for (volatile int i=0; i < delay; i++);
 	delay = std::min(2*delay, 1000);
@@ -76,22 +83,23 @@ namespace parlay {
 	return false;
       }
       while (true) {
-	V* node = epoch::memory_pool<V>::New(val);
+	backup* node = epoch::memory_pool<backup>::New(val);
 	if (get_locks().try_lock((long) this, [&] {
 	    if (version.load() != ver ||
 		!KeyEqual{}(val, expected_v))
 	      result = false;
 	    else {
 	      ptr = node;
-	      version = ver + 1;
+	      vtype ver1 = ver+1;
+	      version.store(ver1);
 	      val = v;
-	      version = ver + 2;
+	      version.store(ver + 2, std::memory_order_relaxed); 
 	    }
 	    return true;})) {
-	  epoch::memory_pool<V>::Retire(node);
+	  epoch::memory_pool<backup>::Retire(node);
 	  return result;
 	}
-	epoch::memory_pool<V>::Delete(node);
+	epoch::memory_pool<backup>::Delete(node);
 	if (version.load() > ver + 1) return false;
 	for (volatile int i=0; i < delay; i++);
 	delay = std::min(2*delay, 1000);

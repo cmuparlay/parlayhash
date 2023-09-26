@@ -21,21 +21,8 @@ namespace parlay {
 
     struct hold {
       V val;
-      size_t x[10];
-      //V* next;
-      //bool released;
-      V get() {
-	return val;
-	//return *next;
-      }
-      void release() {
-	//if (released) {std::cout << "double release" << std::endl; abort();}
-	//released = true;
-	//epoch::memory_pool<V>::Retire(next);
-      }
-      hold(V v)
-      : val(v) {}
-      // : next(epoch::memory_pool<V>::New(v)) {} //, released(false) {}
+      V get() {	return val; } 
+      hold(V v) : val(v) {}
     };
       
     std::atomic<hold*> ptr;
@@ -59,7 +46,6 @@ namespace parlay {
 	V v = val;
 	if (!has_tag(ptr.load()) && version.load() == ver) return v;
 	hold* p = ptr.load();
-	epoch::memory_pool<hold>::check_not_corrupted(remove_tag(p));
 	return remove_tag(p)->get();});
     }
 
@@ -71,7 +57,6 @@ namespace parlay {
 	hold* p = ptr.load();
 	if (has_tag(p) || version.load() != ver) {
 	  p = ptr.load();
-	  epoch::memory_pool<hold>::check_not_corrupted(remove_tag(p));
 	  old_v = remove_tag(p)->get();
 	}
 	if (!KeyEqual{}(old_v, expected_v))
@@ -79,29 +64,27 @@ namespace parlay {
 	hold* node = epoch::memory_pool<hold>::New(new_v);
 	hold* tagged_node = add_tag(node);
 	hold* phold = p;
-	if (!ptr.compare_exchange_strong(p, tagged_node))
-	  if (remove_tag(phold) != p ||
-	      !ptr.compare_exchange_strong(p, tagged_node)) {
+	if (!(p == ptr.load() && ptr.compare_exchange_strong(p, tagged_node))) {
+	  hold* x = ptr.load();
+	  if (remove_tag(phold) != x ||
+	      !ptr.compare_exchange_strong(x, tagged_node)) {
 	    epoch::memory_pool<hold>::Delete(node);
 	    return false;
 	  }
+	}
 	retire_node(p);
         if (!(ver & 1) &&
-	    version.compare_exchange_strong(ver,ver+1)) {
+	    ver == version.load() &&
+	    version.compare_exchange_strong(ver, ver+1)) {
 	  val = new_v;
 	  version.store(ver + 2, std::memory_order_relaxed);
-	  if (ptr.compare_exchange_strong(tagged_node, node)) {
-	    //node->release();
-	    //epoch::memory_pool<hold>::Retire(node);
-	  }
+	  ptr.compare_exchange_strong(tagged_node, node);
 	}
 	return true;});
     }
 
     void retire_node(hold* p) {
-      //if (has_tag(p)) {
-	if (p != nullptr) {
-	//remove_tag(p)->release();
+      if (p != nullptr) {
 	epoch::memory_pool<hold>::Retire(remove_tag(p));
       }
     }

@@ -182,12 +182,8 @@ private:
       pid.epoch = get_epoch().get_current();
     }
     // a heuristic
-    auto now = system_clock::now();
-    if (++pid.count == update_threshold  ||
-	duration_cast<milliseconds>(now - pid.time).count() >
-	milliseconds_between_epoch_updates * (1 + ((float) i)/workers)) {
+    if (++pid.count == update_threshold) {
       pid.count = 0;
-      pid.time = now;
       get_epoch().update_epoch();
     }
   }
@@ -212,11 +208,10 @@ public:
   
   memory_pool_() {
     workers = num_workers();
-    update_threshold = 10 * workers;
+    update_threshold = 20 * workers;
     pools = std::vector<old_current>(workers);
     for (int i = 0; i < workers; i++) {
       pools[i].count = parlay::hash64(i) % update_threshold;
-      pools[i].time = system_clock::now();
     }
   }
 

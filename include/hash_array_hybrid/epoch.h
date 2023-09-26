@@ -102,26 +102,9 @@ struct alignas(64) epoch_s {
 // epoch pools
 // ***************************
 
-struct Link {
-  Link* next;
-  bool skip;
-  void* value;
+struct link {
+  link* next;
 };
-
-  // x should point to the skip field of a link
-  inline void undo_retire(bool* x) { *x = true;}
-  inline void undo_allocate(bool* x) { *x = false;}
-
-#ifdef USE_MALLOC
-  inline Link* allocate_link() {return (Link*) malloc(sizeof(Link));}
-  inline void free_link(Link* x) {return free(x);}
-#else
-  using list_allocator = typename parlay::type_allocator<Link>;
-  inline Link* allocate_link() {return list_allocator::alloc();}
-  inline void free_link(Link* x) {return list_allocator::free(x);}
-#endif
-  
-  using namespace std::chrono;
 
 template <typename xT>
 struct alignas(64) memory_pool_ {
@@ -129,15 +112,13 @@ private:
 
   static constexpr double milliseconds_between_epoch_updates = 20.0;
   long update_threshold;
-  using sys_time = time_point<std::chrono::system_clock>;
 
   // each thread keeps one of these
   struct alignas(256) old_current {
-    Link* old;  // linked list of retired items from previous epoch
-    Link* current; // linked list of retired items from current epoch
+    link* old;  // linked list of retired items from previous epoch
+    link* current; // linked list of retired items from current epoch
     long epoch; // epoch on last retire, updated on a retire
     long count; // number of retires so far, reset on updating the epoch
-    sys_time time; // time of last epoch update
     old_current() : old(nullptr), current(nullptr), epoch(0) {}
   };
 
@@ -152,25 +133,20 @@ private:
   std::vector<old_current> pools;
   int workers;
 
-  bool* add_to_current_list(void* p) {
+  void add_to_current_list(link* p) {
     auto i = worker_id();
     auto &pid = pools[i];
     advance_epoch(i, pid);
-    Link* lnk = allocate_link();
-    lnk->next = pid.current;
-    lnk->value = p;
-    lnk->skip = false;
-    pid.current = lnk;
-    return &(lnk->skip);
+    p->next = pid.current;
+    pid.current = p;
   }
 
   // destructs and frees a linked list of objects 
-  void clear_list(Link* ptr) {
+  void clear_list(link* ptr) {
     while (ptr != nullptr) {
-      Link* tmp = ptr;
+      link* tmp = ptr;
       ptr = ptr->next;
-      if (!tmp->skip) Delete((T*) tmp->value);
-      free_link(tmp);
+      Delete((T*) tmp);
     }
   }
 
@@ -182,12 +158,8 @@ private:
       pid.epoch = get_epoch().get_current();
     }
     // a heuristic
-    auto now = system_clock::now();
-    if (++pid.count == update_threshold  ||
-	duration_cast<milliseconds>(now - pid.time).count() >
-	milliseconds_between_epoch_updates * (1 + ((float) i)/workers)) {
+    if (++pid.count == update_threshold) {
       pid.count = 0;
-      pid.time = now;
       get_epoch().update_epoch();
     }
   }
@@ -212,16 +184,15 @@ public:
   
   memory_pool_() {
     workers = num_workers();
-    update_threshold = 10 * workers;
+    update_threshold = 20 * workers;
     pools = std::vector<old_current>(workers);
     for (int i = 0; i < workers; i++) {
       pools[i].count = parlay::hash64(i) % update_threshold;
-      pools[i].time = system_clock::now();
     }
   }
 
   memory_pool_(const memory_pool_&) = delete;
-  ~memory_pool_() {} // clear(); }
+  ~memory_pool_() { clear(); }
 
   // noop since epoch announce is used for the whole operation
   void acquire(T* p) { }
@@ -288,8 +259,8 @@ public:
   }
 
   // retire and return a pointer if want to undo the retire
-  bool* Retire(T* p) {
-    return add_to_current_list((void*) p);}
+  void Retire(T* p) {
+    add_to_current_list((link*) p);}
   
   // clears all the lists 
   // to be used on termination
@@ -351,7 +322,7 @@ public:
     static T* New(Args... args) {
       return get_pool<T>().New(std::forward<Args>(args)...);}
     static void Delete(T* p) {get_pool<T>().Delete(p);}
-    static bool* Retire(T* p) {return get_pool<T>().Retire(p);}
+    static void Retire(T* p) {get_pool<T>().Retire(p);}
     static bool check_not_corrupted(T* p) {return get_pool<T>().check_not_corrupted(p);}
     static void clear() {get_pool<T>().clear();}
     static void stats() {get_pool<T>().stats();}

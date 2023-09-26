@@ -156,11 +156,11 @@ private:
   bool* add_to_current_list(void* p) {
     auto i = worker_id();
     auto &pid = pools[i];
+    advance_epoch(i, pid);
 #ifdef EpochMemCheck
     paddedT* x = pad_from_T((T*) p);
-    x->epoch = get_epoch().get_my_epoch();
+    x->epoch = pid.epoch;
 #endif
-    advance_epoch(i, pid);
     Link* lnk = allocate_link();
     lnk->next = pid.current;
     lnk->value = p;
@@ -180,7 +180,7 @@ private:
   }
 
   void advance_epoch(int i, old_current& pid) {
-    if (pid.epoch + 1 < get_epoch().get_current()) {
+    if (pid.epoch < get_epoch().get_current()) {
       clear_list(pid.old);
       pid.old = pid.current;
       pid.current = nullptr;
@@ -275,7 +275,7 @@ public:
     paddedT* x = pad_from_T(ptr);
     if ((x->pad != 10 && x->head == 55) ||
 	(x->epoch != -1 && get_epoch().get_current() > x->epoch + 1)) {
-      std::cerr << "memory_pool: apparent use after free: " << x->epoch << ", " << get_epoch().get_current() << std::endl;
+      std::cerr << "memory_pool: apparent use after free, retired at epoch: " << x->epoch << ", used at: " << get_epoch().get_current() << std::endl;
       return false;
     }
     else {
