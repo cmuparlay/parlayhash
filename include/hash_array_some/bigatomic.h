@@ -46,7 +46,7 @@ namespace parlay {
 	    if (version.load() == ver) {
 	      version = ver + 1;
 	      val = v;
-	      version = ver + 2;
+	      version.store(ver + 2, std::memory_order_relaxed);
 	    }
 	    return true;})) 
 	  return;
