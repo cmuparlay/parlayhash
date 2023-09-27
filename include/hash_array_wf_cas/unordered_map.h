@@ -17,7 +17,7 @@ namespace parlay {
 	    typename V,
 	    class Hash = std::hash<K>,
 	    class KeyEqual = std::equal_to<K>>
-  struct unordered_map {
+  struct alignas(64) unordered_map {
 
     using Voption = std::pair<V,V>;
     using entry = atomic<Voption>;

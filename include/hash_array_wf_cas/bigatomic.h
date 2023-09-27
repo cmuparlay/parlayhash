@@ -41,31 +41,52 @@ namespace parlay {
       vtype ver = version.load();
       V v = cache;
       hold* p = ptr.load();
-      if (is_valid(ptr.load()) && version.load() == ver)
+      // check if value in the cache is valid
+      if (is_valid(p) && version.load() == ver)
 	return std::pair(p, v);
-      p = ptr.load();
+      // if not, get the value indirectly from p
       return std::pair(p, remove_mark(p)->get());
     }
 
     bool try_install(hold* p_old, hold* p_new) {
       hold* p_tmp = p_old;
+      // try to swap in p_new for p_old
       if (p_old == ptr.load() &&
 	  ptr.compare_exchange_strong(p_old, p_new))
 	return true;
-      // if failed the first time because the pointer was validated
-      // (i.e. with same value) then we need to try again.
+      // if failed the first time, and this was because p_old was
+      // validated (i.e. with the same value) then we need to try
+      // again.
       hold* x = ptr.load();
       return (remove_mark(p_tmp) == x &&
 	      ptr.compare_exchange_strong(x, p_new));
     }
 
     void try_load_cache(V v, hold* p, vtype ver) {
+      // try to lock the cache
       if (!(ver & 1) && ver == version.load() &&
 	  version.compare_exchange_strong(ver, ver+1)) {
+	// when locked load the cache
 	cache = v;
+	// unlock the cache
 	version.store(ver + 2, std::memory_order_relaxed);
-	// try to validate the pointer
+	// try to validate the cache if p has not changed
 	ptr.compare_exchange_strong(p, remove_mark(p));
+      }
+    }
+
+    // try to update the atomic with new_v.  old_p is the current
+    // pointer (consistent with the old value), and ver the current
+    // version.
+    bool try_update(V new_v, hold* old_p, vtype ver) {
+      hold* new_p = mark_invalid(epoch::memory_pool<hold>::New(new_v));
+      if (try_install(old_p, new_p)) {
+	epoch::memory_pool<hold>::Retire(remove_mark(old_p));
+	try_load_cache(new_v, new_p, ver);
+	return true;
+      } else {
+	epoch::memory_pool<hold>::Delete(remove_mark(new_p));
+	return false;
       }
     }
 
@@ -83,19 +104,10 @@ namespace parlay {
       return epoch::with_epoch([&] { return read().second;});
     }
 
-    bool store(const V& new_v) {
+    void store(const V& new_v) {
       vtype ver = version.load();
-      return epoch::with_epoch([&] {
-	auto [old_p, old_v] = read();				 
-	hold* new_p = mark_invalid(epoch::memory_pool<hold>::New(new_v));
-	if (try_install(old_p, new_p)) {
-	  epoch::memory_pool<hold>::Retire(remove_mark(old_p));
-	  try_load_cache(new_v, new_p, ver);
-	  return true;
-	} else {
-	  epoch::memory_pool<hold>::Delete(remove_mark(new_p));
-	  return false;
-	} });
+      hold* old_p = ptr.load();
+      try_update(new_v, old_p, ver);
     }
 
     bool cas(const V& expected_v, const V& new_v) {
@@ -103,17 +115,9 @@ namespace parlay {
       if (KeyEqual{}(expected_v, new_v)) return true;
       return epoch::with_epoch([&] {
 	auto [old_p, old_v] = read();				 
-	if (!KeyEqual{}(old_v, expected_v))
-	  return false;
-	hold* new_p = mark_invalid(epoch::memory_pool<hold>::New(new_v));
-	if (try_install(old_p, new_p)) {
-	  epoch::memory_pool<hold>::Retire(remove_mark(old_p));
-	  try_load_cache(new_v, new_p, ver);
-	  return true;
-	} else {
-	  epoch::memory_pool<hold>::Delete(remove_mark(new_p));
-	  return false;
-	} });
+	if (!KeyEqual{}(old_v, expected_v)) return false;
+	return try_update(new_v, old_p, ver);
+      });
     }
   };
 

@@ -15,7 +15,7 @@ namespace parlay {
   
   template <typename V,
 	    class KeyEqual = std::equal_to<V>>
-  struct atomic {
+  struct alignas(32) atomic {
 
     V val;
     
