@@ -6,9 +6,8 @@
 
 #include <atomic>
 #include <thread>
-#include <type_traits>
+#include <type_traits>    // IWYU pragma: keep
 
-#include "atomic_wait.h"
 
 namespace parlay {
 
@@ -16,10 +15,8 @@ namespace parlay {
 // and return nothing. Could be a lambda, e.g. [] () {}.
 
 struct WorkStealingJob {
-  WorkStealingJob() {
-    done.store(false, std::memory_order_relaxed);
-  }
-  ~WorkStealingJob() = default;
+  WorkStealingJob() : done{false} { }
+  virtual ~WorkStealingJob() = default;
   void operator()() {
     assert(done.load(std::memory_order_relaxed) == false);
     execute();

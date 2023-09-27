@@ -95,7 +95,8 @@ namespace parlay {
     atomic(const V& v) : ptr(epoch::memory_pool<hold>::New()), version(0), cache(v) {}
     atomic() : ptr(nullptr), version(0) {}
     ~atomic() {	epoch::memory_pool<hold>::Retire(remove_mark(ptr.load()));}
-
+    
+    
     V load() {
       vtype ver = version.load();
       V v = cache;

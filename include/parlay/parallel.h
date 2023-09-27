@@ -6,6 +6,7 @@
 #include <cstdlib>
 
 #include <algorithm>
+#include <functional>
 #include <string>
 #include <thread>
 #include <type_traits>  // IWYU pragma: keep
@@ -74,6 +75,41 @@ inline void blocked_for(size_t start, size_t end, size_t block_size, F&& f, bool
   }
 }
 
+// ----------------------------------------------------------------------------
+//                              Some more extras
+//
+//  - par_do_if :   execute in parallel if do_parallel is true, else sequential
+//  - par_do3 :     parallelize three jobs
+//  - par_do3_if :  guess from the two above
+// ----------------------------------------------------------------------------
+
+template <typename Lf, typename Rf>
+static void par_do_if(bool do_parallel, Lf&& left, Rf&& right, bool cons = false) {
+  if (do_parallel)
+    par_do(std::forward<Lf>(left), std::forward<Rf>(right), cons);
+  else {
+    std::forward<Lf>(left)();
+    std::forward<Rf>(right)();
+  }
+}
+
+template <typename Lf, typename Mf, typename Rf>
+inline void par_do3(Lf&& left, Mf&& mid, Rf&& right) {
+  auto left_mid = [&]() { par_do(std::forward<Lf>(left), std::forward<Mf>(mid)); };
+  par_do(left_mid, std::forward<Rf>(right));
+}
+
+template <typename Lf, typename Mf, typename Rf>
+static void par_do3_if(bool do_parallel, Lf&& left, Mf&& mid, Rf&& right) {
+  if (do_parallel)
+    par_do3(std::forward<Lf>(left), std::forward<Mf>(mid), std::forward<Rf>(right));
+  else {
+    std::forward<Lf>(left)();
+    std::forward<Mf>(mid)();
+    std::forward<Rf>(right)();
+  }
+}
+
 }  // namespace parlay
 
 //****************************************************
@@ -102,7 +138,12 @@ inline void blocked_for(size_t start, size_t end, size_t block_size, F&& f, bool
 // Parlay's Homegrown Scheduler
 #else
 
+#define PARLAY_USING_PARLAY_SCHEDULER
+
 #include "scheduler.h"
+
+#include "internal/work_stealing_job.h"
+
 
 namespace parlay {
   
@@ -126,37 +167,25 @@ inline unsigned int init_num_workers() {
 #pragma warning(pop)
 #endif
 
-// Note that since scheduler is templatized its static (and thread
-// local) member worker_info will be shared across all compilation
-// units.
-using scheduler_t = scheduler<WorkStealingJob>;
+using scheduler_type = scheduler<WorkStealingJob>;
 
-// Use a "Meyer singleton" to provide thread-safe 
-// initialisation and destruction of the scheduler
-//
-// The declaration of get_default_scheduler must be 
-// extern inline to ensure that there is only ever one 
-// copy of the scheduler. This is guaranteed by the C++
-// standard: 7.1.2/4 A static local variable in an
-// extern inline function always refers to the same
-// object.
-
-extern inline scheduler_t* get_scheduler() {
-  if (scheduler_t::worker_info.my_scheduler == nullptr) {
-    static thread_local scheduler_t default_sched(init_num_workers());
-    return &default_sched;
+extern inline scheduler_type& get_current_scheduler() {
+  auto current_scheduler = scheduler_type::get_current_scheduler();
+  if (current_scheduler == nullptr) {
+    static thread_local scheduler_type local_scheduler(init_num_workers());
+    return local_scheduler;
   }
-  return scheduler_t::worker_info.my_scheduler;
+  return *current_scheduler;
 }
 
 }  // namespace internal
 
 inline size_t num_workers() {
-  return internal::get_scheduler()->num_workers();
+  return internal::get_current_scheduler().num_workers();
 }
 
 inline size_t worker_id() {
-  return internal::get_scheduler()->worker_id();
+  return internal::get_current_scheduler().worker_id();
 }
 
 template <typename F>
@@ -170,11 +199,8 @@ inline void parallel_for(size_t start, size_t end, F&& f, long granularity, bool
     for (size_t i = start; i < end; i++) f(i);
   }
   else if (end > start) {
-    fork_join_scheduler::parfor(internal::get_scheduler(),
-				start, end,
-				f,
-				static_cast<size_t>(granularity),
-				conservative);
+    fork_join_scheduler::parfor(internal::get_current_scheduler(), start, end,
+      std::forward<F>(f), static_cast<size_t>(granularity), conservative);
   }
 }
 
@@ -182,18 +208,19 @@ template <typename Lf, typename Rf>
 inline void par_do(Lf&& left, Rf&& right, bool conservative) {
   static_assert(std::is_invocable_v<Lf&&>);
   static_assert(std::is_invocable_v<Rf&&>);
-  return fork_join_scheduler::pardo(internal::get_scheduler(),
-				    std::forward<Lf>(left),
-				    std::forward<Rf>(right),
-				    conservative);
+  return fork_join_scheduler::pardo(internal::get_current_scheduler(), std::forward<Lf>(left), std::forward<Rf>(right), conservative);
 }
 
-  template <typename F>
-  void add_scheduler(int p, F&& f) {
-    internal::scheduler_t sched(p);
-    f();
-  }
-    
+// Execute the given function f() on p threads inside its own private scheduler instance
+//
+// The scheduler instance is destroyed upon completion and can not be re-used. Creating a
+// scheduler is expensive, so it's not a good idea to use this for very cheap functions f.
+template <typename F>
+void execute_with_scheduler(unsigned int p, F&& f) {
+  internal::scheduler_type scheduler(p);
+  std::invoke(std::forward<F>(f));
+}
+
 }  // namespace parlay
 
 #endif

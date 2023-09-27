@@ -9,7 +9,7 @@
 #include <optional>
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
-#include "bigatomic.h"
+#include <big_atomic.h>
 
 namespace parlay {
   
@@ -17,10 +17,10 @@ namespace parlay {
 	    typename V,
 	    class Hash = std::hash<K>,
 	    class KeyEqual = std::equal_to<K>>
-  struct unordered_map {
+  struct alignas(64) unordered_map {
 
-    using Voption = std::pair<V,V>;
-    using entry = atomic<Voption>;
+    using Voption = std::pair<V,V>; 
+    using entry = big_atomic<Voption>;
     
     parlay::sequence<entry> values;
     
@@ -36,7 +36,7 @@ namespace parlay {
       while (true) {
 	Voption old_v = values[k].load();
 	if (old_v.first) return false;
-	else if (values[k].cas(old_v, Voption(true,v)))
+	else if (values[k].compare_and_swap(old_v, Voption(true,v)))
 	  return true;
       }
     }
@@ -45,7 +45,7 @@ namespace parlay {
       while (true) {
 	Voption old_v = values[k].load();
 	if (!old_v.first) return false;
-	else if (values[k].cas(old_v, Voption(false,0)))
+	else if (values[k].compare_and_swap(old_v, Voption(false,0)))
 	  return true;
       }
     }

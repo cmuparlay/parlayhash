@@ -17,7 +17,7 @@ private:
   std::string name;
 
   auto get_time() {
-    return std::chrono::system_clock::now();
+    return std::chrono::high_resolution_clock::now();
   }
 
   void report(double time, std::string str) {

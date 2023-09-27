@@ -17,6 +17,7 @@
 
 #include "../monoid.h"
 #include "../parallel.h"
+#include "../relocation.h"
 #include "../sequence.h"
 #include "../slice.h"
 #include "../utilities.h"

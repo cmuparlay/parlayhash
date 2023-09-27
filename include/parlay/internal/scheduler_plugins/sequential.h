@@ -3,14 +3,16 @@
 
 #include <cstddef>
 
+#include <functional>
+#include <utility>
+
 namespace parlay {
 
 // IWYU pragma: private, include "../../parallel.h"
 
 inline size_t num_workers() { return 1; }
 inline size_t worker_id() { return 0; }
-inline size_t scheduler_num_workers() { return num_workers(); }
-inline size_t scheduler_worker_id() { return worker_id();}
+inline void set_num_workers(int) { }
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -32,6 +34,11 @@ template <typename Lf, typename Rf>
 inline void par_do(Lf&& left, Rf&& right, bool) {
   std::forward<Lf>(left)();
   std::forward<Rf>(right)();
+}
+
+template <typename F>
+void execute_with_scheduler(unsigned int, F&& f) {
+  std::invoke(std::forward<F>(f));
 }
 
 }  // namespace parlay
