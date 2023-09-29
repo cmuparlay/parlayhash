@@ -115,6 +115,7 @@ namespace parlay {
 
     bool cas(const V& expected_v, const V& new_v) {
       vtype ver = version.load();
+      __builtin_prefetch (ptr.load());
       return epoch::with_epoch([&] {
 	auto [old_p, old_v] = read();				 
 	if (!KeyEqual{}(old_v, expected_v)) return false;

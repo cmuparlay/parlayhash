@@ -53,7 +53,6 @@ namespace parlay {
     long size() {
       return parlay::reduce(parlay::tabulate(values.size(), [&] (long i) {
         auto x = values[i].load();
-	if (x.first && x.second != i) abort();
 	return (long) x.first;}));
     }
 

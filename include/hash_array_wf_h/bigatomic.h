@@ -104,7 +104,7 @@ namespace parlay {
       vtype ver = version.load(std::memory_order_acquire);
       V v = cache;
       std::atomic_thread_fence(std::memory_order_acquire);
-            hold* p = ptr.load();
+      hold* p = ptr.load();
       // check if value in the cache is valid
       if (is_valid(p) && version.load(std::memory_order_relaxed) == ver)
 	return v;
@@ -117,8 +117,9 @@ namespace parlay {
 
     bool cas(const V& expected_v, const V& new_v) {
       vtype ver = version.load(std::memory_order_acquire);
+      V old_v = cache;
+      __builtin_prefetch (ptr.load());
       return epoch::with_announced(&ptr, [&] (hold* old_p) {
-        V old_v = cache;
 	// check if value in the cache is valid
 	if (!(is_valid(old_p) && version.load(std::memory_order_relaxed) == ver)) 
 	  old_v = remove_mark(old_p)->get();
