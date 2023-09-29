@@ -138,7 +138,7 @@ private:
   }
 
   void clear_hazard(int i, hlist& pid) {
-    if (pid.count++ == 10 *  workers) {
+    if (pid.count++ == 8 *  workers) {
       pid.count = 0;
       Link* ptr = pid.list;
       pid.list = nullptr;

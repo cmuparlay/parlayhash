@@ -103,12 +103,13 @@ namespace parlay {
     V load() {
       vtype ver = version.load(std::memory_order_acquire);
       V v = cache;
-      std::atomic_thread_fence(std::memory_order_acquire);
       hold* p = ptr.load();
+      std::atomic_thread_fence(std::memory_order_acquire);
       // check if value in the cache is valid
       if (is_valid(p) && version.load(std::memory_order_relaxed) == ver)
 	return v;
-      return epoch::with_announced(&ptr, [&] (hold* p) { return remove_mark(p)->get();});
+      return epoch::with_announced(&ptr, [&] (hold* p) {
+	      return remove_mark(p)->get();});
     }
 
     void store(const V& new_v) {
