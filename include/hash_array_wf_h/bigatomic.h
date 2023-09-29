@@ -10,7 +10,7 @@
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
 #include <parlay/sequence.h>
-#include "epoch.h"
+#include "hazard.h"
 
 namespace parlay {
   
@@ -100,13 +100,15 @@ namespace parlay {
     atomic() : ptr(nullptr), version(0) {}
     ~atomic() {	epoch::memory_pool<hold>::Retire(remove_mark(ptr.load()));}
     
-    
     V load() {
-      vtype ver = version.load();
+      vtype ver = version.load(std::memory_order_acquire);
       V v = cache;
-      if (is_valid(ptr.load()) && version.load() == ver)
+      std::atomic_thread_fence(std::memory_order_acquire);
+            hold* p = ptr.load();
+      // check if value in the cache is valid
+      if (is_valid(p) && version.load(std::memory_order_relaxed) == ver)
 	return v;
-      return epoch::with_epoch([&] { return read().second;});
+      return epoch::with_announced(&ptr, [&] (hold* p) { return remove_mark(p)->get();});
     }
 
     void store(const V& new_v) {
@@ -114,13 +116,16 @@ namespace parlay {
     }
 
     bool cas(const V& expected_v, const V& new_v) {
-      vtype ver = version.load();
-      return epoch::with_epoch([&] {
-	auto [old_p, old_v] = read();				 
+      vtype ver = version.load(std::memory_order_acquire);
+      return epoch::with_announced(&ptr, [&] (hold* old_p) {
+        V old_v = cache;
+	// check if value in the cache is valid
+	if (!(is_valid(old_p) && version.load(std::memory_order_relaxed) == ver)) 
+	  old_v = remove_mark(old_p)->get();
 	if (!KeyEqual{}(old_v, expected_v)) return false;
 	if (KeyEqual{}(expected_v, new_v)) return true;
 	return try_update(new_v, old_p, ver);
-      });
+	});
     }
   };
 

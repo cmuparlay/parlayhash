@@ -86,13 +86,30 @@ class intrusive_acquire_retire {
     do {
       result = p.load(std::memory_order_seq_cst);
       PARLAY_PREFETCH(result, 0, 0);
-      slot.store(static_cast<T*>(result), std::memory_order_seq_cst);
+      slot.exchange(static_cast<T*>(result), std::memory_order_seq_cst);
     } while (p.load(std::memory_order_seq_cst) != result);
     return result;
   }
 
+  template<typename U>
+  std::pair<U,std::atomic<T*>*> acquire_s(const std::atomic<U>& p) {
+    static_assert(std::is_convertible_v<U, T*>, "acquire must read from a type that is convertible to T*");
+    std::atomic<T*>* slot = &data->announcement;
+    U result;
+    do {
+      result = p.load(std::memory_order_seq_cst);
+      PARLAY_PREFETCH(result, 0, 0);
+      slot->exchange(static_cast<T*>(result), std::memory_order_seq_cst);
+    } while (p.load(std::memory_order_seq_cst) != result);
+    return std::pair(result, slot);
+  }
+
   void release() {
-    data->announcement.store(nullptr);
+    data->announcement.store(nullptr, std::memory_order_relaxed);
+  }
+
+  void release_s(std::atomic<T*>* slot) {
+    slot->store(nullptr, std::memory_order_relaxed);
   }
 
   template<typename U>
@@ -139,12 +156,12 @@ class intrusive_acquire_retire {
 
   void work_toward_ejects(size_t work = 1) {
     data->amortized_work += work;
-    auto threshold = std::max<size_t>(30, delay * num_thread_ids());  // Always attempt at least 30 ejects
+    auto threshold = std::max<size_t>(30, 10 * num_thread_ids());  // Always attempt at least 30 ejects
     while (!(data->in_progress) && data->amortized_work >= threshold) {
       data->amortized_work = 0;
       if (data->retired.get_size() == 0) break;  // nothing to collect
       data->in_progress = true;
-
+      //absl::flat_hash_set<T*> announced;
       std::unordered_set<T*> announced;
       scan_slots([&](T* reserved) { announced.insert(reserved); });
       data->retired.cleanup([&](T* p) { return announced.count(p) != 0; }, deleter);

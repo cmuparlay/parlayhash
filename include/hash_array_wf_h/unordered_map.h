@@ -9,7 +9,7 @@
 #include <optional>
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
-#include <parlay/internal/concurrency/big_atomic.h>
+#include "bigatomic.h"
 
 namespace parlay {
   
@@ -17,18 +17,14 @@ namespace parlay {
 	    typename V,
 	    class Hash = std::hash<K>,
 	    class KeyEqual = std::equal_to<K>>
-  struct alignas(64) unordered_map {
+  struct unordered_map {
 
-    struct Voptionx {
-      V first;
-      V second;
-    };
-    using Voption = std::pair<V, V>;
-    using entry = big_atomic<Voption>;
+    using Voption = std::pair<V,V>;
+    using entry = atomic<Voption>;
     
     parlay::sequence<entry> values;
     
-    unordered_map(long n) : values(parlay::tabulate<entry>(2*n, [&] (long i) {return Voption{false,0};})) {}
+    unordered_map(long n) : values(parlay::tabulate<entry>(2*n, [&] (long i) {return Voption(false,0);})) {}
 
     std::optional<V> find(const K& k) {
       Voption x = values[k].load();
@@ -40,7 +36,7 @@ namespace parlay {
       while (true) {
 	Voption old_v = values[k].load();
 	if (old_v.first) return false;
-	else if (values[k].cas(old_v, Voption{true,v}))
+	else if (values[k].cas(old_v, Voption(true, v)))
 	  return true;
       }
     }
@@ -49,13 +45,16 @@ namespace parlay {
       while (true) {
 	Voption old_v = values[k].load();
 	if (!old_v.first) return false;
-	else if (values[k].cas(old_v, Voption{false,0}))
+	else if (values[k].cas(old_v, Voption(false,0)))
 	  return true;
       }
     }
 
     long size() {
-      return parlay::reduce(parlay::map(values, [] (entry& x) {return (long) x.load().first;}));
+      return parlay::reduce(parlay::tabulate(values.size(), [&] (long i) {
+        auto x = values[i].load();
+	if (x.first && x.second != i) abort();
+	return (long) x.first;}));
     }
 
   };
