@@ -37,7 +37,7 @@ namespace parlay {
     hold* remove_mark(hold* ptr) {return (hold*) (((size_t) ptr) & ~1ul);}
     bool is_valid(hold* ptr) {return ((size_t) ptr & 1) == 0;}
 
-    // safely reads assuming inside of a with_epoch
+    // safely reads assuming inside of a with_hazard
     std::pair<hold*, V> read() {
       vtype ver = version.load(std::memory_order_acquire);
       V v = cache;
@@ -83,22 +83,22 @@ namespace parlay {
     // pointer (consistent with the old value), and ver the current
     // version.
     bool try_update(V new_v, hold* old_p, vtype ver) {
-      hold* new_p = mark_invalid(epoch::memory_pool<hold>::New(new_v));
+      hold* new_p = mark_invalid(hazard::New<hold>(new_v));
       if (try_install(old_p, new_p)) {
-	epoch::memory_pool<hold>::Retire(remove_mark(old_p));
+	hazard::Retire(remove_mark(old_p));
 	try_load_cache(new_v, new_p, ver);
 	return true;
       } else {
-	epoch::memory_pool<hold>::Delete(remove_mark(new_p));
+	hazard::Delete(remove_mark(new_p));
 	return false;
       }
     }
 
   public:
 
-    atomic(const V& v) : ptr(epoch::memory_pool<hold>::New()), version(0), cache(v) {}
+    atomic(const V& v) : ptr(hazard::New<hold>()), version(0), cache(v) {}
     atomic() : ptr(nullptr), version(0) {}
-    ~atomic() {	epoch::memory_pool<hold>::Retire(remove_mark(ptr.load()));}
+    ~atomic() {	hazard::Retire(remove_mark(ptr.load()));}
     
     V load() {
       vtype ver = version.load(std::memory_order_acquire);
@@ -108,7 +108,7 @@ namespace parlay {
       // check if value in the cache is valid
       if (is_valid(p) && version.load(std::memory_order_relaxed) == ver)
 	return v;
-      return epoch::with_announced(&ptr, [&] (hold* p) {
+      return hazard::with_announced(&ptr, [&] (hold* p) {
 	      return remove_mark(p)->get();});
     }
 
@@ -120,7 +120,7 @@ namespace parlay {
       vtype ver = version.load(std::memory_order_acquire);
       V old_v = cache;
       __builtin_prefetch (ptr.load());
-      return epoch::with_announced(&ptr, [&] (hold* old_p) {
+      return hazard::with_announced(&ptr, [&] (hold* old_p) {
 	// check if value in the cache is valid
 	if (!(is_valid(old_p) && version.load(std::memory_order_relaxed) == ver)) 
 	  old_v = remove_mark(old_p)->get();

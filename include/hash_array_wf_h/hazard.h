@@ -5,23 +5,25 @@
 #include "parlay/alloc.h"
 #include "parlay/primitives.h"
 
-#ifndef PARLAY_EPOCH_H_
-#define PARLAY_EPOCH_H_
+#ifndef PARLAY_HAZARD_H_
+#define PARLAY_HAZARD_H_
 
 #ifndef NDEBUG
 // Checks for corruption of bytes before and after allocated structures, as well as double frees.
 // Requires some extra memory to pad the front and back of a structure.
-#define EpochMemCheck 1
+#define MemCheck 1
 #endif
-//#define EpochMemCheck 1
+//#define MemCheck 1
 
 //#define USE_MALLOC 1
 
 // ***************************
-// epoch structure
+// hazard pointer structure
 // ***************************
 
-namespace epoch {
+namespace hazard {
+
+  namespace internal {
 
   inline int worker_id() {return parlay::worker_id(); }
   inline int num_workers() {return parlay::num_workers();}
@@ -97,19 +99,19 @@ template <typename xT>
 struct alignas(64) memory_pool_ {
 private:
 
-  static constexpr double milliseconds_between_epoch_updates = 20.0;
+  static constexpr double milliseconds_between_updates = 20.0;
   long update_threshold;
   using sys_time = time_point<std::chrono::system_clock>;
 
   // each thread keeps one of these
   struct alignas(256) hlist {
-    Link* list; // linked list of retired items from current epoch
-    long count; // number of retires so far, reset on updating the epoch
-    sys_time time; // time of last epoch update
+    Link* list; // linked list of retired items 
+    long count; // number of retires so far
+    sys_time time; // time of last pass of hazard pointers
     hlist() : list(nullptr), count(0) {}
   };
 
-  // only used for debugging (i.e. EpochMemCheck=1).
+  // only used for debugging (i.e. MemCheck=1).
   struct paddedT {
     long pad;
     std::atomic<long> head;
@@ -156,7 +158,7 @@ private:
     }
   }
 
-#ifdef  EpochMemCheck
+#ifdef  MemCheck
   using nodeT = paddedT;
 #else
   using nodeT = xT;
@@ -190,7 +192,7 @@ public:
   // destructs and frees the object immediately
   void Delete(T* p) {
     p->~T();
-#ifdef EpochMemCheck
+#ifdef MemCheck
     paddedT* x = pad_from_T(p);
     if (x->head != 10 || x->tail != 10) {
       if (x->head == 55) std::cerr << "double free" << std::endl;
@@ -207,7 +209,7 @@ public:
 
   template <typename ... Args>
   T* New(Args... args) {
-#ifdef EpochMemCheck
+#ifdef MemCheck
     paddedT* x = allocate_node();
     x->pad = x->head = x->tail = 10;
     T* newv = &x->value;
@@ -221,7 +223,7 @@ public:
   }
 
   bool check_not_corrupted(T* ptr) {
-#ifdef EpochMemCheck
+#ifdef MemCheck
     paddedT* x = pad_from_T(ptr);
     if (x->pad != 10 && x->head == 55)
       std::cerr << "memory_pool: apparent use after free" << std::endl;
@@ -258,18 +260,23 @@ public:
 
   template <typename T, typename Thunk>
   auto with_announced(std::atomic<T*>* ptr, Thunk f) {
-    auto x = get_hazard().announce(ptr);
-    T* p = x.first;
-    int id = x.second;
+    auto [p, id] = get_hazard().announce(ptr);
     // if constexpr (std::is_void_v<std::invoke_result_t<Thunk>>) {
     //   f(p);
     //   get_hazard().unannounce(id);
     // } else {
-      auto v = f(p);
-      get_hazard().unannounce(id);
-      return v;
-      //}
+    auto v = f(p);
+    get_hazard().unannounce(id);
+    return v;
   }
+
+  template <typename T>
+  extern inline memory_pool_<T>& get_pool() {
+    static memory_pool_<T> pool;
+    return pool;
+  }
+
+  } // end namespace internal
 
   template <typename F>
   auto try_loop(const F& f, int delay = 1, const int max_multiplier = 1000) {
@@ -287,24 +294,34 @@ public:
     }
   }
 
+  template <typename T, typename ... Args>
+  static T* New(Args... args) {
+    return internal::get_pool<T>().New(std::forward<Args>(args)...);}
+
   template <typename T>
-  extern inline epoch::memory_pool_<T>& get_pool() {
-    static epoch::memory_pool_<T> pool;
-    return pool;
+  static void Delete(T* p) {internal::get_pool<T>().Delete(p);}
+
+  template <typename T>
+  static void Retire(T* p) {internal::get_pool<T>().Retire(p);}
+
+  template <typename T>
+  static bool check_ptr(T* p) {return internal::get_pool<T>().check_not_corrupted(p);}
+
+  template <typename T>  
+  static void clear() {internal::get_pool<T>().clear();}
+
+  template <typename T>
+  static void stats() {internal::get_pool<T>().stats();}
+
+  template <typename T, typename Thunk>
+  static auto with_announced(std::atomic<T*>* ptr, Thunk f) {
+    auto [p, id] = internal::get_hazard().announce(ptr);
+    auto v = f(p);
+    internal::get_hazard().unannounce(id);
+    return v;
   }
 
-  template <typename T>
-  struct memory_pool {
-    template <typename ... Args>
-    static T* New(Args... args) {
-      return get_pool<T>().New(std::forward<Args>(args)...);}
-    static void Delete(T* p) {get_pool<T>().Delete(p);}
-    static void Retire(T* p) {get_pool<T>().Retire(p);}
-    static bool check_not_corrupted(T* p) {return get_pool<T>().check_not_corrupted(p);}
-    static void clear() {get_pool<T>().clear();}
-    static void stats() {get_pool<T>().stats();}
-  };
+} // end namespace hazard
 
-} // end namespace epoch
 
-#endif //PARLAY_EPOCH_H_
+#endif //PARLAY_HAZARD_H_

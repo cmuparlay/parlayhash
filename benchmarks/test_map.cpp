@@ -104,6 +104,7 @@ test_loop(commandLine& C,
 	map.insert(HANDLE a[j], 123); }, 1, true);
 #else
     parlay::parallel_for(0, n, [&] (size_t i) {
+				 //if (i%100 == 0) std::cout << i << std::endl;
      map.insert(a[i], 123);},1000);
 #endif
     if (map.size() != n)
