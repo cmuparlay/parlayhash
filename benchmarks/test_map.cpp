@@ -258,8 +258,8 @@ int main(int argc, char* argv[]) {
   double latency_cuttoff = P.getOptionDoubleValue("-latency", 10.0); // in miliseconds
   bool verbose = P.getOption("-verbose");
   bool warmup = !P.getOption("-nowarmup");
+  bool print_means = !P.getOption("-nomeans");
   bool grow = P.getOption("-grow");
-
 
   std::vector<long> sizes {100000, 10000000};
   std::vector<int> percents{5, 50};
@@ -274,12 +274,15 @@ int main(int argc, char* argv[]) {
     for (auto update_percent : percents) {
       for (auto n : sizes) {
 	results.push_back(test_loop(P, n, p, rounds, zipfian_param, update_percent,
-				    trial_time, latency_cuttoff, verbose, warmup, grow));
+				    trial_time, latency_cuttoff, verbose, warmup,
+				    grow));
       }
-      std::cout << std::endl;
+      if (print_means) std::cout << std::endl;
     }
   auto insert_times = parlay::map(results, [] (auto x) {return std::get<0>(x);});
   auto bench_times = parlay::map(results, [] (auto x) {return std::get<1>(x);});
-  std::cout << "benchmark geometric mean of mops = " << geometric_mean(bench_times) << std::endl;
-  std::cout << "initial insert geometric mean of mops = " << geometric_mean(insert_times) << std::endl;
+  if (print_means) {
+    std::cout << "benchmark geometric mean of mops = " << geometric_mean(bench_times) << std::endl;
+    std::cout << "initial insert geometric mean of mops = " << geometric_mean(insert_times) << std::endl;
+  }
 }
