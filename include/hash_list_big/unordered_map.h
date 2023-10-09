@@ -10,7 +10,7 @@
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
 #include "smr/epoch.h"
-#include "bigatomic/wf_loadonly/bigatomic.h"
+#include "bigatomic.h"
 
 namespace parlay {
   
