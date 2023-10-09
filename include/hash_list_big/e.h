@@ -102,48 +102,28 @@ struct alignas(64) epoch_s {
 // epoch pools
 // ***************************
 
-struct Link {
-  Link* next;
-  bool skip;
-  void* value;
+  struct link {
+  link* next;
 };
-
-  // x should point to the skip field of a link
-  inline void undo_retire(bool* x) { *x = true;}
-  inline void undo_allocate(bool* x) { *x = false;}
-
-#ifdef USE_MALLOC
-  inline Link* allocate_link() {return (Link*) malloc(sizeof(Link));}
-  inline void free_link(Link* x) {return free(x);}
-#else
-  using list_allocator = typename parlay::type_allocator<Link>;
-  inline Link* allocate_link() {return list_allocator::alloc();}
-  inline void free_link(Link* x) {return list_allocator::free(x);}
-#endif
-  
-  using namespace std::chrono;
 
 template <typename xT>
 struct alignas(64) memory_pool_ {
 private:
-
-  static constexpr double milliseconds_between_epoch_updates = 20.0;
   long update_threshold;
-  using sys_time = time_point<std::chrono::system_clock>;
 
   // each thread keeps one of these
   struct alignas(256) old_current {
-    Link* old;  // linked list of retired items from previous epoch
-    Link* current; // linked list of retired items from current epoch
+    link* old;  // linked list of retired items from previous epoch
+    link* current; // linked list of retired items from current epoch
     long epoch; // epoch on last retire, updated on a retire
     long count; // number of retires so far, reset on updating the epoch
-    sys_time time; // time of last epoch update
     old_current() : old(nullptr), current(nullptr), epoch(0) {}
   };
 
   // only used for debugging (i.e. EpochMemCheck=1).
   struct paddedT {
     long pad;
+    std::atomic<long> epoch;
     std::atomic<long> head;
     xT value;
     std::atomic<long> tail;
@@ -152,25 +132,24 @@ private:
   std::vector<old_current> pools;
   int workers;
 
-  bool* add_to_current_list(void* p) {
+  void add_to_current_list(link* p) {
     auto i = worker_id();
     auto &pid = pools[i];
+#ifdef EpochMemCheck
+    paddedT* x = pad_from_T((T*) p);
+    x->epoch = get_epoch().get_my_epoch();
+#endif
     advance_epoch(i, pid);
-    Link* lnk = allocate_link();
-    lnk->next = pid.current;
-    lnk->value = p;
-    lnk->skip = false;
-    pid.current = lnk;
-    return &(lnk->skip);
+    p->next = pid.current;
+    pid.current = p;
   }
 
   // destructs and frees a linked list of objects 
-  void clear_list(Link* ptr) {
+  void clear_list(link* ptr) {
     while (ptr != nullptr) {
-      Link* tmp = ptr;
+      link* tmp = ptr;
       ptr = ptr->next;
-      if (!tmp->skip) Delete((T*) tmp->value);
-      free_link(tmp);
+      Delete((T*) tmp);
     }
   }
 
@@ -208,7 +187,7 @@ public:
   
   memory_pool_() {
     workers = num_workers();
-    update_threshold = 20 * workers;
+    update_threshold = 10 * workers;
     pools = std::vector<old_current>(workers);
     for (int i = 0; i < workers; i++) {
       pools[i].count = parlay::hash64(i) % update_threshold;
@@ -249,6 +228,7 @@ public:
 #ifdef EpochMemCheck
     paddedT* x = allocate_node();
     x->pad = x->head = x->tail = 10;
+    x->epoch = -1;
     T* newv = &x->value;
     new (newv) T(args...);
     assert(check_not_corrupted(newv));
@@ -262,8 +242,11 @@ public:
   bool check_not_corrupted(T* ptr) {
 #ifdef EpochMemCheck
     paddedT* x = pad_from_T(ptr);
-    if (x->pad != 10 && x->head == 55)
-      std::cerr << "memory_pool: apparent use after free" << std::endl;
+    if ((x->pad != 10 && x->head == 55) ||
+	(x->epoch != -1 && get_epoch().get_current() > x->epoch + 1)) {
+      std::cerr << "memory_pool: apparent use after free: " << x->epoch << ", " << get_epoch().get_current() << std::endl;
+      return false;
+    }
     else {
       if (x->pad != 10) std::cerr << "memory_pool: pad word corrupted: " << x->pad << std::endl;
       if (x->head != 10) std::cerr << "memory_pool: head word corrupted: " << x->head << std::endl;
@@ -283,8 +266,8 @@ public:
   }
 
   // retire and return a pointer if want to undo the retire
-  bool* Retire(T* p) {
-    return add_to_current_list((void*) p);}
+  void Retire(T* p) {
+     add_to_current_list((link*) p);}
   
   // clears all the lists 
   // to be used on termination
@@ -346,7 +329,7 @@ public:
     static T* New(Args... args) {
       return get_pool<T>().New(std::forward<Args>(args)...);}
     static void Delete(T* p) {get_pool<T>().Delete(p);}
-    static bool* Retire(T* p) {return get_pool<T>().Retire(p);}
+    static void Retire(T* p) {get_pool<T>().Retire(p);}
     static bool check_not_corrupted(T* p) {return get_pool<T>().check_not_corrupted(p);}
     static void clear() {get_pool<T>().clear();}
     static void stats() {get_pool<T>().stats();}

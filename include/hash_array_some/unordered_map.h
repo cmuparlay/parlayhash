@@ -9,7 +9,7 @@
 #include <optional>
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
-#include "bigatomic.h"
+#include "bigatomic/seqlock/bigatomic.h"
 
 namespace parlay {
   

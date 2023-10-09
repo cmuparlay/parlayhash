@@ -10,13 +10,13 @@
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
 #include <parlay/sequence.h>
-#include "smr/epoch.h"
+#include "epoch.h"
 
 namespace parlay {
   
   template <typename V,
 	    class KeyEqual = std::equal_to<V>>
-  struct atomic {
+  struct alignas(64) atomic {
 
   private:
     using vtype = long;
@@ -44,6 +44,7 @@ namespace parlay {
       //std::memcpy(&v, &cache, sizeof(V));
       std::atomic_thread_fence(std::memory_order_acquire);
       hold* p = ptr.load();
+      //if (p == nullptr) std::cout << "read bad pointer" << std::endl;
       // check if value in the cache is valid
       if (is_valid(p) && version.load(std::memory_order_relaxed) == ver)
 	return std::pair(p, v);
@@ -83,23 +84,25 @@ namespace parlay {
     // pointer (consistent with the old value), and ver the current
     // version.
     bool try_update(V new_v, hold* old_p, vtype ver) {
-      hold* new_p = mark_invalid(epoch::New<hold>(new_v));
+      hold* new_p = mark_invalid(epoch::memory_pool<hold>::New(new_v));
       if (try_install(old_p, new_p)) {
-	epoch::Retire(remove_mark(old_p));
+	epoch::memory_pool<hold>::Retire(remove_mark(old_p));
 	try_load_cache(new_v, new_p, ver);
 	return true;
       } else {
-	epoch::Delete(remove_mark(new_p));
+	epoch::memory_pool<hold>::Delete(remove_mark(new_p));
 	return false;
       }
     }
 
   public:
 
-    atomic(const V& v) : ptr(epoch::New<hold>()), version(0), cache(v) {}
-    atomic() : ptr(epoch::New<hold>()), version(0) {}
-    ~atomic() {	epoch::Retire(remove_mark(ptr.load()));}
+    atomic(const V& v) : ptr(epoch::memory_pool<hold>::New()), version(0), cache(v) {}
+    atomic() : ptr(epoch::memory_pool<hold>::New()), version(0) {}
+    ~atomic() {	epoch::memory_pool<hold>::Retire(remove_mark(ptr.load()));}
     
+
+    bool check_ok() { return remove_mark(ptr.load()) != nullptr;}
     
     V load() {
       vtype ver = version.load();
@@ -117,7 +120,7 @@ namespace parlay {
       vtype ver = version.load();
       __builtin_prefetch (ptr.load());
       return epoch::with_epoch([&] {
-	auto [old_p, old_v] = read();				 
+	auto [old_p, old_v] = read();
 	if (!KeyEqual{}(old_v, expected_v)) return false;
 	if (KeyEqual{}(expected_v, new_v)) return true;
 	return try_update(new_v, old_p, ver);

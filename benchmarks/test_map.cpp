@@ -9,9 +9,14 @@
 #include "zipfian.h"
 #include "parse_command_line.h"
 
+#ifdef BIG_VALUE
+using V = __int128;
+#else
+using V = unsigned long;
+#endif
+
 using K = unsigned long;
-using V = __int128; 
-//using V = unsigned long;
+
 using namespace parlay;
 
 #include "unordered_map.h"
