@@ -6,10 +6,10 @@ import sys
 sys.path.insert(1, '.')
 from runtests import *
 
-compile_clear("paper")
+compile_clear("graphs")
 
 class hash_list_threads(parameters) :
-    file_suffix = "paper"
+    file_suffix = "graphs"
     trees = ["hash_list"]
     tree_sizes = [10000000]
     zipfians = [.99]
@@ -20,7 +20,7 @@ class hash_list_threads(parameters) :
 run_all(hash_list_threads)
 
 class hash_list_sizes(parameters) :
-    file_suffix = "paper"
+    file_suffix = "graphs"
     trees = ["hash_list"]
     tree_sizes = [1000, 10000, 100000, 1000000, 10000000, 100000000]
     zipfians = [0]
@@ -31,7 +31,7 @@ class hash_list_sizes(parameters) :
 run_all(hash_list_sizes)
 
 class hash_list_zipfians(parameters) :
-    file_suffix = "paper"
+    file_suffix = "graphs"
     trees = ["hash_list"]
     tree_sizes = [10000000]
     zipfians = [0,.5,.75,.9,.99]
@@ -42,7 +42,7 @@ class hash_list_zipfians(parameters) :
 run_all(hash_list_zipfians)
 
 class hash_list_update(parameters) :
-    file_suffix = "paper"
+    file_suffix = "graphs"
     trees = ["hash_list"]
     tree_sizes = [10000000]
     zipfians = [0]
@@ -53,7 +53,7 @@ class hash_list_update(parameters) :
 run_all(hash_list_update)
 
 class hash_array_threads(parameters) :
-    file_suffix = "paper"
+    file_suffix = "graphs"
     trees = ["hash_array"]
     tree_sizes = [10000000]
     zipfians = [.99]
@@ -64,7 +64,7 @@ class hash_array_threads(parameters) :
 run_all(hash_array_threads)
 
 class hash_array_sizes(parameters) :
-    file_suffix = "paper"
+    file_suffix = "graphs"
     trees = ["hash_array"]
     tree_sizes = [1000, 10000, 100000, 1000000, 10000000, 100000000]
     zipfians = [0]
@@ -75,7 +75,7 @@ class hash_array_sizes(parameters) :
 run_all(hash_array_sizes)
 
 class hash_array_zipfians(parameters) :
-    file_suffix = "paper"
+    file_suffix = "graphs"
     trees = ["hash_array"]
     tree_sizes = [10000000]
     zipfians = [0,.5,.75,.9,.99]
@@ -86,7 +86,7 @@ class hash_array_zipfians(parameters) :
 run_all(hash_array_zipfians)
 
 class hash_array_update(parameters) :
-    file_suffix = "paper"
+    file_suffix = "graphs"
     trees = ["hash_array"]
     tree_sizes = [10000000]
     zipfians = [0]
