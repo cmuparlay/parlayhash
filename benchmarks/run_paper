@@ -61,6 +61,8 @@ class hash_array_threads(parameters) :
     processors = [16, 32, 64, 128, 256, 384]
     suffixes_all = ["_seqlock","_simplock","_wf_hazard","_wf_indirect"]
 
+run_all(hash_array_threads)
+
 class hash_array_sizes(parameters) :
     file_suffix = "paper"
     trees = ["hash_array"]
