@@ -14,7 +14,7 @@ class hash_list(parameters) :
     tree_sizes = [100000, 10000000]
     zipfians = [0, .99]
     mix_percents = [[5,0,0,0], [50,0,0,0]]
-    processors = [64, 128]
+    processors = [144, 288]
     suffixes_all = ["","_wf_loadonly","_seqlock","_simplock","_wf_epoch","_wf_indirect"]
 
 run_all(hash_list)
@@ -25,7 +25,7 @@ class hash_array(parameters) :
     tree_sizes = [100000, 10000000]
     zipfians = [0, .99]
     mix_percents = [[5,0,0,0], [50,0,0,0]]
-    processors = [64, 128]
+    processors = [144, 288]
     suffixes_all = ["_wf_loadonly","_seqlock","_simplock","_wf_epoch","_wf_hazard","_wf_indirect"]
 
 run_all(hash_array)

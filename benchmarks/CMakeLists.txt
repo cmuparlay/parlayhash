@@ -58,7 +58,7 @@ IF (TBB_FOUND)
 endif()
 
 
-set(BENCH_FILES "runtests.py" "run_bigatomic")
+set(BENCH_FILES "runtests.py" "run_bigatomic" "run_paper")
 
 function(copy_bench_file NAME)
   file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/${NAME}
