@@ -19,23 +19,31 @@ namespace parlay {
 	    class KeyEqual = std::equal_to<K>>
   struct unordered_map {
 
-    using Voption = std::pair<V,V>;
+    struct Voption {
+      bool flag;
+      V value;
+      Voption(bool flag, const V& value) : flag(flag), value(value) {}
+      Voption() : flag(false), value(0) {}
+      bool operator==(const Voption& o) const {
+	return flag == o.flag && value == o.value;};
+    };
+
     using entry = atomic<Voption>;
     
     parlay::sequence<entry> values;
     
-    unordered_map(long n) : values(parlay::tabulate<entry>(2*n, [&] (long i) {return Voption(false,0);})) {}
+    unordered_map(long n) : values(parlay::sequence<entry>(2*n)) {} 
 
     std::optional<V> find(const K& k) {
       Voption x = values[k].load();
-      if (x.first) return x.second;
+      if (x.flag) return x.value;
       else return {};
     }
 
     bool insert(const K& k, const V& v) {
       while (true) {
 	Voption old_v = values[k].load();
-	if (old_v.first) return false;
+	if (old_v.flag) return false;
 	else if (values[k].cas(old_v, Voption(true,v)))
 	  return true;
       }
@@ -44,14 +52,14 @@ namespace parlay {
     bool remove(const K& k) {
       while (true) {
 	Voption old_v = values[k].load();
-	if (!old_v.first) return false;
+	if (!old_v.flag) return false;
 	else if (values[k].cas(old_v, Voption(false,0)))
 	  return true;
       }
     }
 
     long size() {
-      return parlay::reduce(parlay::map(values, [] (entry& x) {return (long) x.load().first;}));
+      return parlay::reduce(parlay::map(values, [] (entry& x) {return (long) x.load().flag;}));
     }
 
   };
