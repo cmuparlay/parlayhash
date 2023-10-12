@@ -15,7 +15,7 @@ namespace parlay {
   
   template <typename V,
 	    class KeyEqual = std::equal_to<V>>
-  struct alignas(32) atomic {
+  struct atomic {
 
     V val;
     
@@ -30,7 +30,7 @@ namespace parlay {
 	    result = val;
 	    return true;}))
 	  return result;
-	delay = std::min(2*delay, 50000);
+	delay = std::min(2*delay, 20000);
 	for (volatile int i=0; i < delay; i++);
       }
     }
@@ -42,7 +42,7 @@ namespace parlay {
 	    val = v;
 	    return true;}))
 	  return;
-	delay = std::min(2*delay, 50000);
+	delay = std::min(2*delay, 20000);
 	for (volatile int i=0; i < delay; i++);
       }
     }
@@ -53,12 +53,11 @@ namespace parlay {
       int delay = 5000;
       while (true) {
         if (get_locks().try_lock((long) this, [&] {
-	    if (!KeyEqual{}(val, expected_v))
-	      result = false;
+	    if (!(val == expected_v)) result = false;
 	    else val = v;
 	    return true;}))
 	  return result;
-	delay = std::min(2*delay, 50000);
+	delay = std::min(2*delay, 20000);
 	for (volatile int i=0; i < delay; i++);
       }
     }

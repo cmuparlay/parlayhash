@@ -14,8 +14,7 @@
 
 namespace parlay {
   
-  template <typename V,
-	    class KeyEqual = std::equal_to<V>>
+template <typename V, class KeyEqual = std::equal_to<V>>
   struct atomic {
 
   private:
@@ -118,8 +117,8 @@ namespace parlay {
       __builtin_prefetch (ptr.load());
       return epoch::with_epoch([&] {
 	auto [old_p, old_v] = read();				 
-	if (!KeyEqual{}(old_v, expected_v)) return false;
-	if (KeyEqual{}(expected_v, new_v)) return true;
+	if (!(old_v == expected_v)) return false;
+	if (expected_v == new_v) return true;
 	return try_update(new_v, old_p, ver);
       });
     }

@@ -85,8 +85,7 @@ namespace parlay {
       while (true) {
 	backup* node = epoch::New<backup>(val);
 	if (get_locks().try_lock((long) this, [&] {
-	    if (version.load() != ver ||
-		!KeyEqual{}(val, expected_v))
+	    if (version.load() != ver || !(val == expected_v))
 	      result = false;
 	    else {
 	      ptr = node;

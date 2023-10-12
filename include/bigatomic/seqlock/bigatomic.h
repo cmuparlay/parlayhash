@@ -27,9 +27,10 @@ namespace parlay {
 
     V load() {
       while (true) {
-	vtype ver = version.load();
+	vtype ver = version.load(std::memory_order_acquire);
 	V v = val;
-	if ((ver & 1) == 0 && version.load() == ver)
+	std::atomic_thread_fence(std::memory_order_acquire);
+	if ((ver & 1) == 0 && version.load(std::memory_order_relaxed) == ver)
 	  return v;
       }
     }
@@ -44,9 +45,10 @@ namespace parlay {
       while (true) {
 	if (get_locks().try_lock((long) this, [&] {
 	    if (version.load() == ver) {
-	      version = ver + 1;
+	      version.store(ver + 1, std::memory_order_relaxed);
+	      std::atomic_thread_fence(std::memory_order_release);
 	      val = v;
-	      version.store(ver + 2, std::memory_order_relaxed);
+	      version.store(ver + 2, std::memory_order_release);
 	    }
 	    return true;})) 
 	  return;
@@ -61,19 +63,21 @@ namespace parlay {
       bool result = true;
       int delay = 100;
       if (ver & 1) {
-	while (ver == version.load());
+	while (ver == version.load(std::memory_order_acquire));
 	return false;
       }
       while (true) {
 	if (get_locks().try_lock((long) this, [&] {
 	    V current_v = val;						  
-	    if (version.load() != ver ||
-		!KeyEqual{}(current_v, expected_v))
+	    if (version.load(std::memory_order_acquire) != ver
+		|| !(current_v == expected_v))
 	      result = false;
+	    else if (expected_v == v) return true;
 	    else {
-	      version.store(ver + 1);
+	      version.store(ver + 1, std::memory_order_relaxed);
+	      std::atomic_thread_fence(std::memory_order_release);
 	      val = v;
-	      version.store(ver + 2, std::memory_order_relaxed);
+	      version.store(ver + 2, std::memory_order_release);
 	    }
 	    return true;})) 
 	  return result;

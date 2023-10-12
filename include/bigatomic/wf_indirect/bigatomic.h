@@ -40,7 +40,7 @@ namespace parlay {
       __builtin_prefetch (this);
       return epoch::with_epoch([&] {
 	V* old_v = ptr.load();
-	if (!KeyEqual{}(*old_v, expected_v))
+	if (!(*old_v == expected_v))
 	  return false;
 	V* new_v = epoch::New<V>(v);
 	if (ptr.compare_exchange_strong(old_v, new_v)) {

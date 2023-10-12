@@ -36,20 +36,6 @@ namespace parlay {
     hold* remove_mark(hold* ptr) {return (hold*) (((size_t) ptr) & ~1ul);}
     bool is_valid(hold* ptr) {return ((size_t) ptr & 1) == 0;}
 
-    // safely reads assuming inside of a with_hazard
-    std::pair<hold*, V> read() {
-      vtype ver = version.load(std::memory_order_acquire);
-      V v = cache;
-      //std::memcpy(&v, &cache, sizeof(V));
-      std::atomic_thread_fence(std::memory_order_acquire);
-      hold* p = ptr.load();
-      // check if value in the cache is valid
-      if (is_valid(p) && version.load(std::memory_order_relaxed) == ver)
-	return std::pair(p, v);
-      // if not, get the value indirectly from p
-      return std::pair(p, remove_mark(p)->get());
-    }
-
     bool try_install(hold* p_old, hold* p_new) {
       hold* p_tmp = p_old;
       // try to swap in p_new for p_old
@@ -64,15 +50,15 @@ namespace parlay {
 	      ptr.compare_exchange_strong(x, p_new));
     }
 
-    void try_load_cache(V v, hold* p, vtype ver) {
+    void try_update_cache(V v, hold* p, vtype ver) {
       // try to lock the cache
       if (!(ver & 1) && ver == version.load() &&
 	  version.compare_exchange_strong(ver, ver+1)) {
 	// when locked load the cache
-	cache = v;
 	std::atomic_thread_fence(std::memory_order_release);
+	cache = v;
 	// unlock the cache
-	version.store(ver + 2, std::memory_order_relaxed);
+	version.store(ver + 2, std::memory_order_release);
 	// try to validate the cache if p has not changed
 	ptr.compare_exchange_strong(p, remove_mark(p));
       }
@@ -85,7 +71,7 @@ namespace parlay {
       hold* new_p = mark_invalid(hazard::New<hold>(new_v));
       if (try_install(old_p, new_p)) {
 	hazard::Retire(remove_mark(old_p));
-	try_load_cache(new_v, new_p, ver);
+	try_update_cache(new_v, new_p, ver);
 	return true;
       } else {
 	hazard::Delete(remove_mark(new_p));
@@ -96,7 +82,7 @@ namespace parlay {
   public:
 
     atomic(const V& v) : ptr(hazard::New<hold>()), version(0), cache(v) {}
-    atomic() : ptr(nullptr), version(0) {}
+    atomic() : ptr(hazard::New<hold>()), version(0) {}
     ~atomic() {	hazard::Retire(remove_mark(ptr.load()));}
     
     V load() {
@@ -117,14 +103,15 @@ namespace parlay {
 
     bool cas(const V& expected_v, const V& new_v) {
       vtype ver = version.load(std::memory_order_acquire);
-      V old_v = cache;
       __builtin_prefetch (ptr.load());
+      V old_v = cache;
       return hazard::with_announced(&ptr, [&] (hold* old_p) {
+	std::atomic_thread_fence(std::memory_order_acquire);
 	// check if value in the cache is valid
 	if (!(is_valid(old_p) && version.load(std::memory_order_relaxed) == ver)) 
 	  old_v = remove_mark(old_p)->get();
-	if (!KeyEqual{}(old_v, expected_v)) return false;
-	if (KeyEqual{}(expected_v, new_v)) return true;
+	if (!(old_v == expected_v)) return false;
+	if (expected_v == new_v) return true;
 	return try_update(new_v, old_p, ver);
 	});
     }

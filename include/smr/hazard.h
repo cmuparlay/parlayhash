@@ -4,6 +4,7 @@
 
 #include "parlay/alloc.h"
 #include "parlay/primitives.h"
+#include <folly/synchronization/AsymmetricThreadFence.h>
 
 #ifndef PARLAY_HAZARD_H_
 #define PARLAY_HAZARD_H_
@@ -40,6 +41,7 @@ struct alignas(64) hazard_s {
   hazard_s() : announcements(std::vector<announce_slot>(num_workers())) {}
 
   std::vector<void*> get_announced() {
+    //folly::asymmetric_thread_fence_heavy(std::memory_order_seq_cst);
     std::vector<void*> announced;
     for (int i=0; i < num_workers(); i++) {
       void* a = announcements[i].hold;
@@ -55,6 +57,8 @@ struct alignas(64) hazard_s {
       auto x = ptr->load();
       auto y = x;
       announcements[id].hold.exchange((void*) x, std::memory_order_seq_cst);
+      //announcements[id].hold.store((void*) x, std::memory_order_relaxed);
+      //folly::asymmetric_thread_fence_light(std::memory_order_seq_cst); 
       if (ptr->load() == y) return std::pair(y, id);
     }
   }
@@ -146,6 +150,7 @@ private:
       pid.list = nullptr;
       auto announced = get_hazard().get_announced();
       std::unordered_set<void*> a;
+
       for (auto x : announced) a.insert((void*) (((size_t) x) & ~1ul));
       while (ptr != nullptr) {
 	Link* tmp = ptr;

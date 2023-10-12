@@ -20,32 +20,28 @@ namespace parlay {
 	    class KeyEqual = std::equal_to<K>>
   struct unordered_map {
 
-    using KV = std::pair<K,V>;
     struct link {
-      KV element;
+      K key;
+      V value;
       link* next;
-      link(const KV& element, link* next) : element(element), next(next) {}
+      link(const K& key, const V& value, link* next) : key(key), value(value), next(next) {}
       link() : next((link*) 1) {}
-    };
-
-    struct LinkEqual {
-      std::size_t operator()(const link &x, const link& y) const noexcept {
-	return (x.element == y.element && x.next == y.next);
-      }
+      bool operator==(const link& o) const {
+	return key == o.key && value == o.value && next == o.next;};
     };
 
     static link* set_empty() {return (link*) 1;}
     static bool is_empty(const link* ptr) {return 1ul == (1ul & (size_t) ptr);}
     static link* strip_empty(const link* ptr) {return (link*) (~1ul & (size_t) ptr);}
 
-    using bucket = atomic<link,LinkEqual>;
+    struct alignas(64) bucket { atomic<link> v;};
 
     struct Table {
       parlay::sequence<bucket> table;
       size_t size;
-      bucket* get_bucket(const K& k) {
+      atomic<link>* get_bucket(const K& k) {
 	size_t idx = Hash{}(k) & (size-1u);
-	return &table[idx];
+	return &table[idx].v;
       }
       Table(size_t n) {
 	int bits = 1 + parlay::log2_up(n);
@@ -56,41 +52,40 @@ namespace parlay {
 
     Table hash_table;
 
-    static link* new_link(const KV& e, link* l) {
-      //if (is_empty(l)) {std::cout << "bad l in new_link" << std::endl; abort();}
-      return epoch::New<link>(e, l);
+    static link* new_link(const K& k, const V& v, link* l) {
+      return epoch::New<link>(k, v, l);
     }
 
     unordered_map(size_t n) : hash_table(Table(n)) {}
     ~unordered_map() {
       auto& table = hash_table.table;
       parlay::parallel_for (0, table.size(), [&] (size_t i) {
-         retire_all_list(table[i].load().next);});
+         retire_list_all(table[i].v.load().next);});
   }
 
     static std::optional<V> find_in_list(const link* nxt, const K& k) {
-      //if (is_empty(nxt)) {std::cout << "bad nxt in new_link" << std::endl; abort();}
-      while (nxt != nullptr && !KeyEqual{}(nxt->element.first, k)) {
+      while (nxt != nullptr && !KeyEqual{}(nxt->key, k)) {
 	nxt = nxt->next;
-	//if (is_empty(nxt)) {std::cout << "bad nxt in new_link." << std::endl; abort();}
       }
       if (nxt == nullptr) return {};
-      else return nxt->element.second;
+      else return nxt->value;
     }
 
+    // If k is found copies list elements up to k, and keeps the old
+    // tail past k.  Returns the number of new nodes that will need to
+    // be reclaimed.  If not found, does nothing, and returns 0.
     static std::pair<int, link*> remove_from_list(link* nxt, const K& k) {
-      //if (is_empty(nxt)) {std::cout << "empty nxt in remove_from_list" << std::endl; abort();}
       if (nxt == nullptr) return std::pair(0, nullptr);
-      else if (KeyEqual{}(nxt->element.first, k)) return std::pair(1, nxt->next); 
+      else if (KeyEqual{}(nxt->key, k)) return std::pair(1, nxt->next); 
       else {
-	//if (is_empty(nxt->next)) {std::cout << "empty nxt->next in remove_from_list" << std::endl; abort();}
 	auto [len, ptr] = remove_from_list(nxt->next, k);
 	if (len == 0) return std::pair(len, ptr);
-	return std::pair(len + 1, new_link(nxt->element, ptr));
+	return std::pair(len + 1, new_link(nxt->key, nxt->value, ptr));
       }
     }
 
-    static void retire_list(link* nxt, int n) {
+    // retires first n elements of a list
+    static void retire_list_n(link* nxt, int n) {
       while (n > 0) {
 	n--;
 	link* tmp = nxt->next;
@@ -99,7 +94,7 @@ namespace parlay {
       }
     }
 
-    static void retire_all_list(link* nxt) {
+    static void retire_list_all(link* nxt) {
       if (is_empty(nxt)) return;
       while (nxt != nullptr) {
 	link* tmp = nxt->next;
@@ -120,36 +115,31 @@ namespace parlay {
     }
 
     std::optional<V> find(const K& k) {
-      bucket* s = hash_table.get_bucket(k);
+      auto s = hash_table.get_bucket(k);
       link l = s->load();
       if (is_empty(l.next)) return {};
-      if (KeyEqual{}(l.element.first, k)) return l.element.second;
+      if (KeyEqual{}(l.key, k)) return l.value;
       return epoch::with_epoch([&] () -> std::optional<V> {
         link l = s->load();
 	if (is_empty(l.next)) return {};
-	if (KeyEqual{}(l.element.first, k)) return l.element.second;
+	if (KeyEqual{}(l.key, k)) return l.value;
 	return find_in_list(l.next, k);});
     }
 
     bool insert(const K& k, const V& v) {
-      bucket* s = hash_table.get_bucket(k);
+      auto s = hash_table.get_bucket(k);
       __builtin_prefetch (s);
       return epoch::with_epoch([&] {
 	long cnt = 0;
 	while (true) {
 	  link l = s->load();
-	  //std::cout << "s: " << list_length(l) << std::endl;
-	  //if (!s->check_ok()) std::cout << "bad check in insert" << std::endl;
 	  if (is_empty(l.next)) {
-	    if (s->cas(l, link(std::pair(k,v), nullptr))) return true;
+	    if (s->cas(l, link(k, v, nullptr))) return true;
 	  } else {
-	    if (KeyEqual{}(l.element.first, k)) return false;
+	    if (KeyEqual{}(l.key, k)) return false;
 	    if (find_in_list(l.next, k).has_value()) return false;
-	    link* new_head = new_link(l.element, l.next);
-	    if (s->cas(l, link(KV(k,v), new_head))) {
-	      //std::cout << "e: " << list_length(s->load()) << ", " << s->load().next << ", " << is_empty(s->load().next) <<std::endl;
-	      return true;
-	    }
+	    link* new_head = new_link(l.key, l.value, l.next);
+	    if (s->cas(l, link(k, v, new_head))) return true;
 	    epoch::Delete(new_head);
 	  }
 	  if (cnt++ > 1000000) {std::cout << "insert infinite loop?" << std::endl; abort();} 
@@ -157,32 +147,31 @@ namespace parlay {
     }
 
     bool remove(const K& k) {
-      bucket* s = hash_table.get_bucket(k);
+      auto s = hash_table.get_bucket(k);
       __builtin_prefetch (s);
       return epoch::with_epoch([&] {
 	long cnt = 0;
 	while (true) {
 	  link l = s->load();
 	  if (is_empty(l.next)) return false;
-	  if (KeyEqual{}(l.element.first, k)) {
+	  if (KeyEqual{}(l.key, k)) {
 	    if (l.next == nullptr) {
 	      if (s->cas(l, link()))
 		return true;
 	    } else {
-	      if (s->cas(l, link(l.next->element, l.next->next))) {
+	      if (s->cas(l, link(l.next->key, l.next->value, l.next->next))) {
 		epoch::Retire(l.next);
 		return true;
 	      }
 	    }
 	  } else {
-	    //if (is_empty(l.next)) {std::cout << "empty nxt??" << std::endl; abort();}
 	    auto [cnt, new_head] = remove_from_list(l.next, k);
 	    if (cnt == 0) return false;
-	    if (s->cas(l, link(l.element, new_head))) {
-	      retire_list(l.next, cnt);
+	    if (s->cas(l, link(l.key, l.value, new_head))) {
+	      retire_list_n(l.next, cnt);
 	      return true;
 	    }
-	    retire_list(new_head, cnt - 1);
+	    retire_list_n(new_head, cnt - 1);
 	  }
 	  if (cnt++ > 1000000) {std::cout << "remove infinite loop?" << std::endl; abort();} 
 	}});
@@ -190,7 +179,7 @@ namespace parlay {
 
     long size() {
       return parlay::reduce(parlay::map(hash_table.table, [&] (bucket& x) {
-							    return list_length(x.load());}));
+							    return list_length(x.v.load());}));
     }
 
   };

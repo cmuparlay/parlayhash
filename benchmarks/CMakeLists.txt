@@ -11,15 +11,18 @@ set(BIG_ATOMICS "wf_loadonly" "seqlock" "simplock" "wf_epoch" "wf_hazard" "wf_in
 
 foreach(NAME ${BIG_ATOMICS})
   add_executable(hash_array_${NAME} ${SOURCES})
-  target_link_libraries(hash_array_${NAME} PRIVATE parlay)
+  target_link_libraries(hash_array_${NAME} PRIVATE folly glog dl pthread double-conversion fmt gflags)
+  target_link_libraries(hash_array_${NAME} PRIVATE -latomic parlay)
   target_compile_options(hash_array_${NAME} PRIVATE "-DBIG_VALUE")
   target_include_directories(hash_array_${NAME} PRIVATE ${PARLAYHASH_SOURCE_DIR}/include/hash_array)
   target_include_directories(hash_array_${NAME} PRIVATE ${PARLAYHASH_SOURCE_DIR}/include/bigatomic/${NAME})
 endforeach()
 
-foreach(NAME ${BIG_ATOMICS})
+set(BIG_ATOMICS_LIST "wf_loadonly" "seqlock" "simplock" "wf_epoch" "wf_indirect" "std")
+
+foreach(NAME ${BIG_ATOMICS_LIST})
   add_executable(hash_list_${NAME} ${SOURCES})
-  target_link_libraries(hash_list_${NAME} PRIVATE parlay)
+  target_link_libraries(hash_list_${NAME} PRIVATE -latomic parlay)
   target_include_directories(hash_list_${NAME} PRIVATE ${PARLAYHASH_SOURCE_DIR}/include/hash_list_big)
   target_include_directories(hash_list_${NAME} PRIVATE ${PARLAYHASH_SOURCE_DIR}/include/bigatomic/${NAME})
 endforeach()
