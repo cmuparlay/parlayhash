@@ -28,38 +28,38 @@ namespace parlay {
 	return flag == o.flag && value == o.value;};
     };
 
-    using entry = atomic<Voption>;
+    struct alignas(64) entry { atomic<Voption> v;};
     
     parlay::sequence<entry> values;
     
     unordered_map(long n) : values(parlay::sequence<entry>(2*n)) {} 
 
     std::optional<V> find(const K& k) {
-      Voption x = values[k].load();
+      Voption x = values[k].v.load();
       if (x.flag) return x.value;
       else return {};
     }
 
     bool insert(const K& k, const V& v) {
       while (true) {
-	Voption old_v = values[k].load();
+	Voption old_v = values[k].v.load();
 	if (old_v.flag) return false;
-	else if (values[k].cas(old_v, Voption(true,v)))
+	else if (values[k].v.cas(old_v, Voption(true,v)))
 	  return true;
       }
     }
 
     bool remove(const K& k) {
       while (true) {
-	Voption old_v = values[k].load();
+	Voption old_v = values[k].v.load();
 	if (!old_v.flag) return false;
-	else if (values[k].cas(old_v, Voption(false,0)))
+	else if (values[k].v.cas(old_v, Voption(false,0)))
 	  return true;
       }
     }
 
     long size() {
-      return parlay::reduce(parlay::map(values, [] (entry& x) {return (long) x.load().flag;}));
+      return parlay::reduce(parlay::map(values, [] (entry& x) {return (long) x.v.load().flag;}));
     }
 
   };
