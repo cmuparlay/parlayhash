@@ -22,8 +22,13 @@ namespace parlay {
     struct Voptionx {
       V first;
       V second;
+      constexpr bool operator==(const Voptionx& other) const { return first == other.first && second == other.second; };
     };
-    using Voption = std::pair<V, V>;
+    static_assert(std::is_trivially_default_constructible_v<Voptionx>);
+    static_assert(std::is_trivially_copyable_v<Voptionx>);
+    static_assert(std::is_trivially_destructible_v<Voptionx>);
+
+    using Voption = Voptionx;
     using entry = big_atomic<Voption>;
     
     parlay::sequence<entry> values;
