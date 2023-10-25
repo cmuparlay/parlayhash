@@ -29,7 +29,7 @@ set(PARLAYHASH_INCLUDE_DIR "${PARLAYHASH_SOURCE_DIR}/include")
 add_library(parlay INTERFACE)
 target_include_directories(parlay INTERFACE ${PARLAYHASH_INCLUDE_DIR})
 target_compile_features(parlay INTERFACE cxx_std_17)
-target_compile_options(parlay INTERFACE -g)
+target_compile_options(parlay INTERFACE -g -fno-omit-frame-pointer)
 
 # Find threading library
 find_package(Threads REQUIRED)

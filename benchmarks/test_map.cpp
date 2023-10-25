@@ -177,7 +177,9 @@ test_loop(commandLine& C,
 	  if (duration.count() * 1000000 < latency_cutoff)
 	    latency_count++;
 #else
-	  query_success_count += map.find(HANDLE b[j]).has_value();
+          auto foo = map.find(HANDLE b[j]);                                                                                                            
+          if (foo.has_value()) query_success_count += (*foo > 0);
+	  //query_success_count += map.find(HANDLE b[j]).has_value();
 #endif
 	} else if (op_types[k] == Insert) {
 	  if (map.insert(HANDLE b[j], 123)) {added++; update_success_count++;}

@@ -131,7 +131,7 @@ struct big_atomic {
     return unmark_ptr(p)->value;
   }
 
-  void store(const T& desired) {
+  PARLAY_INLINE void store(const T& desired) {
     auto num = version.load(std::memory_order_acquire);
     auto new_p = mark_ptr(allocator::create(desired));
     auto old_p = indirect_value.exchange(new_p);
@@ -139,22 +139,24 @@ struct big_atomic {
     try_seqlock_and_store(num, desired, new_p);
   }
 
-  bool cas(const T& expected, const T& desired) {
-    if (Equal{}(expected, desired)) {
-      return load() == expected;
-    }
+  PARLAY_INLINE bool cas(const T& expected, const T& desired) {
+    auto ver = version.load(std::memory_order_acquire);
+    alignas(T) char buffer[sizeof(T)];
+    internal::atomic_load_per_byte_memcpy(&buffer, &fast_value, sizeof(T));
 
-    auto num = version.load(std::memory_order_acquire);
-
-    // Can't use a fast read here -- we *need* to take a hazard pointer even if
-    // the fast value is valid because otherwise our CAS below could ABA!!
     auto hazptr = hazptr_holder{};
     auto p = hazptr.protect(indirect_value);
     assert(unmark_ptr(p) != nullptr);
 
-    if (!Equal{}(unmark_ptr(p)->value, expected)) {
-      return false;
-    }
+    T current = [&]() {  // Use IIFE since you can't stick [[likely]] on a ternary statement
+      if (!is_marked(p) && ver == version.load(std::memory_order_relaxed)) [[likely]]
+        return internal::bits_to_object<T>(buffer);
+      else
+        return unmark_ptr(p)->value;
+    }();
+
+    if (!Equal{}(current, expected)) return false;
+    if (Equal{}(expected, desired)) return true;
 
     auto new_p = mark_ptr(allocator::create(desired));
     auto old_p = p;
@@ -163,7 +165,7 @@ struct big_atomic {
         || (p == indirect_value.load(std::memory_order_relaxed) && p == unmark_ptr(old_p) && indirect_value.compare_exchange_strong(p, new_p))) {
 
       retire(unmark_ptr(p));
-      try_seqlock_and_store(num, desired, new_p);
+      try_seqlock_and_store(ver, desired, new_p);
       return true;
     }
     else {
