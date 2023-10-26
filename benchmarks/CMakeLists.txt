@@ -7,7 +7,7 @@ function(add_benchmark NAME DIRECTORY LINKS OPTIONS)
   target_include_directories(${NAME} PRIVATE ${PARLAYHASH_SOURCE_DIR}/${DIRECTORY}/${NAME})
 endfunction()
 
-set(BIG_ATOMICS "wf_loadonly" "seqlock" "simplock" "wf_epoch" "wf_hazard" "wf_lowmem" "wf_indirect" "std")
+set(BIG_ATOMICS "wf_loadonly" "seqlock" "simplock" "wf_epoch" "wf_hazard" "wf_lowmem" "wf_daniel" "wf_indirect" "std")
 
 foreach(NAME ${BIG_ATOMICS})
   add_executable(hash_array_${NAME} ${SOURCES})
