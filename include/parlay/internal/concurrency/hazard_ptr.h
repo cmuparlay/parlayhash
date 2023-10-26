@@ -13,7 +13,7 @@
 
 #include <parlay/portability.h>
 
-#include <folly/synchronization/AsymmetricThreadFence.h>
+//#include <folly/synchronization/AsymmetricThreadFence.h>
 
 namespace parlay {
 
@@ -230,9 +230,10 @@ class HazardPointers {
         return result;
       }
       // PARLAY_PREFETCH(ptr_to_protect, 0, 0);
-      slot.store(ptr_to_protect, std::memory_order_relaxed);
+      //slot.store(ptr_to_protect, std::memory_order_relaxed);
+      slot.exchange(ptr_to_protect, std::memory_order_seq_cst);
 
-      folly::asymmetric_thread_fence_light(std::memory_order_seq_cst);
+      //folly::asymmetric_thread_fence_light(std::memory_order_seq_cst);
 
       U current_value = src.load(std::memory_order_acquire);
       if (current_value == result) [[likely]] {
@@ -277,7 +278,7 @@ class HazardPointers {
   // Apply the function f to all currently announced hazard pointers
   template<typename F>
   void scan_hazard_pointers(F&& f) noexcept(std::is_nothrow_invocable_v<F&, garbage_type*>) {
-    folly::asymmetric_thread_fence_heavy(std::memory_order_seq_cst);
+    //folly::asymmetric_thread_fence_heavy(std::memory_order_seq_cst);
     for_each_slot([&, f = std::forward<F>(f)](HazardSlot& slot) {
       auto p = slot.protected_ptr.load();
       if (p) {
