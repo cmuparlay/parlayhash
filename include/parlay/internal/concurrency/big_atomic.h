@@ -35,7 +35,8 @@ template<typename T>
 PARLAY_INLINE T bits_to_object(const char* src) {
   if constexpr(!std::is_trivially_default_constructible_v<T>) {
     struct empty{};
-    union { empty empty_{}; T value; };
+    //union { empty empty_{}; T value; };
+    T value;
     std::memcpy(&value, src, sizeof(T));
     return value;
   }

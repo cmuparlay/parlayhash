@@ -6,92 +6,30 @@ import sys
 sys.path.insert(1, '.')
 from runtests import *
 
-compile_clear("graphs")
+compile_clear("paper")
 
-class hash_list_threads(parameters) :
-    file_suffix = "graphs"
+s_all_list = ["","_seqlock","_simplock","_wf_epoch","_wf_indirect","_wf_lowmem","_wf_daniel"]
+
+class hash_list(parameters) :
+    file_suffix = "paper"
     trees = ["hash_list"]
-    tree_sizes = [10000000]
-    zipfians = [.99]
-    mix_percents = [[5, 0, 0, 0]]
-    processors = [16, 32, 64, 128, 256, 384]
-    suffixes_all = ["","_seqlock","_simplock","_wf_epoch","_wf_indirect"]
+    tree_sizes = [100000, 10000000]
+    zipfians = [0, .99]
+    mix_percents = [[5,0,0,0], [50,0,0,0]]
+    processors = [144, 288]
+    suffixes_all = s_all_list
 
-run_all(hash_list_threads)
+run_all(hash_list)
 
-class hash_list_sizes(parameters) :
-    file_suffix = "graphs"
-    trees = ["hash_list"]
-    tree_sizes = [1000, 10000, 100000, 1000000, 10000000, 100000000]
-    zipfians = [0]
-    mix_percents = [[5, 0, 0, 0]]
-    processors = [128]
-    suffixes_all = ["","_seqlock","_simplock","_wf_epoch","_wf_indirect"]
+s_all_array = ["_seqlock","_simplock","_wf_hazard","_wf_indirect","_wf_lowmem","_wf_daniel"]
 
-run_all(hash_list_sizes)
-
-class hash_list_zipfians(parameters) :
-    file_suffix = "graphs"
-    trees = ["hash_list"]
-    tree_sizes = [10000000]
-    zipfians = [0,.5,.75,.9,.99]
-    mix_percents = [[5, 0, 0, 0]]
-    processors = [128]
-    suffixes_all = ["","_seqlock","_simplock","_wf_epoch","_wf_indirect"]
-
-run_all(hash_list_zipfians)
-
-class hash_list_update(parameters) :
-    file_suffix = "graphs"
-    trees = ["hash_list"]
-    tree_sizes = [10000000]
-    zipfians = [0]
-    mix_percents = [[0, 0, 0, 0], [5, 0, 0, 0],[10, 0, 0, 0],[20, 0, 0, 0],[50, 0, 0, 0],[100, 0, 0, 0]]
-    processors = [128]
-    suffixes_all = ["","_seqlock","_simplock","_wf_epoch","_wf_indirect"]
-
-run_all(hash_list_update)
-
-class hash_array_threads(parameters) :
-    file_suffix = "graphs"
+class hash_array(parameters) :
+    file_suffix = "paper"
     trees = ["hash_array"]
-    tree_sizes = [10000000]
-    zipfians = [.99]
-    mix_percents = [[5, 0, 0, 0]]
-    processors = [16, 32, 64, 128, 256, 384]
-    suffixes_all = ["_seqlock","_simplock","_wf_hazard","_wf_indirect"]
+    tree_sizes = [100000, 10000000]
+    zipfians = [0, .99]
+    mix_percents = [[5,0,0,0], [50,0,0,0]]
+    processors = [144, 288]
+    suffixes_all = s_all_array
 
-run_all(hash_array_threads)
-
-class hash_array_sizes(parameters) :
-    file_suffix = "graphs"
-    trees = ["hash_array"]
-    tree_sizes = [1000, 10000, 100000, 1000000, 10000000, 100000000]
-    zipfians = [0]
-    mix_percents = [[5, 0, 0, 0]]
-    processors = [128]
-    suffixes_all = ["_seqlock","_simplock","_wf_hazard","_wf_indirect"]
-
-run_all(hash_array_sizes)
-
-class hash_array_zipfians(parameters) :
-    file_suffix = "graphs"
-    trees = ["hash_array"]
-    tree_sizes = [10000000]
-    zipfians = [0,.5,.75,.9,.99]
-    mix_percents = [[5, 0, 0, 0]]
-    processors = [128]
-    suffixes_all = ["_seqlock","_simplock","_wf_hazard","_wf_indirect"]
-
-run_all(hash_array_zipfians)
-
-class hash_array_update(parameters) :
-    file_suffix = "graphs"
-    trees = ["hash_array"]
-    tree_sizes = [10000000]
-    zipfians = [0]
-    mix_percents = [[0, 0, 0, 0], [5, 0, 0, 0],[10, 0, 0, 0],[20, 0, 0, 0],[50, 0, 0, 0],[100, 0, 0, 0]]
-    processors = [128]
-    suffixes_all = ["_seqlock","_simplock","_wf_hazard","_wf_indirect"]
-
-run_all(hash_array_update)
+run_all(hash_array)
