@@ -14,8 +14,8 @@
 
 #include <parlay/portability.h>
 
-#include <folly/synchronization/AsymmetricThreadFence.h>
-#include <folly/container/F14Set.h>
+//#include <folly/synchronization/AsymmetricThreadFence.h>
+//#include <folly/container/F14Set.h>
 
 namespace parlay {
 
@@ -139,8 +139,8 @@ class NodeManager {
   using node_type = big_atomic_node<T, Equal>;
   using marked_node_ptr_type = marked_ptr<node_type>;
 
-  using protected_ptr_set_type = folly::F14FastSet<node_type*>;
-  using protected_src_set_type = folly::F14FastSet<big_atomic_type*>;
+  using protected_ptr_set_type = std::unordered_set<node_type*>; //folly::F14FastSet<node_type*>;
+  using protected_src_set_type = std::unordered_set<big_atomic_type*>; //folly::F14FastSet<big_atomic_type*>;
 
   using node_allocator = type_allocator<node_type>;
 
@@ -262,7 +262,8 @@ class NodeManager {
         return result;
       }
       PARLAY_PREFETCH(result.get_ptr(), 0, 0);
-      announcement_slot.store(result.unmark(), std::memory_order_seq_cst);
+      //announcement_slot.store(result.unmark(), std::memory_order_seq_cst);
+      announcement_slot.exchange(result.unmark(), std::memory_order_seq_cst);
       //folly::asymmetric_thread_fence_light(std::memory_order_seq_cst);
 
       auto current_value = src.load(std::memory_order_acquire);
