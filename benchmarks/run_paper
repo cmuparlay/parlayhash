@@ -8,7 +8,7 @@ from runtests import *
 
 compile_clear("paper")
 
-s_all_list = ["","_seqlock","_simplock","_wf_epoch","_wf_indirect","_wf_lowmem","_wf_daniel"]
+s_all_list = ["","_std", "_seqlock","_simplock","_wf_epoch","_wf_indirect","_wf_lowmem","_wf_daniel"]
 
 class hash_list(parameters) :
     file_suffix = "paper"
@@ -21,7 +21,7 @@ class hash_list(parameters) :
 
 run_all(hash_list)
 
-s_all_array = ["_seqlock","_simplock","_wf_hazard","_wf_indirect","_wf_lowmem","_wf_daniel"]
+s_all_array = ["_std", "_seqlock","_simplock","_wf_hazard","_wf_indirect","_wf_lowmem","_wf_daniel"]
 
 class hash_array(parameters) :
     file_suffix = "paper"
