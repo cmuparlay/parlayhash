@@ -4,7 +4,7 @@
 
 #include "parlay/alloc.h"
 #include "parlay/primitives.h"
-#include <folly/synchronization/AsymmetricThreadFence.h>
+//#include <folly/synchronization/AsymmetricThreadFence.h>
 
 #ifndef PARLAY_HAZARD_H_
 #define PARLAY_HAZARD_H_
