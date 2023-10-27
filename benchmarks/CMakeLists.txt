@@ -35,7 +35,7 @@ add_benchmark(hash_opt include "" "-DPARLAY_USE_STD_ALLOC")
 add_benchmark(hash_bytes include "" "")
 add_benchmark(hash_list include "" "")
 #add_benchmark(hash_daniel include "folly;glog;dl;pthread;double-conversion;fmt;gflags" "")
-#add_benchmark(hash_lowmemory include "folly;glog;dl;pthread;double-conversion;fmt;gflags" "")
+add_benchmark(hash_lowmemory include "folly;glog;dl;pthread;double-conversion;fmt;gflags" "")
 add_benchmark(hash_array_wf_h include "" "")
 
 add_benchmark(hash_array_cas include "" "-DBIG_VALUE")

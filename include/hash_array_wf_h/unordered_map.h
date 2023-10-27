@@ -19,7 +19,13 @@ namespace parlay {
 	    class KeyEqual = std::equal_to<K>>
   struct unordered_map {
 
-    using Voption = std::pair<V,V>;
+    //using Voption = std::pair<V,V>;
+    struct Voption {
+	V first, second;
+	Voption(V first_, V second_) : first(std::move(first_)), second(std::move(second_)) { }
+	Voption() = default;
+	constexpr bool operator==(const Voption& other) const { return first == other.first && second == other.second; }
+    };
     using entry = atomic<Voption>;
     
     parlay::sequence<entry> values;
