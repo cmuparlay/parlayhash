@@ -71,6 +71,19 @@ PARLAY_INLINE T bits_to_object(const char* src) {
   }
 }
 
+// A pointer that can be marked and installed with *tagged nullptr* values. Tagged nullptr values
+// allow the pointer to logically represent nullptr, i.e., get_ptr() returns nullptr, but secretly
+// the value is represented by a 63-bit tag.
+//
+// If these tags are sequence numbers, then one can create unique nullptrs that do not compare equal
+// for the purpose of compare_exchange. That is, they are useful for creating nullptrs that are immune
+// to the ABA problem, because one can tell the difference between an old nullptr and a new nullptr.
+// This class does not provide the sequence numbers, they must be supplied when constructing the
+// tagged nullptr.
+//
+// All construction is done via factory functions create_ptr and create_tagged_null in order to
+// keep marked_ptr as a trivial type.  Marking/unmarking is done via the mark() and unmark()
+// member functions, which return a *new marked_ptr*, i.e., they do not mutate in place.
 template<typename T>
 class marked_ptr {
 
@@ -109,12 +122,6 @@ public:
 
   constexpr friend bool operator==(marked_ptr left, marked_ptr right) { return left.value == right.value; }
   constexpr friend bool operator!=(marked_ptr left, marked_ptr right) { return left.value != right.value; }
-
-  // In-place update of the mark
-  void set_mark(unsigned mark) {
-    assert(mark <= MARK_BIT);
-    value = (value & PTR_MASK) | mark;
-  }
 
   // ================================== Updates (all return a new ptr) ======================================
 
@@ -322,8 +329,6 @@ private:
 
     if (slot.my_nodes != nullptr) {
 
-      // ============================== Scan all actively announced nodes =================================
-
       for_each_node([&](auto node) {
         node->was_installed = node->is_installed.load(std::memory_order_relaxed);
       });
@@ -416,8 +421,8 @@ public:
     new (static_cast<void*>(&fast_value)) T{};
   }
 
-  /* implicit */ big_atomic(const T& t) :
-    version(0),  // NOLINT(google-explicit-constructor)
+  /* implicit */ big_atomic(const T& t) :  // NOLINT(google-explicit-constructor)
+    version(0),
     backup_value(marked_node_ptr_type::create_ptr(nullptr)),
     fast_value{} {
     node_manager();
@@ -527,6 +532,14 @@ private:
     return internal::bits_to_object<T>(buffer);
   }
 
+  // Tries to read the current version, backup ptr, and active value into ver, p, dest (out params)
+  //
+  // On success, returns true, on failure returns false. This method is guaranteed to succeed if
+  // it does not race with an update.  If it races with an update, it may fail.  If it succeeds,
+  // then it is guaranteed that either:
+  //   (i) p == nullptr and dest contains the active value
+  //  (ii) p != nullptr, is protected, and dest contains the active value equal to p.get_ptr()->value
+  //
   PARLAY_INLINE bool try_load_indirect(/* out */ version_type& ver, /* out */ marked_node_ptr_type& p, /* out */ char* dest) noexcept {
     p = protect_backup();
     if (p.get_ptr() != nullptr) [[likely]] {
