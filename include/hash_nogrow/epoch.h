@@ -173,7 +173,7 @@ private:
 	paddedT* x = pad_from_T((T*) tmp->value);
 	if (x->head != 10 || x->tail != 10) {
 	  if (x->head == 55) std::cerr << "double free" << std::endl;
-	  else std::cerr << "corrupted head" << std::endl;
+	  else if (x->head != 10)  std::cerr << "corrupted head" << std::endl;
 	  if (x->tail != 10) std::cerr << "corrupted tail" << std::endl;
 	  assert(false);
 	}

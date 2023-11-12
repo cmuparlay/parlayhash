@@ -204,10 +204,10 @@ private:
   template <typename F>
   static node* update_node(node* old, const K& k, const F& f, long idx) {
     assert(old != nullptr);
-    if (old == nullptr) return (node*) epoch::memory_pool<Node<1>>::New(idx, old, k, f);
-    if (old->cnt < 3) return (node*) epoch::memory_pool<Node<3>>::New(idx, old, k, f);
-    else if (old->cnt < 7) return (node*) epoch::memory_pool<Node<7>>::New(idx, old, k, f);
-    else if (old->cnt < 31) return (node*) epoch::memory_pool<Node<31>>::New(idx,old, k, f);
+    if (old->cnt == 1) return (node*) epoch::memory_pool<Node<1>>::New(idx, old, k, f);
+    if (old->cnt <= 3) return (node*) epoch::memory_pool<Node<3>>::New(idx, old, k, f);
+    else if (old->cnt <= 7) return (node*) epoch::memory_pool<Node<7>>::New(idx, old, k, f);
+    else if (old->cnt <= 31) return (node*) epoch::memory_pool<Node<31>>::New(idx,old, k, f);
     else return (node*) epoch::memory_pool<BigNode>::New(idx, old, k, f);
   }
 
