@@ -27,8 +27,7 @@ inline size_t num_workers() {
 inline size_t worker_id() {
   return omp_get_thread_num();
 }
-inline size_t scheduler_num_workers() { return num_workers(); }
-inline size_t scheduler_worker_id() { return worker_id();}
+
 
 template <typename F>
 inline void parallel_for(size_t start, size_t end, F&& f, long granularity, bool) {
@@ -109,6 +108,12 @@ inline void par_do(Lf&& left, Rf&& right, bool) {
       { std::forward<Lf>(left)(); }
     }
   }
+}
+
+template <typename... Fs>
+void execute_with_scheduler(Fs...) {
+  struct Illegal {};
+  static_assert((std::is_same_v<Illegal, Fs> && ...), "parlay::execute_with_scheduler is only available in the Parlay scheduler and is not compatible with OpenMP");
 }
 
 }  // namespace parlay

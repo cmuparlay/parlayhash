@@ -98,6 +98,11 @@ inline size_t alloc_padding_size(size_t n) {  // in bytes
 
 }  // namespace internal
 
+// GCC doesn't like placement new into the offset buffer
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wplacement-new"
+#endif
 
 // Allocate size bytes of uninitialized storage. Optionally ask for an
 // aligned buffer of memory with the given alignment.
@@ -126,13 +131,16 @@ inline void p_free(void* ptr) {
   // reads the header to determine the offset and size, then frees
   auto h = *from_bytes<internal::p_malloc_header>(static_cast<std::byte*>(ptr) - sizeof(internal::p_malloc_header));
   if (h.log_size > 48u || h.offset > 1ull << 48) {
-    std::cerr << "corrupted header in p_free" << std::endl;
+    std::cerr << "corrupted header in p_free\n";
     std::abort();
   }
   auto buffer = static_cast<void*>(static_cast<std::byte*>(ptr) - h.offset);
   internal::get_default_allocator().deallocate(buffer, size_t{1} << size_t(h.log_size));
 }
 
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 // ----------------------------------------------------------------------------
 //                            Container allocator
@@ -265,7 +273,7 @@ public:
   static void retire(T* ptr) { destroy(ptr); }
   static void init(size_t, size_t) {};
   static void init() {};
-  static void reserve(size_t n = default_alloc_size) { get_allocator().reserve(n); }
+  static void reserve([[maybe_unused]] size_t n = default_alloc_size) { }
   static void finish() { get_allocator().clear(); }
   static size_t block_size () { return get_allocator().get_block_size(); }
   static size_t num_allocated_blocks() { return get_allocator().num_allocated_blocks(); }

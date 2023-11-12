@@ -35,7 +35,7 @@ There are two versions:
 
 - `include/hash_nogrow/unordered_map.h` : Does not support growing the number of buckets.  It can grow arbitrarily large but each buckets will become large and the table will be slow.  The number of buckets is specified when table is constructed.   
 
-- `include/hash_grow/unordered_map.h` : Supports increasing the number of buckets.  The number of buckets increase by a constant factor when any bucket gets too large.   The copying is done incrementally by each update, allowing for a lock-free implementation.
+- `include/hash_grow/unordered_map.h` : Supports increasing the number of buckets.  The number of buckets increase by a constant factor when any bucket gets too large.   The copying is done incrementally by each update, allowing for a lock-free implementation.   Note that this version is still underdevelopment and has not been fully tested.
 
 **Implementation**: Each bucket points to a structure (Node)
 containing an array of entries.  Nodes come in varying sizes and on

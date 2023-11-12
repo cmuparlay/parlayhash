@@ -15,12 +15,14 @@
 #include <utility>
 #include <vector>
 
-#include "../parallel.h"
+#include "../portability.h"
 #include "../utilities.h"
 
 #include "block_allocator.h"
 
 #include "concurrency/hazptr_stack.h"
+
+// IWYU pragma: no_include <array>
 
 namespace parlay {
 namespace internal {
@@ -76,7 +78,6 @@ struct pool_allocator {
     }
 
     void* a = ::operator new(alloc_size, std::align_val_t{max_alignment});
-    if (a == nullptr) throw std::bad_alloc();
 
     large_allocated += n;
     return a;
@@ -148,20 +149,7 @@ struct pool_allocator {
   }
 
   // allocate, touch, and free to make sure space for small blocks is paged in
-  void reserve(size_t bytes) {
-    // size_t bc = bytes/max_small;
-    // std::vector<void*> h(bc);
-    // parallel_for(0, bc, [&] (size_t i) {
-    //   h[i] = allocate(max_small);
-    // }, 1);
-    // parallel_for(0, bc, [&] (size_t i) {
-    //   for (size_t j=0; j < max_small; j += (1 << 12)) {
-    //     static_cast<std::byte*>(h[i])[j] = std::byte{0};
-    //   }
-    // }, 1);
-    // for (size_t i=0; i < bc; i++)
-    //   deallocate(h[i], max_small);
-  }
+  [[deprecated]] void reserve(size_t) { }
 
   void print_stats() {
     size_t total_a = 0;
@@ -204,7 +192,6 @@ struct pool_allocator {
       }
     }
   }
-  
 };
 
 }  // namespace internal

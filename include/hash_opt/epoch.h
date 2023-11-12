@@ -22,8 +22,8 @@
 
 namespace epoch {
 
-  inline int worker_id() {return parlay::worker_id(); }
-  inline int num_workers() {return parlay::num_workers();}
+  inline int worker_id() {return parlay::my_thread_id(); }
+  inline int num_workers() {return parlay::num_thread_ids();}
 
 struct alignas(64) epoch_s {
 	
@@ -173,7 +173,7 @@ private:
 	paddedT* x = pad_from_T((T*) tmp->value);
 	if (x->head != 10 || x->tail != 10) {
 	  if (x->head == 55) std::cerr << "double free" << std::endl;
-	  else std::cerr << "corrupted head" << std::endl;
+	  else if (x->head != 10)  std::cerr << "corrupted head" << std::endl;
 	  if (x->tail != 10) std::cerr << "corrupted tail" << std::endl;
 	  assert(false);
 	}

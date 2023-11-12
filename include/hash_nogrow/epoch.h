@@ -22,8 +22,8 @@
 
 namespace epoch {
 
-  inline int worker_id() {return parlay::worker_id(); }
-  inline int num_workers() {return parlay::num_workers();}
+  inline int worker_id() {return parlay::my_thread_id(); }
+  inline int num_workers() {return parlay::num_thread_ids();}
 
 struct alignas(64) epoch_s {
 	
