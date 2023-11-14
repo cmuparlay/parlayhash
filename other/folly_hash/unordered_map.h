@@ -1,5 +1,11 @@
+#pragma once
+
 #include <folly/concurrency/ConcurrentHashMap.h>
 #include <unordered_map>
+
+#include <folly/init/Init.h>
+
+#define PARLAYHASH_USING_FOLLY
 
 template <typename K,
 	  typename V,

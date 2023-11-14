@@ -1,32 +1,21 @@
+#include <mutex>
+#include <shared_mutex>
+
 #include "absl/container/flat_hash_map.h"
 
-//#define AbslLock 1
-#ifdef AbslLock
-#include "absl/synchronization/mutex.h"
-using LockType = absl::Mutex;
-void Lock(LockType& l) {l.Lock();}
-void Unlock(LockType& l) {l.Unlock();}
-// tried actual reader lock, but slower
-void ReaderLock(LockType& l) {l.Lock();}
-void ReaderUnlock(LockType& l) {l.Unlock();}
-#else
-#include <mutex>
-using LockType = std::mutex;
-void Lock(LockType& l) {l.lock();}
-void Unlock(LockType& l) {l.unlock();}
-void ReaderLock(LockType& l) {l.lock();}
-void ReaderUnlock(LockType& l) {l.unlock();}
-#endif
 
 template <typename K,
 	  typename V,
 	  class Hash = std::hash<K>,
-	  class KeyEqual = std::equal_to<K>>
+	  class KeyEqual = std::equal_to<K>,
+	  typename Mutex = std::mutex,
+	  typename ReadGuard = std::unique_lock<Mutex>,
+	  typename WriteGuard = std::unique_lock<Mutex>>
 struct unordered_map {
 
   using umap = absl::flat_hash_map<K, V, Hash, KeyEqual>;
   struct alignas(64) entry {
-    LockType mutex;
+    Mutex m;
     umap sub_table;
   };
 
@@ -39,9 +28,8 @@ struct unordered_map {
 
   std::optional<V> find(const K& k) {
     size_t idx = hash_to_shard(k);
-    ReaderLock(table[idx].mutex);
+    ReadGuard g_{table[idx].m};
     auto r = table[idx].sub_table.find(k);
-    ReaderUnlock(table[idx].mutex);
     if (r != table[idx].sub_table.end()) return (*r).second;
     else return std::optional<V>();
   }
@@ -52,24 +40,22 @@ struct unordered_map {
 
   bool insert(const K& k, const V& v) {
     size_t idx = hash_to_shard(k);
-    Lock(table[idx].mutex);
+    WriteGuard g_{table[idx].m};
     bool result = table[idx].sub_table.insert(std::make_pair(k, v)).second;    
-    Unlock(table[idx].mutex);
     return result;
   }
 
   bool remove(const K& k) {
     size_t idx = hash_to_shard(k);
-    Lock(table[idx].mutex);
+    WriteGuard g_{table[idx].m};
     bool result = table[idx].sub_table.erase(k) == 1;
-    Unlock(table[idx].mutex);
     return result;
   }
 
   unordered_map(size_t n) {
     int n_bits = std::round(std::log2(n));
     int bits = n_bits - 2;
-    num_buckets = 1l << bits; // must be a power of 2
+    num_buckets = 1ull << bits; // must be a power of 2
 
     table = std::vector<entry>(num_buckets);
     for (int i=0; i < num_buckets; i++)
@@ -82,3 +68,4 @@ struct unordered_map {
       n += table[i].sub_table.size();
     return n;}
 };
+

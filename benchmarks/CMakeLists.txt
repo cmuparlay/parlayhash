@@ -14,6 +14,7 @@ add_benchmark(std_hash other "" "")
 add_benchmark(std_sharded other "" "")
 add_benchmark(libcuckoo other "" "")
 add_benchmark(growt other "" "-mcx16")
+add_benchmark(parallel_hashmap other "" "")
 
 find_package(GTest)
 find_package(absl)
@@ -25,13 +26,21 @@ endif()
 
 find_package(folly)
 if (folly_FOUND)
-  add_benchmark(folly_hash other "folly;glog;dl;pthread;double-conversion;fmt;gflags" "")
-  add_benchmark(folly_sharded other "folly;glog;dl;pthread;double-conversion;fmt;gflags" "")
+  add_benchmark(folly_hash other "folly;glog;dl;pthread;double-conversion;fmt;gflags;unwind" "")
+  add_benchmark(folly_sharded other "folly;glog;dl;pthread;double-conversion;fmt;gflags;unwind" "")
 endif()
 
 find_package(TBB)
 IF (TBB_FOUND)
   add_benchmark(tbb_hash other TBB::tbb "")
 endif()
+
+# We have to manually specify Boost's location since we are using the latest
+# cutting-edge Boost version, and FindBoost.cmake can not find Boost.Unordered
+if (BOOST_DIR)
+  add_benchmark(boost_hash other "" "")
+  target_include_directories(boost_hash PRIVATE ${BOOST_DIR})
+endif()
+
 
 

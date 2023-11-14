@@ -1,17 +1,21 @@
-#include <mutex>
-#include <unordered_map>
+#pragma once
 
-using LockType = std::mutex;
+#include <mutex>
+#include <shared_mutex>
+#include <unordered_map>
 
 template <typename K,
 	  typename V,
 	  class Hash = std::hash<K>,
-	  class KeyEqual = std::equal_to<K>>
+	  class KeyEqual = std::equal_to<K>,
+	  typename Mutex = std::mutex,
+	  typename ReadGuard = std::unique_lock<Mutex>,
+	  typename WriteGuard = std::unique_lock<Mutex>>
 struct unordered_map {
 
   using umap = std::unordered_map<K, V, Hash, KeyEqual>;
   struct entry {
-    LockType mutex;
+    Mutex m;
     umap sub_table;
   };
 
@@ -24,7 +28,7 @@ struct unordered_map {
 
   std::optional<V> find(const K& k) {
     size_t idx = hash_to_shard(k);
-    const std::lock_guard<LockType> lock(table[idx].mutex);
+    ReadGuard g_{table[idx].m};
     auto r = table[idx].sub_table.find(k);
     if (r != table[idx].sub_table.end()) return (*r).second;
     else return std::optional<V>();
@@ -32,13 +36,13 @@ struct unordered_map {
 
   bool insert(const K& k, const V& v) {
     size_t idx = hash_to_shard(k);
-    const std::lock_guard<LockType> lock(table[idx].mutex);
+    WriteGuard g_{table[idx].m};
     return table[idx].sub_table.insert(std::make_pair(k, v)).second;    
   }
 
   bool remove(const K& k) {
     size_t idx = hash_to_shard(k);
-    const std::lock_guard<LockType> lock(table[idx].mutex);
+    WriteGuard g_{table[idx].m};
     return table[idx].sub_table.erase(k) == 1;
   }
 

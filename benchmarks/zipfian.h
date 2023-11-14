@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+
 #include "parlay/primitives.h"
 
 struct Zipfian {
