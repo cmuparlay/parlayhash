@@ -1,6 +1,6 @@
 #include "absl/container/flat_hash_map.h"
 
-#define AbslLock 1
+//#define AbslLock 1
 #ifdef AbslLock
 #include "absl/synchronization/mutex.h"
 using LockType = absl::Mutex;
