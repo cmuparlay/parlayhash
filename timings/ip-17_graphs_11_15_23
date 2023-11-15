@@ -402,3 +402,53 @@ initial insert geometric mean of mops = 20.1556
 benchmark geometric mean of mops = 39.1106
 initial insert geometric mean of mops = 20.8763
 ...
+./hash_list,5%update,n=10000000,p=16,z=0.99,insert_mops=419,mops=186
+
+benchmark geometric mean of mops = 186.59
+initial insert geometric mean of mops = 419.399
+./hash_list,5%update,n=10000000,p=32,z=0.99,insert_mops=417,mops=364
+
+benchmark geometric mean of mops = 364.23
+initial insert geometric mean of mops = 417.359
+./hash_list,5%update,n=10000000,p=64,z=0.99,insert_mops=420,mops=651
+
+benchmark geometric mean of mops = 651.62
+initial insert geometric mean of mops = 420.146
+./hash_list,5%update,n=10000000,p=128,z=0.99,insert_mops=418,mops=957
+
+benchmark geometric mean of mops = 957.951
+initial insert geometric mean of mops = 418.133
+./hash_list,5%update,n=10000000,p=256,z=0.99,insert_mops=282,mops=908
+
+benchmark geometric mean of mops = 908.14
+initial insert geometric mean of mops = 282.282
+./hash_list,5%update,n=10000000,p=384,z=0.99,insert_mops=171,mops=915
+
+benchmark geometric mean of mops = 915.675
+initial insert geometric mean of mops = 171.511
+...
+./hash_list,5%update,n=1000,p=128,z=0,insert_mops=46,mops=1263
+
+benchmark geometric mean of mops = 1263.22
+initial insert geometric mean of mops = 46.4943
+...
+./hash_list,5%update,n=10000,p=128,z=0,insert_mops=289,mops=2022
+
+benchmark geometric mean of mops = 2022.4
+initial insert geometric mean of mops = 289.737
+...
+./hash_list,5%update,n=100000,p=128,z=0,insert_mops=507,mops=1809
+
+benchmark geometric mean of mops = 1809.62
+initial insert geometric mean of mops = 507.123
+...
+./hash_list,5%update,n=1000000,p=128,z=0,insert_mops=529,mops=1532
+
+benchmark geometric mean of mops = 1532.99
+initial insert geometric mean of mops = 529.794
+...
+./hash_list,5%update,n=10000000,p=128,z=0,insert_mops=417,mops=638
+
+benchmark geometric mean of mops = 638.106
+initial insert geometric mean of mops = 417.813
+...

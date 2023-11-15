@@ -8,7 +8,7 @@ from runtests import *
 
 compile_clear("graphs")
 
-hash_list = ["libcuckoo","boost_hash","folly_sharded","tbb_hash"]
+hash_list = ["libcuckoo","boost_hash","folly_sharded","tbb_hash","hash_list"]
 empty = [""]
 
 class hash_list_threads(parameters) :
