@@ -35,6 +35,8 @@ IF (TBB_FOUND)
   add_benchmark(tbb_hash other TBB::tbb "")
 endif()
 
+# set(BOOST_DIR ${PARLAYHASH_SOURCE_DIR}/build/benchmarks/boost_1_83_0)
+
 # We have to manually specify Boost's location since we are using the latest
 # cutting-edge Boost version, and FindBoost.cmake can not find Boost.Unordered
 if (BOOST_DIR)
@@ -42,5 +44,14 @@ if (BOOST_DIR)
   target_include_directories(boost_hash PRIVATE ${BOOST_DIR})
 endif()
 
+set(BENCH_FILES "runtests.py" "run_graphs")
 
+function(copy_bench_file NAME)
+  file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/${NAME}
+    DESTINATION ${CMAKE_CURRENT_BINARY_DIR})
+endfunction()
+
+foreach(file ${BENCH_FILES})
+  copy_bench_file(${file})
+endforeach()
 
