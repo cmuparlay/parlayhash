@@ -67,8 +67,8 @@
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
 #include <parlay/delayed.h>
-#include "epoch.h"
-#include "lock.h"
+#include "utils/epoch.h"
+#include "utils/lock.h"
 #define USE_LOCKS 1
 
 namespace parlay {
