@@ -22,9 +22,10 @@
 
 namespace epoch {
 
-  inline int worker_id() {return parlay::worker_id(); }
-  inline int num_workers() {return parlay::num_workers();}
-
+  inline int worker_id() {return parlay::my_thread_id(); }
+  inline int num_workers() {return parlay::num_thread_ids();}
+  constexpr int max_num_workers = 1024;
+  
 struct alignas(64) epoch_s {
 	
   // functions to run when epoch is incremented
@@ -39,8 +40,8 @@ struct alignas(64) epoch_s {
   std::vector<announce_slot> announcements;
   std::atomic<long> current_epoch;
   epoch_s() {
-    int workers = num_workers();
-    announcements = std::vector<announce_slot>(workers);
+    //int workers = num_workers();
+    announcements = std::vector<announce_slot>(max_num_workers);
     current_epoch = 0;
   }
 
@@ -73,21 +74,21 @@ struct alignas(64) epoch_s {
 
   void update_epoch() {
     size_t id = worker_id();
-    int workers = num_workers();
     long current_e = get_current();
-    bool all_there = true;
+
     // check if everyone is done with earlier epochs
-    for (int i=0; i < workers; i++)
-      if ((announcements[i].last != -1l) && announcements[i].last < current_e) {
-	all_there = false;
-	break;
-      }
+    int workers;
+    do {
+      workers = num_workers();
+      for (int i=0; i < workers; i++)
+	if ((announcements[i].last != -1l) && announcements[i].last < current_e) 
+	  return;
+    } while (num_workers() != workers); // this is unlikely to loop
+
     // if so then increment current epoch
-    if (all_there) {
-      for (auto h : before_epoch_hooks) h();
-      if (current_epoch.compare_exchange_strong(current_e, current_e+1)) {
-	for (auto h : after_epoch_hooks) h();
-      }
+    for (auto h : before_epoch_hooks) h();
+    if (current_epoch.compare_exchange_strong(current_e, current_e+1)) {
+      for (auto h : after_epoch_hooks) h();
     }
   }
 };
@@ -126,9 +127,8 @@ template <typename xT>
 struct alignas(64) memory_pool_ {
 private:
 
-  static constexpr double milliseconds_between_epoch_updates = 20.0;
-  long update_threshold;
-  using sys_time = time_point<std::chrono::system_clock>;
+  //static constexpr double milliseconds_between_epoch_updates = 20.0;
+  //using sys_time = time_point<std::chrono::system_clock>;
 
   // each thread keeps one of these
   struct alignas(256) old_current {
@@ -136,7 +136,7 @@ private:
     Link* current; // linked list of retired items from current epoch
     long epoch; // epoch on last retire, updated on a retire
     long count; // number of retires so far, reset on updating the epoch
-    sys_time time; // time of last epoch update
+    //sys_time time; // time of last epoch update
     old_current() : old(nullptr), current(nullptr), epoch(0) {}
   };
 
@@ -149,7 +149,6 @@ private:
   };
 
   std::vector<old_current> pools;
-  int workers;
 
   bool* add_to_current_list(void* p) {
     auto i = worker_id();
@@ -173,7 +172,7 @@ private:
 	paddedT* x = pad_from_T((T*) tmp->value);
 	if (x->head != 10 || x->tail != 10) {
 	  if (x->head == 55) std::cerr << "double free" << std::endl;
-	  else std::cerr << "corrupted head" << std::endl;
+	  else if (x->head != 10)  std::cerr << "corrupted head" << std::endl;
 	  if (x->tail != 10) std::cerr << "corrupted tail" << std::endl;
 	  assert(false);
 	}
@@ -192,12 +191,13 @@ private:
       pid.epoch = get_epoch().get_current();
     }
     // a heuristic
-    auto now = system_clock::now();
-    if (++pid.count == update_threshold  ||
-	duration_cast<milliseconds>(now - pid.time).count() >
-	milliseconds_between_epoch_updates * (1 + ((float) i)/workers)) {
+    //auto now = system_clock::now();
+    long update_threshold = 10 * num_workers();
+    if (++pid.count == update_threshold) {
+      //|| duration_cast<milliseconds>(now - pid.time).count() >
+      //milliseconds_between_epoch_updates * (1 + ((float) i)/workers)) {
       pid.count = 0;
-      pid.time = now;
+      //pid.time = now;
       get_epoch().update_epoch();
     }
   }
@@ -221,12 +221,12 @@ public:
   using T = xT;
   
   memory_pool_() {
-    workers = num_workers();
-    update_threshold = 10 * workers;
+    long workers = max_num_workers;
+    long update_threshold = 10 * num_workers();
     pools = std::vector<old_current>(workers);
     for (int i = 0; i < workers; i++) {
       pools[i].count = parlay::hash64(i) % update_threshold;
-      pools[i].time = system_clock::now();
+      //pools[i].time = system_clock::now();
     }
   }
 

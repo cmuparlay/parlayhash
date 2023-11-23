@@ -69,7 +69,7 @@
 #include <parlay/delayed.h>
 #include "epoch.h"
 #include "lock.h"
-//#define USE_LOCKS 1
+#define USE_LOCKS 1
 
 namespace parlay {
   
@@ -556,7 +556,8 @@ public:
       return !y.has_value();});
   }
 
-  bool upsert(const K& k, const V& v) {
+  template <typename F>
+  bool upsert(const K& k, const F& f) {
     table_version* ht = current_table_version.load();
     long idx = ht->get_index(k);
     bucket* s = &ht->buckets[idx];
@@ -564,7 +565,7 @@ public:
     return epoch::with_epoch([=] {
       return epoch::try_loop([=] {
           copy_if_needed(idx); // checks if table needs to grow
-          return try_upsert_at(ht, s, k, v);});});
+          return try_upsert_at(ht, s, k, f);});});
   }
 
   bool remove(const K& k) {
