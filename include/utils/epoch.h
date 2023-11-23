@@ -22,6 +22,8 @@
 
 namespace epoch {
 
+  namespace internal {
+
   inline int worker_id() {return parlay::my_thread_id(); }
   inline int num_workers() {return parlay::num_thread_ids();}
   constexpr int max_num_workers = 1024;
@@ -80,6 +82,11 @@ struct alignas(64) epoch_s {
     int workers;
     do {
       workers = num_workers();
+      if (workers > max_num_workers) {
+	std::cerr << "number of threads: " << workers
+		  << ", greater than max_num_threads: " << max_num_workers << std::endl;
+	abort;
+      }
       for (int i=0; i < workers; i++)
 	if ((announcements[i].last != -1l) && announcements[i].last < current_e) 
 	  return;
@@ -303,51 +310,70 @@ public:
   }
 };
 
-  template <typename Thunk>
-  auto with_epoch(Thunk f) {
-    int id = get_epoch().announce();
-    if constexpr (std::is_void_v<std::invoke_result_t<Thunk>>) {
-      f();
-      get_epoch().unannounce(id);
-    } else {
-      auto v = f();
-      get_epoch().unannounce(id);
-      return v;
-    }
-  }
-
-  template <typename F>
-  auto try_loop(const F& f, int delay = 200, const int max_multiplier = 10) {
-    int multiplier = 1;
-    int cnt = 0;
-    while (true)  {
-      if (cnt++ == 10000000000ul/(delay*max_multiplier)) {
-	std::cerr << "problably in an infinite retry loop" << std::endl;
-	abort(); 
-      }
-      auto r = f();
-      if (r.has_value()) return *r;
-      multiplier = std::min(2*multiplier, max_multiplier);
-      for (volatile int i=0; i < delay * multiplier; i++);
-    }
-  }
-
   template <typename T>
-  extern inline epoch::memory_pool_<T>& get_pool() {
-    static epoch::memory_pool_<T> pool;
+  extern inline memory_pool_<T>& get_pool() {
+    static memory_pool_<T> pool;
     return pool;
   }
 
+  } // namespace internal
+  
   template <typename T>
   struct memory_pool {
     template <typename ... Args>
     static T* New(Args... args) {
-      return get_pool<T>().New(std::forward<Args>(args)...);}
-    static void Delete(T* p) {get_pool<T>().Delete(p);}
-    static bool* Retire(T* p) {return get_pool<T>().Retire(p);}
-    static void clear() {get_pool<T>().clear();}
+      return internal::get_pool<T>().New(std::forward<Args>(args)...);}
+    static void Delete(T* p) {internal::get_pool<T>().Delete(p);}
+    static bool* Retire(T* p) {return internal::get_pool<T>().Retire(p);}
+    static void clear() {internal::get_pool<T>().clear();}
   };
+
+  template <typename T, typename ... Args>
+  static T* New(Args... args) {
+    return internal::get_pool<T>().New(std::forward<Args>(args)...);}
+
+  template <typename T>
+  static void Delete(T* p) {internal::get_pool<T>().Delete(p);}
+
+  template <typename T>
+  static void Retire(T* p) {internal::get_pool<T>().Retire(p);}
+
+  template <typename T>
+  static bool check_ptr(T* p) {return internal::get_pool<T>().check_not_corrupted(p);}
+
+  template <typename T>  
+  static void clear() {internal::get_pool<T>().clear();}
+
+  template <typename T>
+  static void stats() {internal::get_pool<T>().stats();}
+
+  template <typename Thunk>
+  auto with_epoch(Thunk f) {
+    int id = internal::get_epoch().announce();
+    if constexpr (std::is_void_v<std::invoke_result_t<Thunk>>) {
+      f();
+      internal::get_epoch().unannounce(id);
+    } else {
+      auto v = f();
+      internal::get_epoch().unannounce(id);
+      return v;
+    }
+  }
 
 } // end namespace epoch
 
 #endif //PARLAY_EPOCH_H_
+
+  // template <typename Thunk>
+  // auto with_epoch(Thunk f) {
+  //   int id = get_epoch().announce();
+  //   if constexpr (std::is_void_v<std::invoke_result_t<Thunk>>) {
+  //     f();
+  //     get_epoch().unannounce(id);
+  //   } else {
+  //     auto v = f();
+  //     get_epoch().unannounce(id);
+  //     return v;
+  //   }
+  // }
+

@@ -46,6 +46,22 @@ public:
     return locks;
   }
 
+      template <typename F>
+  auto try_loop(const F& f, int delay = 200, const int max_multiplier = 10) {
+    int multiplier = 1;
+    int cnt = 0;
+    while (true)  {
+      if (cnt++ == 10000000000ul/(delay*max_multiplier)) {
+  	std::cerr << "problably in an infinite retry loop" << std::endl;
+  	abort(); 
+      }
+      auto r = f();
+      if (r.has_value()) return *r;
+      multiplier = std::min(2*multiplier, max_multiplier);
+      for (volatile int i=0; i < delay * multiplier; i++);
+    }
+  }
+
 }
 
 #endif // PARLAYLOCK_H_

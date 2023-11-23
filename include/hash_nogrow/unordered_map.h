@@ -265,23 +265,27 @@ private:
   // The internal update functions (insert, upsert and remove)
   // *********************************************
 
+  static bool weak_cas(bucket* s, node* old_v, node* new_v) {
+#ifndef USE_LOCKS
+      return (s->load() == old_v &&
+	      s->compare_exchange_weak(old_v, new_v));
+#else  // use try_lock
+      return (get_locks().try_lock((long) s, [=] {
+                if (s->load() != old_v) return false;
+		*s = new_v;
+		return true;}));
+#endif
+    }
 
   // try to install a new node in bucket s
   static bool try_update(bucket* s, node* old_node, node* new_node) {
-#ifndef USE_LOCKS
-    if (s->load() == old_node &&
-	s->compare_exchange_strong(old_node, new_node)) {
-#else  // use try_lock
-    if (get_locks().try_lock((long) s, [=] {
-	    if (s->load() != old_node) return false;
-	    *s = new_node;
-	    return true;})) {
-#endif
+    if (weak_cas(s, old_node, new_node)) {
       retire_node(old_node);
       return true;
-    } 
-    destruct_node(new_node);
-    return false;
+    }  else {
+      destruct_node(new_node);
+      return false;
+    }
   }
 
   static std::optional<std::optional<V>>
@@ -353,7 +357,7 @@ public:
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
     return epoch::with_epoch([&] {
-      auto y = epoch::try_loop([&] {return try_insert_at(s, k, v);});
+      auto y = parlay::try_loop([&] {return try_insert_at(s, k, v);});
       return !y.has_value();});
   }
 
@@ -362,14 +366,14 @@ public:
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
     return epoch::with_epoch([&] {
-      return epoch::try_loop([&] {return try_upsert_at(s, k, f);});});
+      return parlay::try_loop([&] {return try_upsert_at(s, k, f);});});
   }
 
   bool remove(const K& k) {
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
     return epoch::with_epoch([&] {
-      auto y = epoch::try_loop([&] {return try_remove_at(s, k);});
+      auto y = parlay::try_loop([&] {return try_remove_at(s, k);});
       return y.has_value();});
   }
 

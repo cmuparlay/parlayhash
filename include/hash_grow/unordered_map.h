@@ -550,7 +550,7 @@ public:
     bucket* s = &ht->buckets[idx];
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {
-      auto y = epoch::try_loop([=] {
+      auto y = parlay::try_loop([=] {
 	  copy_if_needed(idx);
           return try_insert_at(ht, s, k, v);});
       return !y.has_value();});
@@ -563,7 +563,7 @@ public:
     bucket* s = &ht->buckets[idx];
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {
-      return epoch::try_loop([=] {
+      return parlay::try_loop([=] {
           copy_if_needed(idx); // checks if table needs to grow
           return try_upsert_at(ht, s, k, f);});});
   }
@@ -573,7 +573,7 @@ public:
     bucket* s = ht->get_bucket(k);
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {
-      auto y = epoch::try_loop([=] {return try_remove_at(ht, s, k);});
+      auto y = parlay::try_loop([=] {return try_remove_at(ht, s, k);});
       return y.has_value();});
   }
 

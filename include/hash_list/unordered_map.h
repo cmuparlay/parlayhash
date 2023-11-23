@@ -9,7 +9,9 @@
 #include <optional>
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
-#include "epoch.h"
+#include "utils/epoch.h"
+#include "utils/lock.h"
+#define USE_LOCKS 1
 
 namespace parlay {
   
@@ -69,6 +71,18 @@ namespace parlay {
       }
     }
 
+    template <typename F>
+    static std::pair<int, link*> update_list(link* nxt, const K& k, const F& f) {
+      if (nxt == nullptr) return std::pair(0, nullptr);
+      else if (KeyEqual{}(nxt->element.first, k)) 
+	return std::pair(1, epoch::New<link>(std::pair(k,f(nxt->element.second)), nxt->next));
+      else {
+	auto [len, ptr] = update_list(nxt->next, k, f);
+	if (len == 0) return std::pair(len, ptr);
+	return std::pair(len + 1, epoch::New<link>(nxt->element, ptr));
+      }
+    }
+    
     static void retire_list(link* nxt, int n) {
       while (n > 0) {
 	n--;
@@ -101,32 +115,78 @@ namespace parlay {
       return epoch::with_epoch([&] {return find_in_list(s->load(), k);});
     }
 
+    static bool weak_cas(bucket* s, link* old_v, link* new_v) {
+#ifndef USE_LOCKS
+      return (s->load() == old_v && s->compare_exchange_weak(old_v, new_v));
+#else  // use try_lock
+      return (get_locks().try_lock((long) s, [=] {
+                  if (s->load() != old_v) return false;
+		  *s = new_v;
+		  return true;}));
+#endif
+    }
+    
     bool insert(const K& k, const V& v) {
       bucket* s = hash_table.get_bucket(k);
       __builtin_prefetch (s);
       return epoch::with_epoch([&] {
-	link* head = s->load();
 	while (true) {
+	  link* head = s->load();
 	  if (find_in_list(head, k).has_value()) return false;
 	  link* new_head = epoch::New<link>(std::pair(k,v), head);
-	  if (s->compare_exchange_strong(head, new_head)) return true;
+	  if (weak_cas(s, head, new_head)) return true;
 	  epoch::Delete(new_head);
-	}});
+        }});
     }
 
     bool remove(const K& k) {
       bucket* s = hash_table.get_bucket(k);
       __builtin_prefetch (s);
       return epoch::with_epoch([&] {
-	link* head = s->load();
 	while (true) {
+	  link* head = s->load();
 	  auto [cnt, new_head] = remove_from_list(head, k);
 	  if (cnt == 0) return false;
-	  if (s->compare_exchange_strong(head, new_head)) {
+	  if (weak_cas(s, head, new_head)) {
 	    retire_list(head, cnt);
 	    return true;
 	  }
 	  retire_list(new_head, cnt - 1);
+	}});
+    }
+
+    template <typename F>
+    bool upsert(const K& k, const F& f) {
+      bucket* s = hash_table.get_bucket(k);
+      __builtin_prefetch (s);
+      return epoch::with_epoch([&] {
+        while (true) {
+	  link* head = s->load();
+	  if (!find_in_list(head, k).has_value()) {
+	    link* new_head = epoch::New<link>(std::pair(k, f(std::optional<V>())), head);
+	    if (weak_cas(s, head, new_head)) return true;
+	    epoch::Delete(new_head);
+	  } 
+#ifndef USE_LOCKS
+	  else {
+	    auto [cnt, new_head] = update_list(head, k);
+	    if (cas(s, head, new_head)) {
+	      retire_list(head, cnt);
+	      return false;
+	    }
+	    retire_list(new_head, cnt);
+	  }
+#else  // use try_lock
+	  else {
+	    if (get_locks().try_lock((long) s, [=] {
+                  if (s->load() != head) return false;
+		  auto [cnt, new_head] = update_list(head, k);
+		  *s = new_head;
+		  retire_list(head, cnt);
+		  return true;}))
+	      return false;
+	  }
+#endif
 	}});
     }
 

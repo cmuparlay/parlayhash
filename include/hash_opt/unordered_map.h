@@ -64,8 +64,8 @@
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
 #include <parlay/delayed.h>
-#include "epoch.h"
-#include "lock.h"
+#include "utils/epoch.h"
+#include "utils/lock.h"
 #define USE_LOCKS 1
 
 namespace parlay {
@@ -398,7 +398,7 @@ public:
       if (ok && x.has_value()) return false;
     }
     return epoch::with_epoch([&] {
-      auto y = epoch::try_loop([&] {return try_insert_at(s, k, v);});
+      auto y = parlay::try_loop([&] {return try_insert_at(s, k, v);});
       return !y.has_value();});
   }
 
@@ -407,7 +407,7 @@ public:
     bucket* s = hash_table.get_bucket(k);
     __builtin_prefetch (s);
     return epoch::with_epoch([&] {
-      return epoch::try_loop([&] {return try_upsert_at(s, k, f);});});
+      return parlay::try_loop([&] {return try_upsert_at(s, k, f);});});
   }
 
   bool remove(const K& k) {
@@ -420,7 +420,7 @@ public:
       if (ok && !x.has_value())	return false;
     }
     return epoch::with_epoch([&] {
-      auto y = epoch::try_loop([&] {return try_remove_at(s, k);});
+      auto y = parlay::try_loop([&] {return try_remove_at(s, k);});
       return y.has_value();});
   }
 
