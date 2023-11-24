@@ -65,19 +65,18 @@ Benchmarks comparing to other hash tables can be found in `benchmarks`.   With `
     cd benchmarks
     ./hash_grow           // our growable version
     ./hash_nogrow         // our non growable version
-    ./tbb_hash            // [tbb concurrent hash table](https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_unordered_map_cls.html)
-    ./libcuckoo           // [libcuckoo's cuckooohash_map](https://github.com/efficient/libcuckoo)
-    ./growt               // [growt's concurrent hash table](https://github.com/TooBiased/growt)
-    ./folly_hash          // [folly's ConcurrentHashMap](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h)
-    ./boost_hash          // [boost's concurrent_flat_map](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent)
-    ./parallel_hashmap    // [parallel hashmap](https://github.com/greg7mdp/parallel-hashmap)
-    ./folly_sharded       // our own sharded version using folly's efficient [non-concurrent F14map](https://github.com/facebook/folly/blob/main/folly/container/F14Map.h)
-    ./abseil_sharded      // our own sharded version using folly's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container)
-    ./std_sharded         // our own sharded version of std::unordered_map
     ...
 
 In addition to our own tables, the repository includes the following
-- ./libcuckoo           // [libcuckoo's cuckooohash_map](https://github.com/efficient/libcuckoo)
+- ./tbb_hash            ([tbb concurrent hash table](https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_unordered_map_cls.html))
+- ./libcuckoo           ([libcuckoo's cuckooohash_map](https://github.com/efficient/libcuckoo))
+- ./growt               ([growt's concurrent hash table](https://github.com/TooBiased/growt))
+- ./folly_hash          ([folly's ConcurrentHashMap](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h))
+- ./boost_hash          ([boost's concurrent_flat_map](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent))
+- ./parallel_hashmap    ([parallel hashmap](https://github.com/greg7mdp/parallel-hashmap))
+- ./folly_sharded       (our own sharded version using folly's efficient [non-concurrent F14map](https://github.com/facebook/folly/blob/main/folly/container/F14Map.h))
+- ./abseil_sharded      (our own sharded version using folly's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container))
+- ./std_sharded         (our own sharded version of std::unordered_map)
 
 For some of these you need to have the relevant library installed (e.g., boost, folly, abseil, tbb).
 
