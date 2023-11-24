@@ -37,7 +37,7 @@ IF (TBB_FOUND)
   add_benchmark(tbb_hash other TBB::tbb "" "")
 endif()
 
-set(BOOST_DIR ${PARLAYHASH_SOURCE_DIR}/build/benchmarks/boost_1_83_0)
+# set(BOOST_DIR ${PARLAYHASH_SOURCE_DIR}/build/benchmarks/boost_1_83_0)
 
 # We have to manually specify Boost's location since we are using the latest
 # cutting-edge Boost version, and FindBoost.cmake can not find Boost.Unordered
