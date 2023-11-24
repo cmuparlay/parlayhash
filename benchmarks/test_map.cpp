@@ -61,7 +61,9 @@ test_loop(commandLine& C,
   //		 return (K) (parlay::hash64(i) >> 1) ;}); 
   //auto y = parlay::random_shuffle(parlay::remove_duplicates(x));
   //auto a = parlay::tabulate(2 * n, [&] (size_t i) {return y[i];});
-  auto a = parlay::random_shuffle(parlay::tabulate(2 * n, [] (K i) { return i;}));
+
+  // have to exlude key = 0 since growt does not seem to allow it
+  auto a = parlay::random_shuffle(parlay::tabulate(2 * n, [] (K i) { return i + 1;}));
 
   // take m numbers from a in uniform or zipfian distribution
   parlay::sequence<K> b;
