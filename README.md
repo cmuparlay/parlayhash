@@ -76,6 +76,9 @@ Benchmarks comparing to other hash tables can be found in `benchmarks`.   With `
     ./std_sharded         // our own sharded version of std::unordered_map
     ...
 
+In addition to our own tables, the repository includes the following
+- ./libcuckoo           // [libcuckoo's cuckooohash_map](https://github.com/efficient/libcuckoo)
+
 For some of these you need to have the relevant library installed (e.g., boost, folly, abseil, tbb).
 
 The benchmarks will run by default on the number of hardware threads you have on the machine.
