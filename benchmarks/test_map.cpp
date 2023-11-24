@@ -25,8 +25,10 @@ using namespace parlay;
 #endif
 
 struct IntHash {
-    std::size_t operator()(K const& k) const noexcept {
-      return k * UINT64_C(0xbf58476d1ce4e5b9);}
+  std::size_t operator()(K const& k) const noexcept {
+    auto x = k * UINT64_C(0xbf58476d1ce4e5b9); // linear transform
+    return (x ^ (x >> 31));  // non-linear transform
+  }
 };
 
 using map_type = unordered_map<K,V,IntHash>;
@@ -55,11 +57,11 @@ test_loop(commandLine& C,
 
   // generate 2*n unique numbers in random order
   // get rid of top bit since growt seems to fail if used (must use it itself)
-  auto x = parlay::delayed_tabulate(1.2* 2 * n,[&] (size_t i) {
-		 return (K) (parlay::hash64(i) >> 1) ;}); 
-  auto y = parlay::random_shuffle(parlay::remove_duplicates(x));
-  auto a = parlay::tabulate(2 * n, [&] (size_t i) {return y[i];});
-  //a = parlay::random_shuffle(parlay::tabulate(2 * n, [] (K i) { return i;}));
+  //auto x = parlay::delayed_tabulate(1.2* 2 * n,[&] (size_t i) {
+  //		 return (K) (parlay::hash64(i) >> 1) ;}); 
+  //auto y = parlay::random_shuffle(parlay::remove_duplicates(x));
+  //auto a = parlay::tabulate(2 * n, [&] (size_t i) {return y[i];});
+  auto a = parlay::random_shuffle(parlay::tabulate(2 * n, [] (K i) { return i;}));
 
   // take m numbers from a in uniform or zipfian distribution
   parlay::sequence<K> b;
@@ -84,7 +86,7 @@ test_loop(commandLine& C,
   parlay::sequence<double> insert_times;
   parlay::sequence<double> bench_times;
     
-  for (int i = 0; i < rounds + warmup; i++) {
+  for (int i = 0; i < rounds + warmup; i++) { {
     map_type map = grow ? map_type(1) : map_type(n);
     size_t np = n/p;
     size_t mp = m/p;
@@ -92,14 +94,20 @@ test_loop(commandLine& C,
     // initialize the map with n distinct elements
     auto start_insert = std::chrono::system_clock::now();
 #ifdef USE_HANDLE
+    long block_size = 1 + (n-1) / p;
     parlay::parallel_for(0, p, [&] (size_t i) {
       auto handle = map.get_handle();
-      for (int j=i*np; j < (i+1)*np; j++)
+      long s = i * block_size;
+      long e = std::min(s + block_size, n);
+      for (int j = s; j < e; j++)
 	map.insert(HANDLE a[j], 123); }, 1, true);
 #else
     parlay::parallel_for(0, n, [&] (size_t i) {
 	map.insert(a[i], 123); });
 #endif
+    if (map.size() != n)
+      std::cout << "bad initial size = " << map.size() << std::endl;
+
 
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
     double imops = n / insert_time.count() / 1e6;
@@ -224,11 +232,18 @@ test_loop(commandLine& C,
     if (uratio < .4 || uratio > .6)
       std::cout << "warning: update success ratio = " << uratio << std::endl;
     if (initial_size + added != final_cnt) {
-      std::cout << "bad size: intial size = " << initial_size
+      std::cout << "bad final size: intial size = " << initial_size
 		<< ", added " << added
 		<< ", final size = " << final_cnt 
 		<< std::endl;
     }
+  }
+  #ifdef MEM_STATS
+    if (verbose) {
+      map_type::clear();
+      map_type::stats();
+    }
+#endif
   }
   return std::tuple{ geometric_mean(insert_times),
       geometric_mean(bench_times)};
@@ -248,6 +263,7 @@ int main(int argc, char* argv[]) {
   bool verbose = P.getOption("-verbose");
   bool warmup = !P.getOption("-nowarmup");
   bool grow = P.getOption("-grow");
+  bool print_means = !P.getOption("-nomeans");
 
   std::vector<long> sizes {100000, 10000000};
   std::vector<int> percents{5, 50};
@@ -264,10 +280,14 @@ int main(int argc, char* argv[]) {
 	results.push_back(test_loop(P, n, p, rounds, zipfian_param, update_percent, upsert,
 				    trial_time, latency_cuttoff, verbose, warmup, grow));
       }
-      std::cout << std::endl;
+      if (print_means) std::cout << std::endl;
     }
+
   auto insert_times = parlay::map(results, [] (auto x) {return std::get<0>(x);});
   auto bench_times = parlay::map(results, [] (auto x) {return std::get<1>(x);});
-  std::cout << "benchmark geometric mean of mops = " << geometric_mean(bench_times) << std::endl;
-  std::cout << "initial insert geometric mean of mops = " << geometric_mean(insert_times) << std::endl;
+  if (print_means) {
+    std::cout << "benchmark geometric mean of mops = " << geometric_mean(bench_times) << std::endl;
+    std::cout << "initial insert geometric mean of mops = " << geometric_mean(insert_times) << std::endl;
+  }
+  return false;
 }
