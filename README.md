@@ -35,15 +35,15 @@ another key in the same bucket is being updated).
 A simple example can be found in [examples/example.cpp](examples/example.cpp)
 There are two versions:
 
-- `include/hash_nogrow/unordered_map.h` : Does not support growing the number of buckets.  It can grow arbitrarily large but each buckets will become large and the table will be slow.  The number of buckets is specified when the table is constructed.   
+- [include/hash_nogrow/unordered_map.h](include/hash_nogrow/unordered_map.h) : Does not support growing the number of buckets.  It can grow arbitrarily large but each buckets will become large and the table will be slow.  The number of buckets is specified when the table is constructed.   
 
-- `include/hash_grow/unordered_map.h` : Supports growable hash tables.  The number of buckets increase by a constant factor when any bucket gets too large.   The copying is done incrementally by each update, allowing for a mostly lock-free implementation (allocation of new arrays is necessarily not lock-free since it must go throught the operating system).
+- [include/hash_grow/unordered_map.h](include/hash_grow/unordered_map.h) : Supports growable hash tables.  The number of buckets increase by a constant factor when any bucket gets too large.   The copying is done incrementally by each update, allowing for a mostly lock-free implementation (allocation of new arrays is necessarily not lock-free since it must go throught the operating system).
 
 There is a `USE_LOCKS` flag at the start of each file that is
 commented out by default.  If uncommented, then the implementation
 will use locks.  If using locks the function passed to `upsert` will
 be run in isolation (i.e., mutually exclusive of any other invocation
-of the function by an upssert on the same key).
+of the function by an upsert on the same key).
 
 **Implementation**: Each bucket points to a structure (Node)
 containing an array of entries.  Nodes come in varying sizes and on
