@@ -24,9 +24,15 @@ returned value, and returns true.   For example using: `[&] (auto x) {return v;}
 the key to have value v whether as was in there or not. 
 
 - `size() -> long` : Returns the size of the table.  Not linearizable
-with the other functions but returns correct size if no other
+with the other functions, but returns the correct size if no other
 functions are concurrent.  It takes work proportional to the table
 size.
+
+- `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a sequence
+containing all the entries of the map as key-value pairs.  Not
+linearizable with the other functions, but returns the correct elements
+if no other functions are concurrent.  It takes work proportional to
+the table size.
 
 The type for keys (K) and values (V) must be copyable, and might be
 copied by the hash table even when not being updated (e.g. when
@@ -37,10 +43,10 @@ There are two versions:
 
 - [include/hash_nogrow/unordered_map.h](include/hash_nogrow/unordered_map.h) : Does not support growing the number of buckets.  It can grow arbitrarily large but each buckets will become large and the table will be slow.  The number of buckets is specified when the table is constructed.   
 
-- [include/hash_grow/unordered_map.h](include/hash_grow/unordered_map.h) : Supports growable hash tables.  The number of buckets increase by a constant factor when any bucket gets too large.   The copying is done incrementally by each update, allowing for a mostly lock-free implementation (allocation of new arrays is necessarily not lock-free since it must go throught the operating system).
+- [include/hash_grow/unordered_map.h](include/hash_grow/unordered_map.h) : Supports growable hash tables.  The number of buckets increase by a constant factor when any bucket gets too large.   The copying is done incrementally by each update, allowing for a mostly lock-free implementation (allocation of new arrays is necessarily not lock-free since it must go through the operating system).
 
 There is a `USE_LOCKS` flag at the start of each file that is
-commented out by default.  If uncommented, then the implementation
+commented out by default.  If un-commented, then the implementation
 will use locks.  If using locks the function passed to `upsert` will
 be run in isolation (i.e., mutually exclusive of any other invocation
 of the function by an upsert on the same key).
@@ -50,7 +56,10 @@ containing an array of entries.  Nodes come in varying sizes and on
 update the node is copied.  When growing each bucket is copied to k
 new buckets and the old bucket is marked as "forwarded".
 
-
+The implementation uses
+[parlaylib](https://github.com/cmuparlay/parlaylib) for parallelism.
+In particular the array of buckets is initialized in parallel, and the
+`size` and `entries` functions run in parallel.   
 
 ## Benchmarks
 
@@ -81,7 +90,7 @@ In addition to our own tables, the repository includes the following
 For some of these you need to have the relevant library installed (e.g., boost, folly, abseil, tbb).
 
 The benchmarks will run by default on the number of hardware threads you have on the machine.
-It will run over two data sizes (100K and 10M), two update percents(5% and 50%), and two distritributions (uniform and zipfian=.99).
+It will run over two data sizes (100K and 10M), two update percents(5% and 50%), and two distributions (uniform and zipfian=.99).
 Performance is reported in millions operations-per-second (mops) for each combination as well as the geometric mean over all combinations.  Options include:
 
     -n <size>  : just this size
