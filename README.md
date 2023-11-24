@@ -32,8 +32,7 @@ The type for keys (K) and values (V) must be copyable, and might be
 copied by the hash table even when not being updated (e.g. when
 another key in the same bucket is being updated).
 
-A simple example can be found in `examples/example.cpp`(examples/examples.cpp).
-
+A simple example can be found in [examples/example.cpp](examples/example.cpp)
 There are two versions:
 
 - `include/hash_nogrow/unordered_map.h` : Does not support growing the number of buckets.  It can grow arbitrarily large but each buckets will become large and the table will be slow.  The number of buckets is specified when the table is constructed.   
