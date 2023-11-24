@@ -66,7 +66,7 @@
 #include <parlay/delayed.h>
 #include "utils/epoch.h"
 #include "utils/lock.h"
-#define USE_LOCKS 1
+//#define USE_LOCKS 1
 
 namespace parlay {
   
@@ -124,7 +124,7 @@ private:
     KV entries[Size];
 
     KV* get_entries() {
-      if (cnt < 31) return entries;
+      if (cnt <= 31) return entries;
       else return ((BigNode*) this)->entries.begin();
     }
 

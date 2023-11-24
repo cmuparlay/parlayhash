@@ -11,7 +11,7 @@
 #include <parlay/sequence.h>
 #include "utils/epoch.h"
 #include "utils/lock.h"
-#define USE_LOCKS 1
+//#define USE_LOCKS 1
 
 namespace parlay {
   
@@ -169,8 +169,8 @@ namespace parlay {
 	  } 
 #ifndef USE_LOCKS
 	  else {
-	    auto [cnt, new_head] = update_list(head, k);
-	    if (cas(s, head, new_head)) {
+	    auto [cnt, new_head] = update_list(head, k, f);
+	    if (weak_cas(s, head, new_head)) {
 	      retire_list(head, cnt);
 	      return false;
 	    }
@@ -180,7 +180,7 @@ namespace parlay {
 	  else {
 	    if (get_locks().try_lock((long) s, [=] {
                   if (s->load() != head) return false;
-		  auto [cnt, new_head] = update_list(head, k);
+		  auto [cnt, new_head] = update_list(head, k, f);
 		  *s = new_head;
 		  retire_list(head, cnt);
 		  return true;}))

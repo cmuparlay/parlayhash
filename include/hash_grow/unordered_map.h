@@ -69,7 +69,7 @@
 #include <parlay/delayed.h>
 #include "utils/epoch.h"
 #include "utils/lock.h"
-#define USE_LOCKS 1
+//#define USE_LOCKS 1
 
 namespace parlay {
   
@@ -137,7 +137,7 @@ private:
     KV entries[Size];
 
     KV* get_entries() {
-      if (cnt < 31) return entries;
+      if (cnt <= 31) return entries;
       else return ((BigNode*) this)->entries.begin();
     }
 
@@ -221,13 +221,13 @@ private:
   }
 
   template <typename F>
-  static node* update_node(node* old, const K& k, const F& f) {
+  static node* update_node(node* old, const K& k, const F& f, long idx) {
     assert(old != nullptr);
-    if (old->cnt == 1) return (node*) epoch::memory_pool<Node<1>>::New(old, k, f);
-    if (old->cnt <= 3) return (node*) epoch::memory_pool<Node<3>>::New(old, k, f);
-    else if (old->cnt <= 7) return (node*) epoch::memory_pool<Node<7>>::New(old, k, f);
-    else if (old->cnt <= 31) return (node*) epoch::memory_pool<Node<31>>::New(old, k, f);
-    else return (node*) epoch::memory_pool<BigNode>::New(old, k, f);
+    if (old->cnt == 1) return (node*) epoch::memory_pool<Node<1>>::New(idx, old, k, f);
+    if (old->cnt <= 3) return (node*) epoch::memory_pool<Node<3>>::New(idx, old, k, f);
+    else if (old->cnt <= 7) return (node*) epoch::memory_pool<Node<7>>::New(idx, old, k, f);
+    else if (old->cnt <= 31) return (node*) epoch::memory_pool<Node<31>>::New(idx,old, k, f);
+    else return (node*) epoch::memory_pool<BigNode>::New(idx, old, k, f);
   }
 
   static node* remove_from_node(node* old, const K& k, long idx) {
@@ -333,7 +333,7 @@ private:
   // copies key_value into a new table
   // note this is not thread safe...i.e. only this thread should be
   // updating the bucket corresponding to the key.
-  void copy_element(table_version* t, KV& key_value) {
+  static void copy_element(table_version* t, KV& key_value) {
     size_t idx = t->get_index(key_value.first);
     node* x = t->buckets[idx].load();
     assert(!is_forwarded(x));
@@ -408,7 +408,7 @@ private:
 #else
 	  copy_bucket_lock(t, next, i);
 #endif
-	  assert(next->next.load() == nullptr);
+	  //assert(next->next.load() == nullptr);
 	}
 	assert(next->block_status[block_num] == Working);
 	next->block_status[block_num] = Done;

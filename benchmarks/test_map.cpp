@@ -44,6 +44,7 @@ test_loop(commandLine& C,
 	  long rounds,  // num trials
 	  double zipfian_param, // zipfian parameter [0:1) (0 is uniform, .99 is high skew)
 	  int update_percent, // percent of operations that are either insert or delete (1/2 each)
+	  bool upsert, // use upsert instead of insert
 	  double trial_time, // time to run one trial
 	  double latency_cutoff, // cutoff to measure percent below
 	  bool verbose, // show some more info
@@ -165,7 +166,15 @@ test_loop(commandLine& C,
 	  query_success_count += map.find(HANDLE b[j]).has_value();
 #endif
 	} else if (op_types[k] == Insert) {
+#ifdef UPSERT
+	  if (upsert) {
+	    if (map.upsert(HANDLE b[j], [] (std::optional<V> v) {return 123;})) {added++; update_success_count++;}
+	  } else {
+	    if (map.insert(HANDLE b[j], 123)) {added++; update_success_count++;}
+	  } 
+#else
 	  if (map.insert(HANDLE b[j], 123)) {added++; update_success_count++;}
+#endif
 	} else { // (op_types[k] == Remove) 
 	  if (map.remove(HANDLE b[j])) {added--; update_success_count++;}
 	}
@@ -233,12 +242,12 @@ int main(int argc, char* argv[]) {
   int rounds = P.getOptionIntValue("-r", 2);
   double zipfian_param = P.getOptionDoubleValue("-z", -1.0);
   int update_percent = P.getOptionIntValue("-u", -1);
+  bool upsert = P.getOption("-upsert");
   double trial_time = P.getOptionDoubleValue("-t", 1.0);
   double latency_cuttoff = P.getOptionDoubleValue("-latency", 10.0); // in miliseconds
   bool verbose = P.getOption("-verbose");
   bool warmup = !P.getOption("-nowarmup");
   bool grow = P.getOption("-grow");
-
 
   std::vector<long> sizes {100000, 10000000};
   std::vector<int> percents{5, 50};
@@ -252,7 +261,7 @@ int main(int argc, char* argv[]) {
   for (auto zipfian_param : zipfians) 
     for (auto update_percent : percents) {
       for (auto n : sizes) {
-	results.push_back(test_loop(P, n, p, rounds, zipfian_param, update_percent,
+	results.push_back(test_loop(P, n, p, rounds, zipfian_param, update_percent, upsert,
 				    trial_time, latency_cuttoff, verbose, warmup, grow));
       }
       std::cout << std::endl;
