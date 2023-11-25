@@ -8,49 +8,31 @@ from runtests import *
 
 compile_clear("graphs")
 
-hash_list = ["libcuckoo","boost_hash","folly_sharded","tbb_hash","hash_list","hash_grow","hash_nogrow","growt","folly_hash"]
-empty = [""]
+hash_grow = ["libcuckoo","boost_hash","tbb_hash","hash_grow_list","hash_grow","folly_hash"]
+hash_nogrow = ["folly_sharded","hash_list","hash_nogrow"]
 
-class hash_list_threads(parameters) :
-    file_suffix = "graphs"
-    trees = hash_list
-    tree_sizes = [10000000]
-    zipfians = [.99]
-    mix_percents = [[5, 0, 0, 0]]
-    processors = [16, 32, 64, 128, 256, 384]
-    suffixes_all = empty
-
-run_all(hash_list_threads)
-
-class hash_list_sizes(parameters) :
-    file_suffix = "graphs"
-    trees = hash_list
-    tree_sizes = [1000, 10000, 100000, 1000000, 10000000, 100000000]
-    zipfians = [0]
-    mix_percents = [[5, 0, 0, 0]]
-    processors = [128]
-    suffixes_all = empty
-
-run_all(hash_list_sizes)
-
-class hash_list_zipfians(parameters) :
-    file_suffix = "graphs"
-    trees = hash_list
-    tree_sizes = [10000000]
-    zipfians = [0,.5,.75,.9,.99]
-    mix_percents = [[5, 0, 0, 0]]
-    processors = [128]
-    suffixes_all = empty
-
-run_all(hash_list_zipfians)
-
-class hash_list_update(parameters) :
-    file_suffix = "graphs"
-    trees = hash_list
-    tree_sizes = [10000000]
-    zipfians = [0]
-    mix_percents = [[0, 0, 0, 0], [5, 0, 0, 0],[10, 0, 0, 0],[20, 0, 0, 0],[50, 0, 0, 0],[100, 0, 0, 0]]
-    processors = [128]
-    suffixes_all = empty
-
-run_all(hash_list_update)
+def experiments(exp_list, args_) :
+    class hash_defaults(parameters) :
+        file_suffix = "graphs"
+        trees = exp_list
+        tree_sizes = [10000000]
+        zipfians = [.99]
+        mix_percents = [[5, 0, 0, 0]]
+        processors = [128]
+        suffixes_all = [""]
+        args = args_
+    class hash_list_threads(hash_defaults) :
+        processors = [16, 32, 64, 128, 256, 384]
+    run_all(hash_list_threads)
+    class hash_list_sizes(hash_defaults) :
+        tree_sizes = [1000, 10000, 100000, 1000000, 10000000, 100000000]
+    run_all(hash_list_sizes)
+    class hash_list_zipfians(hash_defaults) :
+        zipfians = [0,.5,.75,.9,.99]
+    run_all(hash_list_zipfians)
+    class hash_list_update(hash_defaults) :
+        mix_percents = [[0, 0, 0, 0], [5, 0, 0, 0],[10, 0, 0, 0],[20, 0, 0, 0],[50, 0, 0, 0],[100, 0, 0, 0]]
+    run_all(hash_list_update)
+    
+experiments(hash_grow, ["", "-grow"])
+experiments(hash_nogrow, [""])

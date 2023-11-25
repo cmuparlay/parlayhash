@@ -162,14 +162,13 @@ namespace parlay {
       return epoch::with_epoch([&] {
         while (true) {
 	  link* head = s->load();
-	  if (!find_in_list(head, k).has_value()) {
-	    link* new_head = epoch::New<link>(std::pair(k, f(std::optional<V>())), head);
+#ifndef USE_LOCKS
+	  auto [cnt, new_head] = update_list(head, k, f);
+	  if (cnt == 0) {
+	    new_head = epoch::New<link>(std::pair(k, f(std::optional<V>())), head);
 	    if (weak_cas(s, head, new_head)) return true;
 	    epoch::Delete(new_head);
-	  } 
-#ifndef USE_LOCKS
-	  else {
-	    auto [cnt, new_head] = update_list(head, k, f);
+	  } else {
 	    if (weak_cas(s, head, new_head)) {
 	      retire_list(head, cnt);
 	      return false;
@@ -177,7 +176,11 @@ namespace parlay {
 	    retire_list(new_head, cnt);
 	  }
 #else  // use try_lock
-	  else {
+	  if (!find_in_list(head, k).has_value()) {
+	    link* new_head = epoch::New<link>(std::pair(k, f(std::optional<V>())), head);
+	    if (weak_cas(s, head, new_head)) return true;
+	    epoch::Delete(new_head);
+	  } else {
 	    if (get_locks().try_lock((long) s, [=] {
                   if (s->load() != head) return false;
 		  auto [cnt, new_head] = update_list(head, k, f);

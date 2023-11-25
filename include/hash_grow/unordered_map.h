@@ -88,7 +88,7 @@ private:
   static constexpr int block_size = 64;
 
   // size of bucket that triggers growth
-  static constexpr int overflow_size = 8; 
+  static constexpr int overflow_size = 12;
 
   using KV = std::pair<K,V>;
 
@@ -431,7 +431,7 @@ private:
   // The internal find and update functions (find, insert, upsert and remove)
   // *********************************************
 
-  std::optional<V> find_at(table_version* t, bucket* s, const K& k) {
+  static std::optional<V> find_at(table_version* t, bucket* s, const K& k) {
     node* x = s->load();
     if (x == nullptr) return std::optional<V>();
     if (is_forwarded(x)) {
@@ -439,6 +439,14 @@ private:
       return find_at(nxt, nxt->get_bucket(k), k);
     }
     return x->find(k);
+  }
+
+  static void get_active_bucket(table_version* &t, bucket* &s, const K& k, node* &old_node) {
+    while (is_forwarded(old_node)) {
+      t = t->next.load();
+      s = t->get_bucket(k);
+      old_node = s->load();
+    }
   }
 
   // try to install a new node in bucket s
@@ -459,16 +467,9 @@ private:
     return false;
   }
 
-  static void get_active_bucket(table_version* &t, bucket* &s, const K& k, node* &old_node) {
-    while (is_forwarded(old_node)) {
-      t = t->next.load();
-      s = t->get_bucket(k);
-      old_node = s->load();
-    }
-  }
-
   static std::optional<std::optional<V>>
   try_insert_at(table_version* t, bucket* s, const K& k, const V& v) {
+    //find_at(t, s, k);
     node* old_node = s->load();
     get_active_bucket(t, s, k, old_node);
     auto x = (old_node == nullptr) ? std::nullopt : old_node->find(k);
@@ -539,7 +540,8 @@ public:
 
   std::optional<V> find(const K& k) {
     table_version* ht = current_table_version.load();
-    bucket* s = ht->get_bucket(k);
+    long idx = ht->get_index(k);
+    bucket* s = &ht->buckets[idx];
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {return find_at(ht, s, k);});
   }
@@ -551,8 +553,8 @@ public:
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {
       auto y = parlay::try_loop([=] {
-	  copy_if_needed(idx);
-          return try_insert_at(ht, s, k, v);});
+	copy_if_needed(idx);
+	return try_insert_at(ht, s, k, v);});
       return !y.has_value();});
   }
 

@@ -121,6 +121,7 @@ test_loop(commandLine& C,
     // keep track of some statistics, one entry per thread
     parlay::sequence<size_t> totals(p);
     parlay::sequence<long> addeds(p);
+    parlay::sequence<long> removeds(p);
     parlay::sequence<long> query_counts(p);
     parlay::sequence<long> query_success_counts(p);
     parlay::sequence<long> update_success_counts(p);
@@ -137,6 +138,7 @@ test_loop(commandLine& C,
       size_t k = i*mp;
       size_t total = 0;
       long added = 0;
+      long removed = 0;
       long query_count = 0;
       long query_success_count = 0;
       long update_success_count = 0;
@@ -154,6 +156,7 @@ test_loop(commandLine& C,
 	  if (duration.count() > trial_time) {
 	    totals[i] = total;
 	    addeds[i] = added;
+	    removeds[i] = removed;
 	    query_counts[i] = query_count;
 	    query_success_counts[i] = query_success_count;
 	    update_success_counts[i] = update_success_count;
@@ -186,7 +189,7 @@ test_loop(commandLine& C,
 	  if (map.insert(HANDLE b[j], 123)) {added++; update_success_count++;}
 #endif
 	} else { // (op_types[k] == Remove) 
-	  if (map.remove(HANDLE b[j])) {added--; update_success_count++;}
+	  if (map.remove(HANDLE b[j])) {removed++; update_success_count++;}
 	}
 
 
@@ -214,6 +217,7 @@ test_loop(commandLine& C,
 #ifdef Latency
       	      << latency_count / queries * 100.0 << "%@" << latency_cutoff << "usec,"
 #endif
+      	      << "grow=" << grow << ","
 	      << "insert_mops=" << (int) imops << ","
               << "mops=" << (int) mops << std::endl;
 
@@ -224,18 +228,20 @@ test_loop(commandLine& C,
     double uratio = (double) updates_success / updates;
     size_t final_cnt = map.size();
     long added = parlay::reduce(addeds);
+    long removed = parlay::reduce(removeds);
     if (verbose)
       std::cout << "query success ratio = " << qratio
 		<< ", update success ratio = " << uratio
-		<< ", net insertions = " << added
+		<< ", insertions = " << added
+		<< ", removes = " << removed
 		<< std::endl;
     if (qratio < .4 || qratio > .6)
       std::cout << "warning: query success ratio = " << qratio << std::endl;
     if (uratio < .4 || uratio > .6)
       std::cout << "warning: update success ratio = " << uratio << std::endl;
-    if (initial_size + added != final_cnt) {
+    if (initial_size + added - removed != final_cnt) {
       std::cout << "bad final size: intial size = " << initial_size
-		<< ", added " << added
+		<< ", net added " << (added - removed)
 		<< ", final size = " << final_cnt 
 		<< std::endl;
     }

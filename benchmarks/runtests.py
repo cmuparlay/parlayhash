@@ -65,6 +65,7 @@ class parameters :
     suffixes_ro = []
     mix_percents = [[5,0,0,0]]
     trans_sizes = [0]
+    args = [""]
     processors = [maxcpus-1]
 
 def runstring(op, outfile) :
@@ -81,7 +82,7 @@ def runstring(op, outfile) :
             os.system("echo \"Failed: " + op + "\" >> " + outfile)
         os.system("echo Failed")
 
-def runtest(test,procs,n,z,mix,ts,params,filename) :
+def runtest(test,procs,n,z,mix,ts,arg,params,filename) :
     num_threads = max(procs,maxcpus)
     if mix[1] > 0: str_mfind = "-mfind "
     else : str_mfind = ""
@@ -98,22 +99,23 @@ def runtest(test,procs,n,z,mix,ts,params,filename) :
     if (run_time == 0.0) : run_time = params.time
     str_time = "-tt " + str(run_time) + " "
     str_n = "-n " + str(n) + " "
+    str_arg = arg + " "
     if shuffle : str_other = "-shuffle "
     else : str_other = ""
-    runstring("PARLAY_NUM_THREADS=" + str(num_threads) + " numactl -i all ./" + test + " " + str_time + str_rounds + str_n + str_mfind + str_mix + str_rs + str_proc + str_zipfians + str_trans_size + str_other + "-nomeans", filename)
+    runstring("PARLAY_NUM_THREADS=" + str(num_threads) + " numactl -i all ./" + test + " " + str_time + str_rounds + str_n + str_mfind + str_mix + str_rs + str_proc + str_zipfians + str_trans_size + str_arg + str_other + "-nomeans", filename)
 
 def run_tests(tests, sizes, params, filename) :
     for test in tests :
         for suffix in params.suffixes_all:
-            for n in sizes :
-                for mix in params.mix_percents :
-                    for ts in params.trans_sizes :
-                        for z in params.zipfians :
-                            for p in params.processors :
-                                runtest(test + suffix, p, n, z, mix, ts, params, filename)
-                with open(filename, "a") as f:
-                    f.write("...\n")
-
+            for arg in params.args:
+                for n in sizes :
+                    for mix in params.mix_percents :
+                        for ts in params.trans_sizes :
+                            for z in params.zipfians :
+                                for p in params.processors :
+                                    runtest(test + suffix, p, n, z, mix, ts, arg, params, filename)
+            with open(filename, "a") as f:
+                f.write("...\n")
 
 def run_all(params) :
     filename = "../../timings/" + hostname[0:5] + "_" + params.file_suffix + "_" + today
