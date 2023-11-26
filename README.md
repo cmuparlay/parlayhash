@@ -122,7 +122,7 @@ Here are some timings on a AWS EC2 c6i.metal instance.  This machine
 has two chips with 32 cores each, each 2-way hyperthreaded, for a
 total of 128 threads.  Each number reports the goemetric mean of mops over the eight
 workloads mentioned above (two sizes x two update rates x two
-distributions).  For our tables we show both the times for
+distributions).  For our hash maps we show both the times for
 the locked (lock) and lock free (lf) versions.
 
 | Hash Table | 1 thread | 128 threads | 
@@ -134,7 +134,7 @@ the locked (lock) and lock free (lf) versions.
 | hash_grow_list lf | 15.9 | 625 |
 | hash_grow_list lock | 16.1 | 670 |
 | tbb_hash | 9.3 | 64.6 |
-| libcuckoo | 11.5 | 33.8 |
+| libcuckoo | 11.5 | 33.1 |
 | growt | 7.2 | 156 |
 | folly_hash | 11.9 | failed |
 | boost_hash | 23.3 | 41.2 |
@@ -162,7 +162,7 @@ benchmark geometric mean of mops = 33.0592
 initial insert geometric mean of mops = 234.931
 ```
 
-The last four loads are for z=.99, and it does badly on these.  In coparison here is the full
+The last four workloads are for z=.99, and it does badly on these.  In coparison here is the full
 result for `hash_nogrow`:
 
 ```
