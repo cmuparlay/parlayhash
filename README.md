@@ -63,6 +63,7 @@ The implementation uses
 In particular the array of buckets is initialized in parallel, and the
 `size` and `entries` functions run in parallel.   
 
+
 ## Benchmarks
 
 Benchmarks comparing to other hash tables can be found in `benchmarks`.   With `cmake` the following should work:
@@ -91,34 +92,96 @@ In addition to our own tables, the repository includes the following
 
 For some of these you need to have the relevant library installed (e.g., boost, folly, abseil, tbb).
 
-The benchmarks will run by default on the number of hardware threads you have on the machine.
-It will run over two data sizes (100K and 10M), two update percents(5% and 50%), and two distributions (uniform and zipfian=.99).
-Performance is reported in millions operations-per-second (mops) for each combination as well as the geometric mean over all combinations.  Options include:
+The benchmarks will run by default on the number of hardware threads
+you have on the machine.  It will run over two data sizes (100K and
+10M), two update percents (5% and 50%), and two distributions (uniform
+and zipfian=.99).  This is a total of 8 workloads since all
+combinations are tried.  The updates are 50% insertions (without
+replacement if already there) and 50% removes, the rest of the
+operations are finds.  For example, the 50% update workload will have
+25% insertions, 25% removes, and 50% finds.  The key-value pairs
+consist of two longs.  The experiment is set up so 1/2 the insersions
+and 1/2 the removes are successfull on average.
+
+Performance is reported in millions operations-per-second (mops) for
+each combination as well as the geometric mean over all combinations.
+Options include:
 
     -n <size>  : just this size
     -u <update percent>   : just this percent
-    -z <zipfian parameter>  : just this parameter
+    -z <zipfian parameter>  : just this zipfian parameter
     -grow : starts table at size 1 instead of size n
     -verbose : prints out some extra information
     -t <time in seconds>  : length of each trial, default = 1
     -r <num rounds>  : number of rounds for each size/update-percent/zipfian, default = 2
     -p <num threads> 
 
-## Organization and Dependences
+## Timings
 
-The only dependences our implementations have are with parlaylib, which is included as part of the repository.   Note that parlaylib will start up threads as needed to run certain operations in parallel.   Once no longer needed, these will go to sleep but will still be around.
+Here are some timings on a AWS EC2 c6i.metal instance.  This machine
+has two chips with 32 cores each, each 2-way hyperthreaded, for a
+total of 128 threads.  Each number reports the goemetric mean of mops over the eight
+workloads mentioned above (two sizes x two update rates x two
+distributions).  For our tables we show both the times for
+the locked (lock) and lock free (lf) versions.
 
-The only file you need to include directly to use our hash tables is either:
-- [include/hash_nogrow/unordered_map.h](include/hash_nogrow/unordered_map.h) or
+| Hash Table | 1 thread | 128 threads | Notes |
+| - | - | - | - |
+| hash_nogrow lf | 17.2 | 650 |
+| hash_nogrow lock | 17.4 | 681 |
+| hash_grow lf | 13.4 | 592 |
+| hash_grow lock | 13.2 | 622 |
+| hash_grow_list lf | 15.9 | 625 |
+| hash_grow_list lock | 16.1 | 670 |
+| tbb_hash | 9.3 | 64.6 |
+| libcuckoo | 11.5 | 33.8 |
+| growt | 7.2 | 156 |
+| folly_hash | 11.9 | failed |
+| boost_hash | 23.3 | 41.2 |
+| parallel_hashmap | 24.4 | 10.4 |
+| folly_sharded | 16.5 | 125 |
+| abseil (sequential) | 40.1 | --- |
+| std (sequential) | 13.2 | --- |
+
+Note our timings include `hash_grow_list`, which is another version of our growing hash table.  Many of the other hash tables do very badly under high contention.   For example, here are the full results for `libcuckoo`:
+
+> ./libcuckoo,5%update,n=100000,p=128,z=0,grow=0,insert_mops=181,mops=536
+> ./libcuckoo,5%update,n=10000000,p=128,z=0,grow=0,insert_mops=298,mops=385
+> ./libcuckoo,50%update,n=100000,p=128,z=0,grow=0,insert_mops=188,mops=448
+> ./libcuckoo,50%update,n=10000000,p=128,z=0,grow=0,insert_mops=296,mops=342
+> ./libcuckoo,5%update,n=100000,p=128,z=0.99,grow=0,insert_mops=187,mops=2
+> ./libcuckoo,5%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=297,mops=2
+> ./libcuckoo,50%update,n=100000,p=128,z=0.99,grow=0,insert_mops=185,mops=1
+> ./libcuckoo,50%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=296,mops=3
+> benchmark geometric mean of mops = 33.0592
+> initial insert geometric mean of mops = 234.931
+
+The last four loads are for z=.99, and it does badly on these.  In coparison here is the full
+result for `hash_nogrow`:
+
+> ./hash_nogrow,5%update,n=100000,p=128,z=0,grow=0,insert_mops=296,mops=1868
+> ./hash_nogrow,5%update,n=10000000,p=128,z=0,grow=0,insert_mops=281,mops=674
+> ./hash_nogrow,50%update,n=100000,p=128,z=0,grow=0,insert_mops=302,mops=626
+> ./hash_nogrow,50%update,n=10000000,p=128,z=0,grow=0,insert_mops=282,mops=469
+> ./hash_nogrow,5%update,n=100000,p=128,z=0.99,grow=0,insert_mops=287,mops=1046
+> ./hash_nogrow,5%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=282,mops=954
+> ./hash_nogrow,50%update,n=100000,p=128,z=0.99,grow=0,insert_mops=311,mops=265   
+> ./hash_nogrow,50%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=282,mops=325
+> benchmark geometric mean of mops = 650.435
+> initial insert geometric mean of mops = 290.741
+
+## Code Organization and Dependences
+
+The only dependences our implementations have are with [parlaylib](https://github.com/cmuparlay/parlaylib), which is included as part of the repository.   Note that parlaylib will start up threads as needed to run certain operations in parallel.   Once no longer needed, these will go to sleep but will still be around.
+
+The only file you need to include directly to use our hash tables is one of:
+- [include/hash_nogrow/unordered_map.h](include/hash_nogrow/unordered_map.h), or
 - [include/hash_grow/unordered_map.h](include/hash_grow/unordered_map.h)
 
 The only non C++ standard library files that these include are the following:
-- [include/utils/epoch.h](include/utils/epoch.h), which is a code for epoch-based safe memory reclamation.   It includes `New<T>(...args)` and `Retire(T* ptr)` operations, which correspond to `new` and `delete`.   The retire delays destruction until it is safe to do so (i.e., when no operation that was active at the time of the retire is still active).    By default epoch.h uses the parlay pool allocator since it is more efficient than e.g. jemalloc.   You can have it use the default allocator by defining `USE_MALLOC`.   This file require parlaylib.
+- [include/utils/epoch.h](include/utils/epoch.h), which is an implementation of epoch-based safe memory reclamation.   It supports the functions `New<T>(...args)` and `Retire(T* ptr)`, which correspond to `new` and `delete`.   The retire, however, delays destruction until it is safe to do so (i.e., when no operation that was running at the time of the retire is still running).    By default, `epoch.h` uses the parlay pool allocator since it is more efficient than e.g. jemalloc.   You can have it use the default allocator by defining `USE_MALLOC`.   This file require parlaylib.
 - [include/utils/lock.h](include/utils/lock.h), which is a simple implementation of shared locks.  It is only used if you use the lock-based versions of the hash tables.  The implementation has an array with a fixed number of locks (currently 65K), and a location is hashed to one of the locks in the array.   Each lock is a simple spin lock.    This file has no dependences beyond the C++ standard library.
 - Files from the [include/parlaylib](include/parlaylib) library.
 
 The other implementations (e.g. tbb, folly, ...) require the relevant libraries, but do not require `parlaylib` themselves.   However, our benchmarking harness uses `parlaylib` to run the benchmarks for all implementations.
 
-| Test | Table |
-| --- | --- |
-| 1 | 2 |
