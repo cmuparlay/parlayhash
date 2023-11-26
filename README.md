@@ -1,6 +1,6 @@
 # parlayhash : A Header Only Fast Concurrent Hash Table.
 
-A concurrent hash table supporting **wait-free finds** and **lock-free updates**.
+A concurrent hash table supporting **wait-free finds** and **lock-free updates** (the growable hash table can take fine-grained locks when growing).
 It supports the following interface:
 
 - `unordered_map<K,V,Hash=std::hash<K>,Equal=std::equal_to<K>>(n)` :
@@ -43,13 +43,15 @@ There are two versions:
 
 - [include/hash_nogrow/unordered_map.h](include/hash_nogrow/unordered_map.h) : Does not support growing the number of buckets.  It can grow arbitrarily large but each buckets will become large and the table will be slow.  The number of buckets is specified when the table is constructed.   
 
-- [include/hash_grow/unordered_map.h](include/hash_grow/unordered_map.h) : Supports growable hash tables.  The number of buckets increase by a constant factor when any bucket gets too large.   The copying is done incrementally by each update, allowing for a mostly lock-free implementation (allocation of new arrays is necessarily not lock-free since it must go through the operating system).
+- [include/hash_grow/unordered_map.h](include/hash_grow/unordered_map.h) : Supports growable hash tables.  The number of buckets increase by a constant factor when any bucket gets too large.   The copying is done incrementally by each update, allowing for a mostly lock-free implementation.   Queries (finds) are still wait-free, but updates can take a fine-grained lock (on a block of buckets) when the table is growing.   Also allocation of a new **uninitialized array** for the buckets at the start of a grow cycle takes a lock to avoid multiple allocations, and since the allocator will most likely take a lock anyway for large arrays.
 
 There is a `USE_LOCKS` flag at the start of each file that is
 commented out by default.  If un-commented, then the implementation
-will use locks.  If using locks the function passed to `upsert` will
+will use locks.  If using locks, the function passed to `upsert` will
 be run in isolation (i.e., mutually exclusive of any other invocation
-of the function by an upsert on the same key).
+of the function by an upsert on the same key) and just once.  With the
+lock-free version the function could be run multiple times
+concurrently, although the value of only one will be used.
 
 **Implementation**: Each bucket points to a structure (Node)
 containing an array of entries.  Nodes come in varying sizes and on
@@ -102,3 +104,20 @@ Performance is reported in millions operations-per-second (mops) for each combin
     -r <num rounds>  : number of rounds for each size/update-percent/zipfian, default = 2
     -p <num threads> 
 
+## Organization and Dependences
+
+The only dependences our implementations have are with parlaylib, which is included as part of the repository.   Note that parlaylib will start up threads as needed to run certain operations in parallel.   Once no longer needed, these will go to sleep but will still be around.
+
+The only file you need to include directly to use our hash tables is either:
+- [include/hash_nogrow/unordered_map.h](include/hash_nogrow/unordered_map.h) or
+- [include/hash_grow/unordered_map.h](include/hash_grow/unordered_map.h)
+
+The only non C++ standard library files that these include are the following:
+- [include/utils/epoch.h](include/utils/epoch.h), which is a code for epoch-based safe memory reclamation.   It includes `New<T>(...args)` and `Retire(T* ptr)` operations, which correspond to `new` and `delete`.   The retire delays destruction until it is safe to do so (i.e., when no operation that was active at the time of the retire is still active).    By default epoch.h uses the parlay pool allocator since it is more efficient than e.g. jemalloc.   You can have it use the default allocator by defining `USE_MALLOC`.   This file require parlaylib.
+- [include/utils/lock.h](include/utils/lock.h), which is a simple implementation of shared locks.  It is only used if you use the lock-based versions of the hash tables.  The implementation has an array with a fixed number of locks (currently 65K), and a location is hashed to one of the locks in the array.   Each lock is a simple spin lock.    This file has no dependences beyond the C++ standard library.
+- Files from the [include/parlaylib](include/parlaylib) library.
+
+The other implementations (e.g. tbb, folly, ...) require the relevant libraries, but do not require `parlaylib` themselves.   However, our benchmarking harness uses `parlaylib` to run the benchmarks for all implementations.
+
+| Test | Table |
+| 1 | 2 |
