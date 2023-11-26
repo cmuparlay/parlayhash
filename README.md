@@ -125,8 +125,8 @@ workloads mentioned above (two sizes x two update rates x two
 distributions).  For our tables we show both the times for
 the locked (lock) and lock free (lf) versions.
 
-| Hash Table | 1 thread | 128 threads | Notes |
-| - | - | - | - |
+| Hash Table | 1 thread | 128 threads | 
+| - | - | - | 
 | hash_nogrow lf | 17.2 | 650 |
 | hash_nogrow lock | 17.4 | 681 |
 | hash_grow lf | 13.4 | 592 |
@@ -143,32 +143,40 @@ the locked (lock) and lock free (lf) versions.
 | abseil (sequential) | 40.1 | --- |
 | std (sequential) | 13.2 | --- |
 
-Note our timings include `hash_grow_list`, which is another version of our growing hash table.  Many of the other hash tables do very badly under high contention.   For example, here are the full results for `libcuckoo`:
+Note our timings include `hash_grow_list`, which is another version of
+our growing hash table.
 
-> ./libcuckoo,5%update,n=100000,p=128,z=0,grow=0,insert_mops=181,mops=536
-> ./libcuckoo,5%update,n=10000000,p=128,z=0,grow=0,insert_mops=298,mops=385
-> ./libcuckoo,50%update,n=100000,p=128,z=0,grow=0,insert_mops=188,mops=448
-> ./libcuckoo,50%update,n=10000000,p=128,z=0,grow=0,insert_mops=296,mops=342
-> ./libcuckoo,5%update,n=100000,p=128,z=0.99,grow=0,insert_mops=187,mops=2
-> ./libcuckoo,5%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=297,mops=2
-> ./libcuckoo,50%update,n=100000,p=128,z=0.99,grow=0,insert_mops=185,mops=1
-> ./libcuckoo,50%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=296,mops=3
-> benchmark geometric mean of mops = 33.0592
-> initial insert geometric mean of mops = 234.931
+Many of the other hash tables do very badly under high contention.
+For example, here are the full results for `libcuckoo`:
+
+```
+./libcuckoo,5%update,n=100000,p=128,z=0,grow=0,insert_mops=181,mops=536
+./libcuckoo,5%update,n=10000000,p=128,z=0,grow=0,insert_mops=298,mops=385
+./libcuckoo,50%update,n=100000,p=128,z=0,grow=0,insert_mops=188,mops=448
+./libcuckoo,50%update,n=10000000,p=128,z=0,grow=0,insert_mops=296,mops=342
+./libcuckoo,5%update,n=100000,p=128,z=0.99,grow=0,insert_mops=187,mops=2
+./libcuckoo,5%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=297,mops=2
+./libcuckoo,50%update,n=100000,p=128,z=0.99,grow=0,insert_mops=185,mops=1
+./libcuckoo,50%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=296,mops=3
+benchmark geometric mean of mops = 33.0592
+initial insert geometric mean of mops = 234.931
+```
 
 The last four loads are for z=.99, and it does badly on these.  In coparison here is the full
 result for `hash_nogrow`:
 
-> ./hash_nogrow,5%update,n=100000,p=128,z=0,grow=0,insert_mops=296,mops=1868
-> ./hash_nogrow,5%update,n=10000000,p=128,z=0,grow=0,insert_mops=281,mops=674
-> ./hash_nogrow,50%update,n=100000,p=128,z=0,grow=0,insert_mops=302,mops=626
-> ./hash_nogrow,50%update,n=10000000,p=128,z=0,grow=0,insert_mops=282,mops=469
-> ./hash_nogrow,5%update,n=100000,p=128,z=0.99,grow=0,insert_mops=287,mops=1046
-> ./hash_nogrow,5%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=282,mops=954
-> ./hash_nogrow,50%update,n=100000,p=128,z=0.99,grow=0,insert_mops=311,mops=265   
-> ./hash_nogrow,50%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=282,mops=325
-> benchmark geometric mean of mops = 650.435
-> initial insert geometric mean of mops = 290.741
+```
+./hash_nogrow,5%update,n=100000,p=128,z=0,grow=0,insert_mops=296,mops=1868
+./hash_nogrow,5%update,n=10000000,p=128,z=0,grow=0,insert_mops=281,mops=674
+./hash_nogrow,50%update,n=100000,p=128,z=0,grow=0,insert_mops=302,mops=626
+./hash_nogrow,50%update,n=10000000,p=128,z=0,grow=0,insert_mops=282,mops=469
+./hash_nogrow,5%update,n=100000,p=128,z=0.99,grow=0,insert_mops=287,mops=1046
+./hash_nogrow,5%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=282,mops=954
+./hash_nogrow,50%update,n=100000,p=128,z=0.99,grow=0,insert_mops=311,mops=265   
+./hash_nogrow,50%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=282,mops=325
+benchmark geometric mean of mops = 650.435
+initial insert geometric mean of mops = 290.741
+```
 
 ## Code Organization and Dependences
 
