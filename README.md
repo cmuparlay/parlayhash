@@ -120,4 +120,5 @@ The only non C++ standard library files that these include are the following:
 The other implementations (e.g. tbb, folly, ...) require the relevant libraries, but do not require `parlaylib` themselves.   However, our benchmarking harness uses `parlaylib` to run the benchmarks for all implementations.
 
 | Test | Table |
+| --- | --- |
 | 1 | 2 |
