@@ -353,7 +353,7 @@ private:
     return (s->load() == old_v && s->compare_exchange_weak(old_v, new_v));
 #else  // use try_lock
     return (get_locks().try_lock((long) s, [=] {
-               if (s->load() != old_v) return false;
+	       if (!(s->load() == old_v)) return false;
 	       *s = new_v;
 	       return true;}));
 #endif
@@ -404,12 +404,12 @@ private:
     }
 #else  // use try_lock
     if (!find_in_list(old_ptr, k).has_value()) {
-      link* new_ptr = epoch::New<link>(std::pair(k, f(std::optional<V>())), head);
+      link* new_ptr = epoch::New<link>(std::pair(k, f(std::optional<V>())), old_ptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr, len + 1))) return true;
       epoch::Delete(new_ptr);
     } else {
       if (get_locks().try_lock((long) s, [=] {
-          if (s->load() != old_head) return false;
+	  if (!(s->load() == old_head)) return false;
 	  auto [cnt, new_ptr] = update_list(old_ptr, k, f);
 	  *s = head_ptr(new_ptr, len);
 	  retire_list(old_ptr, cnt);
