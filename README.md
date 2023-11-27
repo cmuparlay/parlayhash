@@ -1,23 +1,20 @@
-# parlayhash : A Header Only Fast Concurrent Hash Map.
+# ParlayHash : A Header-Only Fast Concurrent Hash Map.
 
-A concurrent hash map supporting **wait-free finds** and **lock-free
+A concurrent hash map supporting **wait-free finds** and mostly **lock-free
 updates** (the growable hash map can take fine-grained locks on updates when
 growing).
 
 The simplest way to use the library is to copy the [include](include) directory into your code directory
-and then
+and then include the following in your code:
 
 ```
-#include "include/hash_grow/unordered.map"`
+#include "include/hash_grow/unordered_map.h"`
 ```
 
-in your code.
-
-
-The library supports the following interface:
+The library supports the following interface for any copyable key type `K` and value type `V`.
 
 - `parlay::unordered_map<K,V,Hash=std::hash<K>,Equal=std::equal_to<K>>(n)` :
-constructor for map of initial size n (in growable version n can be 0).
+constructor for map of initial size n.
 
 - `find(const K&) -> std::optional<V>` : If the key is in the map, returns the value associated
   with it, otherwise returns std::nullopt.
@@ -37,7 +34,8 @@ returned value, and returns true.   For example using: `[&] (auto x) {return v;}
 the given key to have value v whether it was in there or not. 
 
 - `size() -> long` : Returns the number of elements in the map.  Cannot be run concurrently with any other
-operation.
+operation.  It takes work proportional to the hash map
+size.
 <!---
 It is not linearizable
 with the other functions, but always includes any elements that are in there from its invocation until
@@ -45,21 +43,22 @@ its response, and never includes an element that is removed before its invocatio
 its response.   This means it returns the correct size if no other
 functions are concurrent.
 --->
-It takes work proportional to the hash map
-size.
+
 
 - `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a sequence
 containing all the entries of the map as key-value pairs.  Cannot be run concurrently with any other operation.
+It takes work proportional to the number of
+elements in the hash map size.
 <!--- Not
 linearizable with the other functions, but has the same concurrency
 semantics as size.
 --->
-It takes work proportional to the number of
-elements in the hash map size.
 
+<!---
 The type for keys (K) and values (V) must be copyable, and might be
 copied by the hash map even when not being updated (e.g. when
 another key in the same bucket is being updated).
+--->
 
 A simple example can be found in [examples/example.cpp](examples/example.cpp)
 
@@ -77,11 +76,6 @@ isolation (i.e., mutually exclusive of any other invocation of the
 function by an upsert on the same key) and just once.  With the
 lock-free version the function could be run multiple times
 concurrently, although the value of only one will be used.
-
-**Implementation**: Each bucket points to a structure (Node)
-containing an array of entries.  Nodes come in varying sizes and on
-update the node is copied.  When growing each bucket is copied to k
-new buckets and the old bucket is marked as "forwarded".
 
 The implementation uses
 [parlaylib](https://github.com/cmuparlay/parlaylib) for parallelism.
