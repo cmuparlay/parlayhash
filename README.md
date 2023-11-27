@@ -34,26 +34,19 @@ function to std::nullopt and inserts the key into the map with the
 returned value, and returns true.   For example using: `[&] (auto x) {return v;}` will just set
 the given key to have value v whether it was in there or not. 
 
-- `size() -> long` : Returns the number of elements in the map.  Cannot be run concurrently with any other
-operation.  It takes work proportional to the hash map
-size.
-<!---
-It is not linearizable
-with the other functions, but always includes any elements that are in there from its invocation until
-its response, and never includes an element that is removed before its invocation or is inserted after
-its response.   This means it returns the correct size if no other
-functions are concurrent.
---->
-
+- `size() -> long` : Returns the number of elements in the map.  It is
+not linearizable with the other functions, but always includes any
+elements that are in there from its invocation until its response, and
+never includes an element that is removed before its invocation or is
+inserted after its response.  This means, for example, that it returns
+the correct size if no other functions are concurrent.  It takes work
+proportional to the hash map size.
 
 - `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a sequence
-containing all the entries of the map as key-value pairs.  Cannot be run concurrently with any other operation.
-It takes work proportional to the number of
-elements in the hash map size.
-<!--- Not
+containing all the entries of the map as key-value pairs.  Not
 linearizable with the other functions, but has the same concurrency
-semantics as size.
---->
+semantics as `size`.   It takes work proportional to the number of
+elements in the hash map size.
 
 <!---
 The type for keys (K) and values (V) must be copyable, and might be
@@ -147,7 +140,7 @@ Here are some timings on a AWS EC2 c6i.metal instance.  This machine
 has two Intel Xeon Ice Lake chips with 32 cores each.  Each core is 2-way hyperthreaded, for a
 total of 128 threads.  Each number reports the geometric mean of mops over the eight
 workloads mentioned above (two sizes x two update rates x two
-distributions).  For our hash maps, we show both the times for
+distributions).  For our hash map, we show both the times for
 the locked (lock) and lock free (lf) versions.
 
 Columns 2 and 3 correspond to 1 thread and 128 threads when the hash map is initialized
@@ -175,9 +168,6 @@ The fifth column is for inserting 10M unique keys on 128 threads when the hash m
 | folly_sharded | 16.5 | 125 | --- | --- |
 | abseil (sequential) | 40.1 | --- | --- | --- |
 | std (sequential) | 13.2 | --- | --- | --- |
-
-Note our timings include `hash_grow_list`, which is another version of
-our growing hash map.
 
 Many of the other hash maps do badly under high contention.
 For example, here are the full results for `libcuckoo`:
@@ -213,17 +203,16 @@ initial insert geometric mean of mops = 290.741
 
 ## Code Dependencies
 
-Our hash maps uses [parlaylib](https://github.com/cmuparlay/parlaylib)
+Our hash map uses [parlaylib](https://github.com/cmuparlay/parlaylib)
 for parallelism.  In particular the array of buckets is initialized in
 parallel, and the `size` and `entries` functions run in parallel.  The
 parlaylib files are included in the repository so it need not be
 installed.
 Note that parlaylib will start up threads as needed to run certain operations in parallel.   Once no longer needed, these will go to sleep but will still be around.
 
-The only non C++ standard library files that
-[include/parlay_hash/unordered_map.h](include/parylay_hash/unordered_map.h)
-includes are the following:
-- [include/utils/epoch.h](include/utils/epoch.h), which is an implementation of epoch-based safe memory reclamation.   It supports the functions `New<T>(...args)` and `Retire(T* ptr)`, which correspond to `new` and `delete`.   The retire, however, delays destruction until it is safe to do so (i.e., when no operation that was running at the time of the retire is still running).    By default, `epoch.h` uses the parlay pool allocator since it is more efficient than e.g. jemalloc.   You can have it use the default allocator by defining `USE_MALLOC`.   This file require parlaylib.
+The file [include/parlay_hash/unordered_map.h](include/parylay_hash/unordered_map.h) is mostly self contained.
+The only non C++ standard library files that it uses are the following:
+- [include/utils/epoch.h](include/utils/epoch.h), which is an implementation of epoch-based safe memory reclamation.   It supports the functions `New<T>(...args)` and `Retire(T* ptr)`, which correspond to `new` and `delete`.   The retire, however, delays destruction until it is safe to do so (i.e., when no operation that was running at the time of the retire is still running).    By default, `epoch.h` uses the parlay pool allocator since it is more efficient than e.g. jemalloc.   You can have it use the default allocator by defining `USE_MALLOC`. 
 - [include/utils/lock.h](include/utils/lock.h), which is a simple implementation of shared locks.  It is only used if you use the lock-based versions of the hash maps.  The implementation has an array with a fixed number of locks (currently 65K), and a location is hashed to one of the locks in the array.   Each lock is a simple spin lock.    This file has no dependencies beyond the C++ standard library.
 - Files from the [include/parlaylib](include/parlaylib) library.
 

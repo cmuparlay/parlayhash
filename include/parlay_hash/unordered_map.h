@@ -321,8 +321,7 @@ private:
   // If copying is ongoing (i.e. next is not null), and if the the hash bucket
   // given by hashid is not already copied, tries to copy block_size buckets, including
   // that of hashid, to the next larger hash_table.
-  void copy_if_needed(long hashid) {
-    table_version* t = current_table_version.load();
+  void copy_if_needed(table_version* t, long hashid) {
     table_version* next = t->next.load();
     if (next != nullptr) {
       long block_num = hashid & (next->block_status.size() -1);
@@ -476,13 +475,33 @@ private:
     return std::nullopt;
   }
 
-  // forces all buckets to be copied to the next version
-  void force_copy() {
-    table_version* ht = current_table_version.load();
-    while (ht->next != nullptr) {
-      for (int i=0; i < ht->size; i++)
-	copy_if_needed(i);
-      ht = current_table_version.load();
+  // Return size of bucket i of table version t.
+  // Needs to follow through to forwarded buckets to find size.
+  long bucket_size(table_version* t, long i) {
+    head_ptr head = t->buckets[i].load();
+    if (!head.is_forwarded())
+      return list_length(head);
+    table_version* next = t->next.load();
+    long sum = 0;
+    for (int j = 0; j < grow_factor; j++)
+      sum += bucket_size(next, grow_factor * i + j);
+    return sum;
+  }
+
+  // Add all entries in bucket i of table version t to result.
+  // Needs to follow through to forwarded buckets accumuate entries.
+  void bucket_entries(table_version* t, long i, parlay::sequence<KV>& result) {
+    head_ptr head = t->buckets[i].load();
+    if (!head.is_forwarded()) {
+      link* ptr = head;
+      while (ptr != nullptr) {
+	result.push_back(ptr->element);
+	ptr = ptr->next;
+      }
+    } else {
+      table_version* next = t->next.load();
+      for (int j = 0; j < grow_factor; j++)
+	bucket_entries(next, grow_factor * i + j, result);
     }
   }
 
@@ -516,7 +535,7 @@ public:
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {
       auto y = parlay::try_loop([=] {
-	  copy_if_needed(idx);
+	  copy_if_needed(ht, idx);
           return try_insert_at(ht, s, k, v);});
       return !y.has_value();});
   }
@@ -529,43 +548,38 @@ public:
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {
       return parlay::try_loop([=] {
-          copy_if_needed(idx); // checks if table needs to grow
+	  copy_if_needed(ht, idx); // checks if table needs to grow
           return try_upsert_at(ht, s, k, f);});});
   }
 
   bool remove(const K& k) {
     table_version* ht = current_table_version.load();
-    bucket* s = ht->get_bucket(k);
+    long idx = ht->get_index(k);
+    bucket* s = &ht->buckets[idx];
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {
-      auto y = parlay::try_loop([=] {return try_remove_at(ht, s, k);});
+      auto y = parlay::try_loop([=] {
+	  copy_if_needed(ht, idx);
+	  return try_remove_at(ht, s, k);});
       return y.has_value();});
   }
-
+		   
   long size() {
-    force_copy();
-    table_version* ht = current_table_version.load();
-    auto& table = ht->buckets;
-    auto s = parlay::tabulate(ht->size, [&] (size_t i) {
-	return list_length(table[i].load());});
-    return parlay::reduce(s);
+    table_version* t = current_table_version.load();
+    return epoch::with_epoch([&] {
+      auto s = parlay::tabulate(t->size, [&] (size_t i) {
+	  return bucket_size(t, i);});
+      return parlay::reduce(s);});
   }
 
   parlay::sequence<KV> entries() {
-    force_copy();
-    table_version* ht = current_table_version.load();
-    auto& table = ht->buckets;
-    auto s = epoch::with_epoch([&] {
-    	       return parlay::tabulate(ht->size(), [&] (size_t i) {
-		   link* ptr = table[i].load();
-		   parlay::sequence<KV> r;
-		   while (ptr != nullptr) {
-		     r.push_back(ptr->element);
-		     ptr = ptr->next;
-		   }
-		   return r;
-		 });});
-    return parlay::flatten(s);
+    table_version* t = current_table_version.load();
+    return epoch::with_epoch([&] {
+      auto s = parlay::tabulate(t->size, [&] (size_t i) {
+        parlay::sequence<KV> r;
+	bucket_entries(t, i, r);
+	return r;});
+      return flatten(s);});
   }
 };
 
