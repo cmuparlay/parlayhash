@@ -8,7 +8,7 @@ The simplest way to use the library is to copy the [include](include) directory 
 and then include the following in your code:
 
 ```
-#include "include/hash_grow/unordered_map.h"`
+#include "include/hash_grow/unordered_map.h"
 ```
 
 The library supports the following interface for any copyable key type `K` and value type `V`.
@@ -117,10 +117,8 @@ our `hash_nogrow` and the sharded versions are designed to grow.  All
 of them except `growt` support arbitrary copyable key and value types
 when supplied hash and equality functions for the keys.
 
-The sharded versions are not designed to grow.
-
 The benchmarks will run by default on the number of hardware threads
-you have on the machine.  They will run over two data sizes (100K and
+you have on your machine.  They will run over two data sizes (100K and
 10M), two update percents (5% and 50%), and two distributions (uniform
 and zipfian=.99).  This is a total of 8 workloads since all
 combinations are tried.  The updates are 50% insertions (without
@@ -194,7 +192,7 @@ benchmark geometric mean of mops = 33.0592
 initial insert geometric mean of mops = 234.931
 ```
 
-The last four workloads are for z=.99, and it does badly on these.  In comparison here is the full
+The last four workloads are for z=.99, and it does abysmally on these.  In comparison here is the full
 result for `hash_nogrow`:
 
 ```
@@ -237,3 +235,6 @@ examples - a couple of simple examples
 timings - some timing results
 ```
 
+## Acknowledgments
+
+We would like to thank Google for their support in this development.
