@@ -105,11 +105,14 @@ private:
   };
 
   // Find key in list, return nullopt if not found
-  static std::optional<V> find_in_list(link* nxt, const K& k) {
-    while (nxt != nullptr && !KeyEqual{}(nxt->element.first, k))
+  static std::pair<std::optional<V>,long> find_in_list(link* nxt, const K& k) {
+    long n = 0;
+    while (nxt != nullptr && !KeyEqual{}(nxt->element.first, k)) {
       nxt = nxt->next;
-    if (nxt == nullptr) return {};
-    else return nxt->element.second;
+      n++;
+    }
+    if (nxt == nullptr) return std::pair(std::nullopt, n);
+    else return std::pair(nxt->element.second,0);
   }
 
   // Remove key from list using path copying (i.e. does not update any links, but copies
@@ -178,20 +181,13 @@ private:
   // *********************************************
 
   // The structure stored in each bucket.  It includes a pointer to
-  // the first link as well as the size of the list, and a marker if
-  // the bucket is currently being forwarded to the next larger map
-  // size.  All are packed into one 64-bit unsigned integer (top 16
-  // bits for length, bottom bit for marker).
+  // the first link or marker indicating bucket is forwarded.
   struct head_ptr {
     size_t ptr;
-    static head_ptr forwarded_link() {return head_ptr(1ul);}
+    static head_ptr forwarded_link() {return head_ptr((link*) 1ul);}
     bool is_forwarded() {return ptr == 1ul ;}
-    link* get_ptr() {return (link*) (ptr & ((1ul << 48) - 1));}
-    size_t size() {return ptr >> 48;}
-    std::pair<link*, size_t> ptr_and_length() {return std::pair(get_ptr(), size());}
-    head_ptr() : ptr(0) {}
-    head_ptr(size_t ptr) : ptr(ptr) {}
-    head_ptr(link* x, size_t len)  : ptr(((size_t) x) | len << 48) {}
+    head_ptr(link* ptr) : ptr((size_t) ptr) {}
+    operator link*() {return (link*) ptr;}
     bool operator ==(const head_ptr h) {return ptr == h.ptr;}
   };
       
@@ -228,7 +224,7 @@ private:
 	 num_bits(1 + parlay::log2_up(std::max<long>(block_size, n))),
 	 size(1ul << num_bits),
 	 overflow_size(num_bits < 18 ? 9 : 12),
-	 buckets(parlay::tabulate<std::atomic<head_ptr>>(size, [] (long i) {return head_ptr();})) {}
+	 buckets(parlay::tabulate<std::atomic<head_ptr>>(size, [] (long i) {return head_ptr(nullptr);})) {}
 
     // expanded table version copied from smaller version t
     table_version(table_version* t)
@@ -268,8 +264,8 @@ private:
   // updating the bucket corresponding to the key.
   static void copy_element(table_version* t, KV& key_value) {
     size_t idx = t->get_index(key_value.first);
-    auto [ptr, len] = t->buckets[idx].load().ptr_and_length();
-    t->buckets[idx] = head_ptr(epoch::New<link>(key_value, ptr), len + 1);
+    link* ptr = t->buckets[idx].load();
+    t->buckets[idx] = epoch::New<link>(key_value, ptr);
   }
 
   // copies a bucket into grow_factor new buckets.
@@ -278,11 +274,11 @@ private:
     long exp_start = i * grow_factor;
     // Clear grow_factor buckets in the next table to put them in.
     for (int j = exp_start; j < exp_start + grow_factor; j++)
-      next->buckets[j] = head_ptr();
+      next->buckets[j] = nullptr;
     // copy bucket to grow_factor new buckets in next table
     while (true) {
       head_ptr bucket = t->buckets[i].load();
-      link* ptr = bucket.get_ptr();
+      link* ptr = bucket;
       link* next_ptr = ptr;
       while (next_ptr != nullptr) {
 	copy_element(next, next_ptr->element);
@@ -297,8 +293,8 @@ private:
       // Before retrying need to clear out already added buckets..
       for (int j = exp_start; j < exp_start + grow_factor; j++) {
 	head_ptr bucket = next->buckets[j].load();
-	next->buckets[j] = head_ptr();
-	retire_all_list(bucket.get_ptr());
+	next->buckets[j] = nullptr;
+	retire_all_list(bucket);
       }
     }
   }
@@ -311,10 +307,8 @@ private:
     while (!get_locks().try_lock((long) bck, [=] {
       // Clear grow_factor buckets in the next table to put them in.
       for (int j = exp_start; j < exp_start + grow_factor; j++)
-        next->buckets[j] = head_ptr();
-      head_ptr bucket = t->buckets[i].load();
-      link* ptr = bucket.get_ptr();
-      link* next_ptr = ptr;
+        next->buckets[j] = nullptr;
+      link* next_ptr = t->buckets[i].load();
       while (next_ptr != nullptr) {
 	copy_element(next, next_ptr->element);
 	next_ptr = next_ptr->next;
@@ -374,8 +368,7 @@ private:
       table_version* nxt = t->next.load();
       return find_at(nxt, nxt->get_bucket(k), k);
     }
-    //if (x.size() == 0) return std::optional<V>();
-    return find_in_list(x.get_ptr(), k);
+    return find_in_list(x, k).first;
   }
 
   // If using locks, acts like std::compare_exchange_weak, i.e., can fail
@@ -408,13 +401,13 @@ private:
   try_insert_at(table_version* t, bucket* s, const K& k, const V& v) {
     head_ptr old_head = s->load();
     get_active_bucket(t, s, k, old_head);
-    auto [ptr, len] = old_head.ptr_and_length();
+    link* old_ptr = old_head;
+    auto [x, len] = find_in_list(old_ptr, k);
     if (len > t->overflow_size) expand_table(t);
-    auto x = (len == 0) ? std::nullopt : find_in_list(ptr, k);
     // if already in the hash map, then return the current value
     if (x.has_value()) return std::optional<std::optional<V>>(x);
-    link* new_ptr = epoch::New<link>(std::pair(k,v), ptr);
-    head_ptr new_head = head_ptr(new_ptr, len + 1);
+    link* new_ptr = epoch::New<link>(std::pair(k,v), old_ptr);
+    head_ptr new_head = new_ptr;
     if (weak_cas(s, old_head, new_head))
       // successfully inserted
       return std::optional(std::optional<V>());
@@ -427,16 +420,16 @@ private:
   static std::optional<bool> try_upsert_at(table_version* t, bucket* s, const K& k, F& f) {
     head_ptr old_head = s->load();
     get_active_bucket(t, s, k, old_head);
-    auto [old_ptr, len] = old_head.ptr_and_length();
+    link* old_ptr = old_head;
 #ifndef USE_LOCKS
     auto [cnt, new_ptr] = update_list(old_ptr, k, f);
     if (cnt == 0) {
       new_ptr = epoch::New<link>(std::pair(k, f(std::optional<V>())), old_ptr);
-      if (weak_cas(s, old_head, head_ptr(new_ptr, len + 1)))
+      if (weak_cas(s, old_head, head_ptr(new_ptr)))
 	return true;
       epoch::Delete(new_ptr);
     } else {
-      if (weak_cas(s, old_head, head_ptr(new_ptr, len))) {
+      if (weak_cas(s, old_head, head_ptr(new_ptr))) {
 	retire_list(old_ptr, cnt);
 	return false;
       }
@@ -445,16 +438,16 @@ private:
 #else  // use try_lock
     // update_list must be in a lock, so we first check if an update needs to be done
     // at all so we can avoid the lock if not necessary (i.e. key is not in the list).
-    if (!find_in_list(old_ptr, k).has_value()) {
+    if (!find_in_list(old_ptr, k).first.has_value()) {
       link* new_ptr = epoch::New<link>(std::pair(k, f(std::optional<V>())), old_ptr);
-      if (weak_cas(s, old_head, head_ptr(new_ptr, len + 1)))
+      if (weak_cas(s, old_head, head_ptr(new_ptr)))
 	return std::optional(true); // try succeeded, returing that a new element is inserted
       epoch::Delete(new_ptr);
     } else {
       if (get_locks().try_lock((long) s, [=] {
 	  if (!(s->load() == old_head)) return false;
 	  auto [cnt, new_ptr] = update_list(old_ptr, k, f);
-	  *s = head_ptr(new_ptr, len);
+	  *s = head_ptr(new_ptr);
 	  retire_list(old_ptr, cnt);
 	  return true;}))
 	return std::optional(false); // try succeeded, returning that no new element is inserted
@@ -467,13 +460,13 @@ private:
   static std::optional<std::optional<V>> try_remove_at(table_version* t, bucket* s, const K& k) {
     head_ptr old_head = s->load();
     get_active_bucket(t, s, k, old_head);
-    auto [old_ptr, len] = old_head.ptr_and_length();
+    link* old_ptr = old_head;
     // if list is empty, then return that no remove needs to be done
-    if (len == 0) return std::optional(std::optional<V>());
+    if (old_ptr == nullptr) return std::optional(std::optional<V>());
     auto [cnt, new_ptr, val_ptr] = remove_from_list(old_ptr, k);
     // if list does not contain key, then return that no remove needs to be done
     if (cnt == 0) return std::optional(std::optional<V>());
-    if (weak_cas(s, old_head, head_ptr(new_ptr, len - 1))) {
+    if (weak_cas(s, old_head, head_ptr(new_ptr))) {
       // remove succeeded, return value that was removed
       retire_list(old_ptr, cnt);
       return std::optional(std::optional<V>(val_ptr->element.second));
@@ -503,9 +496,9 @@ public:
   ~unordered_map() {
     auto& buckets = current_table_version.load()->buckets;
     parlay::parallel_for (0, buckets.size(), [&] (size_t i) {
-       head_ptr h= buckets[i].load();
+       head_ptr h = buckets[i].load();
        if (!h.is_forwarded()) 
-	 retire_all_list(h.get_ptr());});
+	 retire_all_list(h);});
     epoch::memory_pool<table_version>::Retire(current_table_version.load());
   }
 
@@ -554,7 +547,7 @@ public:
     table_version* ht = current_table_version.load();
     auto& table = ht->buckets;
     auto s = parlay::tabulate(ht->size, [&] (size_t i) {
-	return table[i].load().size();});
+	return list_length(table[i].load());});
     return parlay::reduce(s);
   }
 
@@ -564,7 +557,7 @@ public:
     auto& table = ht->buckets;
     auto s = epoch::with_epoch([&] {
     	       return parlay::tabulate(ht->size(), [&] (size_t i) {
-		   link* ptr = table[i].load().get_ptr();
+		   link* ptr = table[i].load();
 		   parlay::sequence<KV> r;
 		   while (ptr != nullptr) {
 		     r.push_back(ptr->element);

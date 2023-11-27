@@ -192,7 +192,7 @@ benchmark geometric mean of mops = 33.0592
 initial insert geometric mean of mops = 234.931
 ```
 
-The last four workloads are for z=.99, and it does abysmally on these.  In comparison here is the full
+The last four workloads are for z=.99 (zipfian parameter .99), and it does abysmally on these.  In comparison here is the full
 result for `hash_nogrow`:
 
 ```
