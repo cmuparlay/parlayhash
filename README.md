@@ -47,9 +47,10 @@ There are two versions:
 
 There is a `USE_LOCKS` flag at the start of each file that is
 commented out by default.  If un-commented, then the implementation
-will use locks.  If using locks, the function passed to `upsert` will
-be run in isolation (i.e., mutually exclusive of any other invocation
-of the function by an upsert on the same key) and just once.  With the
+will use locks for updates.  The queries (finds) will still be wait
+free.  If using locks, the function passed to `upsert` will be run in
+isolation (i.e., mutually exclusive of any other invocation of the
+function by an upsert on the same key) and just once.  With the
 lock-free version the function could be run multiple times
 concurrently, although the value of only one will be used.
 
@@ -90,7 +91,7 @@ In addition to our own tables, the repository includes the following
 - ./abseil_sharded      (our own sharded version using folly's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container))
 - ./std_sharded         (our own sharded version of std::unordered_map)
 
-For some of these you need to have the relevant library installed (e.g., boost, folly, abseil, tbb).
+For some of these you need to have the relevant library installed (e.g., boost, folly, abseil, tbb).   The sharded versions are not designed to grow.
 
 The benchmarks will run by default on the number of hardware threads
 you have on the machine.  It will run over two data sizes (100K and
@@ -125,23 +126,28 @@ workloads mentioned above (two sizes x two update rates x two
 distributions).  For our hash maps we show both the times for
 the locked (lock) and lock free (lf) versions.
 
-| Hash Table | 1 thread | 128 threads | 
+Colums 2 and 3 correspond to 1 thread and 128 threads when the table is initialized
+to the correct size.
+The fourth column is the same but when the table is initialized with size 1 (i.e., it first grows to the full size and then the timings start).   This is meant to test if the tables grow effectively, which all the growing ones do.
+The fifth column is for inserting 10M unique keys on 128 threads when the table starts with size 1 (i.e. it includes the time for growing the table multiple times).
+
+| Hash Table | 1 thread | 128 threads | 128 grown | 128 insert |
 | - | - | - | 
-| hash_nogrow lf | 17.2 | 650 |
-| hash_nogrow lock | 17.4 | 681 |
-| hash_grow lf | 13.4 | 592 |
-| hash_grow lock | 13.2 | 622 |
-| hash_grow_list lf | 15.9 | 625 |
-| hash_grow_list lock | 16.1 | 670 |
-| tbb_hash | 9.3 | 64.6 |
-| libcuckoo | 11.5 | 33.1 |
-| growt | 7.2 | 156 |
-| folly_hash | 11.9 | failed |
-| boost_hash | 23.3 | 41.2 |
-| parallel_hashmap | 24.4 | 10.4 |
-| folly_sharded | 16.5 | 125 |
-| abseil (sequential) | 40.1 | --- |
-| std (sequential) | 13.2 | --- |
+| hash_nogrow lf | 17.2 | 650 | --- | --- |
+| hash_nogrow lock | 17.4 | 681 | --- | --- |
+| hash_grow lf | 13.4 | 592 | 577 | 103 |
+| hash_grow lock | 13.2 | 622 | 583 | 75 |
+| hash_grow_list lf | 15.9 | 625 | 626 | 100 |
+| hash_grow_list lock | 16.1 | 670 | 678 | 88 |
+| tbb_hash | 9.3 | 64.6 | 61.4 | 23 |
+| libcuckoo | 11.5 | 33.1 | 33.9 | 6.3 |
+| growt | 7.2 | 156 | 146 | 59 |
+| folly_hash | 11.9 | failed | failed | 41 |
+| boost_hash | 23.3 | 41.2 | 41.2 | 13 | 
+| parallel_hashmap | 24.4 | 10.4 | 11.4 | 8 |
+| folly_sharded | 16.5 | 125 | --- | --- |
+| abseil (sequential) | 40.1 | --- | --- | --- |
+| std (sequential) | 13.2 | --- | --- | --- |
 
 Note our timings include `hash_grow_list`, which is another version of
 our growing hash table.
