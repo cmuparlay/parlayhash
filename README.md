@@ -132,7 +132,7 @@ The fourth column is the same but when the table is initialized with size 1 (i.e
 The fifth column is for inserting 10M unique keys on 128 threads when the table starts with size 1 (i.e. it includes the time for growing the table multiple times).
 
 | Hash Table | 1 thread | 128 threads | 128 grown | 128 insert |
-| - | - | - | 
+| - | - | - | - | - |
 | hash_nogrow lf | 17.2 | 650 | --- | --- |
 | hash_nogrow lock | 17.4 | 681 | --- | --- |
 | hash_grow lf | 13.4 | 592 | 577 | 103 |
