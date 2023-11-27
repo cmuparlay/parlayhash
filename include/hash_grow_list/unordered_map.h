@@ -32,9 +32,12 @@
 // and growing is done incrementally--i.e. each update helps move a constant number
 // of buckets.
 
-// Implementation: Each bucket points to a structure (Node) containing
-// an array of entries.  Nodes come in varying sizes and on update the
-// node is copied.   When growing each bucket is copied to k new buckets and the old
+// Implementation: Each bucket points to a "functional" unsorted linked list of entries.
+// In particular the links are immutable.
+// On insertions of a new key it is added as a new link to the front of the list.
+// On removal or update of an element, all elements up to the removed or updated
+// element are copied.
+// When growing, each bucket is copied to k new buckets and the old
 // bucket is marked as "forwarded".
 //
 // Define USE_LOCKS to use locks.  The lock-based version only
@@ -64,11 +67,17 @@
 
 #include <atomic>
 #include <optional>
-#include <parlay/primitives.h>
-#include <parlay/sequence.h>
-#include <parlay/delayed.h>
-#include "utils/epoch.h"
-#include "utils/lock.h"
+#include "../parlay/primitives.h"
+#include "../parlay/sequence.h"
+#include "../parlay/delayed.h"
+#include "../utils/epoch.h"
+#include "../utils/lock.h"
+//#include <parlay/primitives.h>
+//#include <parlay/sequence.h>
+//#include <parlay/delayed.h>
+//#include "utils/epoch.h"
+//#include "utils/lock.h"
+
 //#define USE_LOCKS 1
 
 namespace parlay {
@@ -87,9 +96,6 @@ private:
   // groups of block_size buckets are copied over by a single thread
   static constexpr int block_size = 64;
 
-  // size of bucket that triggers growth
-  //static constexpr int overflow_size = 12;
-
   using KV = std::pair<K,V>;
 
   struct link {
@@ -98,6 +104,7 @@ private:
     link(KV element, link* next) : element(element), next(next) {}
   };
 
+  // Find key in list, return nullopt if not found
   static std::optional<V> find_in_list(link* nxt, const K& k) {
     while (nxt != nullptr && !KeyEqual{}(nxt->element.first, k))
       nxt = nxt->next;
@@ -105,6 +112,11 @@ private:
     else return nxt->element.second;
   }
 
+  // Remove key from list using path copying (i.e. does not update any links, but copies
+  // path up to the removed link).
+  // Returns a triple consisting of the position of the key in the list (1 based),
+  // the head of the new list with the key removed, and a pointer to the link with the key.
+  // If the key is not found, returns (0, nullptr, nullptr).
   static std::tuple<int, link*, link*> remove_from_list(link* nxt, const K& k) {
     if (nxt == nullptr) return std::tuple(0, nullptr, nullptr);
     else if (KeyEqual{}(nxt->element.first, k))
@@ -116,6 +128,10 @@ private:
     }
   }
 
+  // Update element with a given key in a list.  Uses path copying.
+  // Returns a pair consisting of the position of the key in the list (1 based), and
+  // the head of the new list with the key updated.
+  // If the key is not found, returns (0, nullptr).
   template <typename F>
   static std::pair<int, link*> update_list(link* nxt, const K& k, const F& f) {
     if (nxt == nullptr) return std::pair(0, nullptr);
@@ -127,7 +143,8 @@ private:
       return std::pair(len + 1, epoch::New<link>(nxt->element, ptr));
     }
   }
-    
+
+  // retires the first n elements of a list
   static void retire_list(link* nxt, int n) {
     while (n > 0) {
       n--;
@@ -137,6 +154,7 @@ private:
     }
   }
 
+  // retires all elements of a list
   static void retire_all_list(link* nxt) {
     while (nxt != nullptr) {
       link* tmp = nxt->next;
@@ -145,6 +163,7 @@ private:
     }
   }
 
+  // name is self descritpive
   static int list_length(link* nxt) {
     int len = 0;
     while (nxt != nullptr) {
@@ -158,7 +177,11 @@ private:
   // The bucket and table structures
   // *********************************************
 
-  // pointer in bucket includes length and flag if forwarded
+  // The structure stored in each bucket.  It includes a pointer to
+  // the first link as well as the size of the list, and a marker if
+  // the bucket is currently being forwarded to the next larger map
+  // size.  All are packed into one 64-bit unsigned integer (top 16
+  // bits for length, bottom bit for marker).
   struct head_ptr {
     size_t ptr;
     static head_ptr forwarded_link() {return head_ptr(1ul);}
@@ -178,8 +201,10 @@ private:
   // status of a block
   enum status : char {Empty, Working, Done};
 
-  // a single version of the table
-  // this can change as the table grows
+  // A single version of the table.
+  // A version includes a sequence of "size" "buckets".
+  // New versions are added as the hash table grows, and each holds a
+  // pointer to the next larger version, if one exists.
   struct table_version {
     std::atomic<table_version*> next; // points to next version if created
     std::atomic<long> finished_block_count; //number of blocks finished copying
@@ -247,6 +272,8 @@ private:
     t->buckets[idx] = head_ptr(epoch::New<link>(key_value, ptr), len + 1);
   }
 
+  // copies a bucket into grow_factor new buckets.
+  // This is the version if USE_LOCKS is not set.
   void copy_bucket_cas(table_version* t, table_version* next, long i) {
     long exp_start = i * grow_factor;
     // Clear grow_factor buckets in the next table to put them in.
@@ -276,6 +303,8 @@ private:
     }
   }
 
+  // copies a bucket into grow_factor new buckets.
+  // This is the version if USE_LOCKS is set.
   void copy_bucket_lock(table_version* t, table_version* next, long i) {
     long exp_start = i * grow_factor;
     bucket* bck = &(t->buckets[i]);
@@ -295,7 +324,7 @@ private:
       for (volatile int i=0; i < 200; i++);
   }
 
-  // If copying is enabled (i.e. next is not null), and if the the hash bucket
+  // If copying is ongoing (i.e. next is not null), and if the the hash bucket
   // given by hashid is not already copied, tries to copy block_size buckets, including
   // that of hashid, to the next larger hash_table.
   void copy_if_needed(long hashid) {
@@ -340,17 +369,21 @@ private:
 
   std::optional<V> find_at(table_version* t, bucket* s, const K& k) {
     head_ptr x = s->load();
+    // if bucket is forwarded, go to next version
     if (x.is_forwarded()) {
       table_version* nxt = t->next.load();
       return find_at(nxt, nxt->get_bucket(k), k);
     }
-    if (x.size() == 0) return std::optional<V>();
+    //if (x.size() == 0) return std::optional<V>();
     return find_in_list(x.get_ptr(), k);
   }
 
+  // If using locks, acts like std::compare_exchange_weak, i.e., can fail
+  // even if old_v == s->load() since it uses a try lock.
+  // If lock free, then will always succeed if equal
   static bool weak_cas(bucket* s, head_ptr old_v, head_ptr new_v) {
 #ifndef USE_LOCKS
-    return (s->load() == old_v && s->compare_exchange_weak(old_v, new_v));
+    return (s->load() == old_v && s->compare_exchange_strong(old_v, new_v));
 #else  // use try_lock
     return (get_locks().try_lock((long) s, [=] {
 	       if (!(s->load() == old_v)) return false;
@@ -359,6 +392,10 @@ private:
 #endif
   }
 
+  // If bucket is forwarded looks in successive larger versions until
+  // it finds one that is not forwarded.
+  // Unlikely, but possible, to go more than one version.
+  // Note that this side effects t, s and old_node.
   static void get_active_bucket(table_version* &t, bucket* &s, const K& k, head_ptr &old_node) {
     while (old_node.is_forwarded()) {
       t = t->next.load();
@@ -374,13 +411,16 @@ private:
     auto [ptr, len] = old_head.ptr_and_length();
     if (len > t->overflow_size) expand_table(t);
     auto x = (len == 0) ? std::nullopt : find_in_list(ptr, k);
+    // if already in the hash map, then return the current value
     if (x.has_value()) return std::optional<std::optional<V>>(x);
     link* new_ptr = epoch::New<link>(std::pair(k,v), ptr);
     head_ptr new_head = head_ptr(new_ptr, len + 1);
     if (weak_cas(s, old_head, new_head))
+      // successfully inserted
       return std::optional(std::optional<V>());
     epoch::Delete(new_ptr);
-    return {};
+    // try failed, return std::nullopt to indicate that need to try again
+    return std::nullopt;
   }
 
   template <typename F>
@@ -403,9 +443,12 @@ private:
       retire_list(new_ptr, cnt);
     }
 #else  // use try_lock
+    // update_list must be in a lock, so we first check if an update needs to be done
+    // at all so we can avoid the lock if not necessary (i.e. key is not in the list).
     if (!find_in_list(old_ptr, k).has_value()) {
       link* new_ptr = epoch::New<link>(std::pair(k, f(std::optional<V>())), old_ptr);
-      if (weak_cas(s, old_head, head_ptr(new_ptr, len + 1))) return true;
+      if (weak_cas(s, old_head, head_ptr(new_ptr, len + 1)))
+	return std::optional(true); // try succeeded, returing that a new element is inserted
       epoch::Delete(new_ptr);
     } else {
       if (get_locks().try_lock((long) s, [=] {
@@ -414,28 +457,33 @@ private:
 	  *s = head_ptr(new_ptr, len);
 	  retire_list(old_ptr, cnt);
 	  return true;}))
-	return false;
+	return std::optional(false); // try succeeded, returning that no new element is inserted
     }
 #endif
-    return {};
+    // try failed, return std::nullopt to indicate that need to try again
+    return std::nullopt;
   }
 
   static std::optional<std::optional<V>> try_remove_at(table_version* t, bucket* s, const K& k) {
     head_ptr old_head = s->load();
     get_active_bucket(t, s, k, old_head);
     auto [old_ptr, len] = old_head.ptr_and_length();
+    // if list is empty, then return that no remove needs to be done
     if (len == 0) return std::optional(std::optional<V>());
     auto [cnt, new_ptr, val_ptr] = remove_from_list(old_ptr, k);
+    // if list does not contain key, then return that no remove needs to be done
     if (cnt == 0) return std::optional(std::optional<V>());
     if (weak_cas(s, old_head, head_ptr(new_ptr, len - 1))) {
+      // remove succeeded, return value that was removed
       retire_list(old_ptr, cnt);
       return std::optional(std::optional<V>(val_ptr->element.second));
     }
     retire_list(new_ptr, cnt - 1);
-    return {};
+    // try failed, return std::nullopt to indicate that need to try again
+    return std::nullopt;
   }
 
-  // forces all buckets to be copied to next table
+  // forces all buckets to be copied to the next version
   void force_copy() {
     table_version* ht = current_table_version.load();
     while (ht->next != nullptr) {

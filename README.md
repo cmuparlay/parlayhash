@@ -1,9 +1,22 @@
 # parlayhash : A Header Only Fast Concurrent Hash Map.
 
-A concurrent hash map supporting **wait-free finds** and **lock-free updates** (the growable hash map can take fine-grained locks when growing).
-It supports the following interface:
+A concurrent hash map supporting **wait-free finds** and **lock-free
+updates** (the growable hash map can take fine-grained locks on updates when
+growing).
 
-- `unordered_map<K,V,Hash=std::hash<K>,Equal=std::equal_to<K>>(n)` :
+The simplest way to use the library is to copy the [include](include) directory into your code directory
+and then
+
+```
+#include "include/hash_grow/unordered.map"`
+```
+
+in your code.
+
+
+The library supports the following interface:
+
+- `parlay::unordered_map<K,V,Hash=std::hash<K>,Equal=std::equal_to<K>>(n)` :
 constructor for map of initial size n (in growable version n can be 0).
 
 - `find(const K&) -> std::optional<V>` : If the key is in the map, returns the value associated
@@ -21,24 +34,35 @@ to `std::optional<V>(v)`, replaces the current value for the key with the
 returned value, and returns false.  Otherwise it applies the
 function to std::nullopt and inserts the key into the map with the
 returned value, and returns true.   For example using: `[&] (auto x) {return v;}` will just set
-the key to have value v whether as was in there or not. 
+the given key to have value v whether it was in there or not. 
 
-- `size() -> long` : Returns the size of the map.  Not linearizable
-with the other functions, but returns the correct size if no other
-functions are concurrent.  It takes work proportional to the map
+- `size() -> long` : Returns the number of elements in the map.  Cannot be run concurrently with any other
+operation.
+<!---
+It is not linearizable
+with the other functions, but always includes any elements that are in there from its invocation until
+its response, and never includes an element that is removed before its invocation or is inserted after
+its response.   This means it returns the correct size if no other
+functions are concurrent.
+--->
+It takes work proportional to the hash map
 size.
 
 - `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a sequence
-containing all the entries of the map as key-value pairs.  Not
-linearizable with the other functions, but returns the correct elements
-if no other functions are concurrent.  It takes work proportional to
-the number of elements in the map.
+containing all the entries of the map as key-value pairs.  Cannot be run concurrently with any other operation.
+<!--- Not
+linearizable with the other functions, but has the same concurrency
+semantics as size.
+--->
+It takes work proportional to the number of
+elements in the hash map size.
 
 The type for keys (K) and values (V) must be copyable, and might be
 copied by the hash map even when not being updated (e.g. when
 another key in the same bucket is being updated).
 
 A simple example can be found in [examples/example.cpp](examples/example.cpp)
+
 There are two versions:
 
 - [include/hash_nogrow/unordered_map.h](include/hash_nogrow/unordered_map.h) : Does not support growing the number of buckets.  It can grow arbitrarily large but each buckets will become large and the hash map will be slow.  The number of buckets is specified when the hash map is constructed.   
@@ -69,7 +93,7 @@ In particular the array of buckets is initialized in parallel, and the
 
 Benchmarks for comparing performance to other hash maps can be found
 in `benchmarks`.  With `cmake` the following can be used to compile and run
-the benchmakrs:
+the benchmarks:
 
     git clone https://github.com/cmuparlay/parlayhash.git
     cd parlayhash
@@ -93,7 +117,13 @@ In addition to our own tables, the repository includes the following
 - ./abseil_sharded      (our own sharded version using folly's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container))
 - ./std_sharded         (our own sharded version of std::unordered_map)
 
-For some of these you need to have the relevant library installed (e.g., boost, folly, abseil, tbb).   The sharded versions are not designed to grow.
+For some of these you need to have the relevant library installed
+(e.g., boost, folly, abseil, tbb).  All of the hash maps except for
+our `hash_nogrow` and the sharded versions are designed to grow.  All
+of them except `growt` support arbitrary copyable key and value types
+when supplied hash and equality functions for the keys.
+
+The sharded versions are not designed to grow.
 
 The benchmarks will run by default on the number of hardware threads
 you have on the machine.  They will run over two data sizes (100K and
@@ -103,8 +133,8 @@ combinations are tried.  The updates are 50% insertions (without
 replacement if already there) and 50% removes, the rest of the
 operations are finds.  For example, the 50% update workload will have
 25% insertions, 25% removes, and 50% finds.  The key-value pairs
-consist of two longs.  The experiment is set up so 1/2 the insersions
-and 1/2 the removes are successfull on average.
+consist of two longs.  The experiment is set up so 1/2 the insertions
+and 1/2 the removes are successful on average.
 
 Performance is reported in millions of operations-per-second (mops) for
 each combination.  The geometric mean over all combinations is also reported.
@@ -122,16 +152,16 @@ Options include:
 ## Timings
 
 Here are some timings on a AWS EC2 c6i.metal instance.  This machine
-has two chips with 32 cores each, each 2-way hyperthreaded, for a
-total of 128 threads.  Each number reports the goemetric mean of mops over the eight
+has two Intel Xeon Ice Lake chips with 32 cores each.  Each core is 2-way hyperthreaded, for a
+total of 128 threads.  Each number reports the geometric mean of mops over the eight
 workloads mentioned above (two sizes x two update rates x two
-distributions).  For our hash maps we show both the times for
+distributions).  For our hash maps, we show both the times for
 the locked (lock) and lock free (lf) versions.
 
-Colums 2 and 3 correspond to 1 thread and 128 threads when the hash map is initialized
+Columns 2 and 3 correspond to 1 thread and 128 threads when the hash map is initialized
 to the correct size.
-The fourth column is the same but when the hash map is initialized with size 1 (i.e., it first grows to the full size and then the timings start).   This is meant to test if the hash map grow effectively, which all the growing ones do.
-The fifth column is for inserting 10M unique keys on 128 threads when the hash map starts with size 1 (i.e. it includes the time for growing the hash map multiple times).
+The fourth column is the same but when the hash map is initialized with size 1 (i.e., it first grows to the full size and then the timings start).   This is meant to test if the hash map grows effectively, which all the growing maps do.
+The fifth column is for inserting 10M unique keys on 128 threads when the hash map starts with size 1 (i.e., it includes the time for growing the hash map multiple times).
 
 | Hash Map | 1 thread | 128 threads | 128 grown | 128 insert |
 | - | - | - | - | - |
@@ -154,7 +184,7 @@ The fifth column is for inserting 10M unique keys on 128 threads when the hash m
 Note our timings include `hash_grow_list`, which is another version of
 our growing hash map.
 
-Many of the other hash maps do very badly under high contention.
+Many of the other hash maps do badly under high contention.
 For example, here are the full results for `libcuckoo`:
 
 ```
@@ -170,7 +200,7 @@ benchmark geometric mean of mops = 33.0592
 initial insert geometric mean of mops = 234.931
 ```
 
-The last four workloads are for z=.99, and it does badly on these.  In coparison here is the full
+The last four workloads are for z=.99, and it does badly on these.  In comparison here is the full
 result for `hash_nogrow`:
 
 ```
@@ -186,9 +216,9 @@ benchmark geometric mean of mops = 650.435
 initial insert geometric mean of mops = 290.741
 ```
 
-## Code Organization and Dependences
+## Code Dependencies
 
-The only dependences our implementations have are with [parlaylib](https://github.com/cmuparlay/parlaylib), which is included as part of the repository.   Note that parlaylib will start up threads as needed to run certain operations in parallel.   Once no longer needed, these will go to sleep but will still be around.
+The only dependencies our implementations have are with [parlaylib](https://github.com/cmuparlay/parlaylib), which is included as part of the repository.   Note that parlaylib will start up threads as needed to run certain operations in parallel.   Once no longer needed, these will go to sleep but will still be around.
 
 The only file you need to include directly to use our hash maps is one of:
 - [include/hash_nogrow/unordered_map.h](include/hash_nogrow/unordered_map.h), or
@@ -196,8 +226,20 @@ The only file you need to include directly to use our hash maps is one of:
 
 The only non C++ standard library files that these include are the following:
 - [include/utils/epoch.h](include/utils/epoch.h), which is an implementation of epoch-based safe memory reclamation.   It supports the functions `New<T>(...args)` and `Retire(T* ptr)`, which correspond to `new` and `delete`.   The retire, however, delays destruction until it is safe to do so (i.e., when no operation that was running at the time of the retire is still running).    By default, `epoch.h` uses the parlay pool allocator since it is more efficient than e.g. jemalloc.   You can have it use the default allocator by defining `USE_MALLOC`.   This file require parlaylib.
-- [include/utils/lock.h](include/utils/lock.h), which is a simple implementation of shared locks.  It is only used if you use the lock-based versions of the hash maps.  The implementation has an array with a fixed number of locks (currently 65K), and a location is hashed to one of the locks in the array.   Each lock is a simple spin lock.    This file has no dependences beyond the C++ standard library.
+- [include/utils/lock.h](include/utils/lock.h), which is a simple implementation of shared locks.  It is only used if you use the lock-based versions of the hash maps.  The implementation has an array with a fixed number of locks (currently 65K), and a location is hashed to one of the locks in the array.   Each lock is a simple spin lock.    This file has no dependencies beyond the C++ standard library.
 - Files from the [include/parlaylib](include/parlaylib) library.
 
 The other implementations (e.g. tbb, folly, ...) require the relevant libraries, but do not require `parlaylib` themselves.   However, our benchmarking harness uses `parlaylib` to run the benchmarks for all implementations.
+
+## Code Organization
+
+The directory is organized as follows
+
+```
+include - all our hash table code and all dependencies
+other - all the other implementations
+benchmark - the code for running benchmarks both on our code and other code
+examples - a couple of simple examples
+timings - some timing results
+```
 

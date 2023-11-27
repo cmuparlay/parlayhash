@@ -64,11 +64,17 @@
 
 #include <atomic>
 #include <optional>
-#include <parlay/primitives.h>
-#include <parlay/sequence.h>
-#include <parlay/delayed.h>
-#include "utils/epoch.h"
-#include "utils/lock.h"
+#include "../parlay/primitives.h"
+#include "../parlay/sequence.h"
+#include "../parlay/delayed.h"
+#include "../utils/epoch.h"
+#include "../utils/lock.h"
+//#include <parlay/primitives.h>
+//#include <parlay/sequence.h>
+//#include <parlay/delayed.h>
+//#include "utils/epoch.h"
+//#include "utils/lock.h"
+
 //#define USE_LOCKS 1
 
 namespace parlay {
