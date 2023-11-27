@@ -10,7 +10,7 @@ endfunction()
 
 add_benchmark(hash_nogrow include "" "" "UPSERT")
 add_benchmark(hash_grow include "" "" "UPSERT")
-add_benchmark(hash_grow_list include "" "" "UPSERT")
+add_benchmark(parlay_hash include "" "" "UPSERT")
 add_benchmark(hash_opt include "" "" "")
 add_benchmark(hash_list include "" "" "UPSERT")
 add_benchmark(std_hash other "" "" "")

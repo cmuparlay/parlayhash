@@ -8,7 +8,7 @@ from runtests import *
 
 compile_clear("graphs")
 
-hash_grow = ["libcuckoo","boost_hash","tbb_hash","hash_grow_list","hash_grow","folly_hash","growt"]
+hash_grow = ["libcuckoo","boost_hash","tbb_hash","parlay_hash","hash_grow","folly_hash","growt"]
 hash_nogrow = ["folly_sharded","hash_list","hash_nogrow"]
 
 def experiments(exp_list, args_) :
