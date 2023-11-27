@@ -1,49 +1,49 @@
-# parlayhash : A Header Only Fast Concurrent Hash Table.
+# parlayhash : A Header Only Fast Concurrent Hash Map.
 
-A concurrent hash table supporting **wait-free finds** and **lock-free updates** (the growable hash table can take fine-grained locks when growing).
+A concurrent hash map supporting **wait-free finds** and **lock-free updates** (the growable hash map can take fine-grained locks when growing).
 It supports the following interface:
 
 - `unordered_map<K,V,Hash=std::hash<K>,Equal=std::equal_to<K>>(n)` :
-constructor for table of initial size n (in growable version n can be 0).
+constructor for map of initial size n (in growable version n can be 0).
 
-- `find(const K&) -> std::optional<V>` : If the key is in the table, returns the value associated
+- `find(const K&) -> std::optional<V>` : If the key is in the map, returns the value associated
   with it, otherwise returns std::nullopt.
 
-- `insert(const K&, const V&) -> bool` : If the key is in the table, returns false, otherwise inserts the key
+- `insert(const K&, const V&) -> bool` : If the key is in the map, returns false, otherwise inserts the key
 with the given value and returns true.
 
-- `remove(const K&) -> bool` : If the key is in the table, removes the
+- `remove(const K&) -> bool` : If the key is in the map, removes the
   key-value and returns true, otherwise it returns false.
 
 - `upsert(const K&, (const std::optional<V>&) -> V)) -> bool` : If the
-key is in the table with an associated value v then it applies the function (second argument)
+key is in the map with an associated value v then it applies the function (second argument)
 to `std::optional<V>(v)`, replaces the current value for the key with the
 returned value, and returns false.  Otherwise it applies the
-function to std::nullopt and inserts the key into the table with the
+function to std::nullopt and inserts the key into the map with the
 returned value, and returns true.   For example using: `[&] (auto x) {return v;}` will just set
 the key to have value v whether as was in there or not. 
 
-- `size() -> long` : Returns the size of the table.  Not linearizable
+- `size() -> long` : Returns the size of the map.  Not linearizable
 with the other functions, but returns the correct size if no other
-functions are concurrent.  It takes work proportional to the table
+functions are concurrent.  It takes work proportional to the map
 size.
 
 - `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a sequence
 containing all the entries of the map as key-value pairs.  Not
 linearizable with the other functions, but returns the correct elements
 if no other functions are concurrent.  It takes work proportional to
-the table size.
+the number of elements in the map.
 
 The type for keys (K) and values (V) must be copyable, and might be
-copied by the hash table even when not being updated (e.g. when
+copied by the hash map even when not being updated (e.g. when
 another key in the same bucket is being updated).
 
 A simple example can be found in [examples/example.cpp](examples/example.cpp)
 There are two versions:
 
-- [include/hash_nogrow/unordered_map.h](include/hash_nogrow/unordered_map.h) : Does not support growing the number of buckets.  It can grow arbitrarily large but each buckets will become large and the table will be slow.  The number of buckets is specified when the table is constructed.   
+- [include/hash_nogrow/unordered_map.h](include/hash_nogrow/unordered_map.h) : Does not support growing the number of buckets.  It can grow arbitrarily large but each buckets will become large and the hash map will be slow.  The number of buckets is specified when the hash map is constructed.   
 
-- [include/hash_grow/unordered_map.h](include/hash_grow/unordered_map.h) : Supports growable hash tables.  The number of buckets increase by a constant factor when any bucket gets too large.   The copying is done incrementally by each update, allowing for a mostly lock-free implementation.   Queries (finds) are still wait-free, but updates can take a fine-grained lock (on a block of buckets) when the table is growing.   Also allocation of a new **uninitialized array** for the buckets at the start of a grow cycle takes a lock to avoid multiple allocations, and since the allocator will most likely take a lock anyway for large arrays.
+- [include/hash_grow/unordered_map.h](include/hash_grow/unordered_map.h) : Supports growable hash maps.  The number of buckets increase by a constant factor when any bucket gets too large.   The copying is done incrementally by each update, allowing for a mostly lock-free implementation.   Queries (finds) are still wait-free, but updates can take a fine-grained lock (on a block of buckets) when the hash map is growing.   Also allocation of a new **uninitialized array** for the buckets at the start of a grow cycle takes a lock to avoid multiple allocations, and since the allocator will most likely take a lock anyway for large arrays.
 
 There is a `USE_LOCKS` flag at the start of each file that is
 commented out by default.  If un-commented, then the implementation
@@ -67,7 +67,9 @@ In particular the array of buckets is initialized in parallel, and the
 
 ## Benchmarks
 
-Benchmarks comparing to other hash tables can be found in `benchmarks`.   With `cmake` the following should work:
+Benchmarks for comparing performance to other hash maps can be found
+in `benchmarks`.  With `cmake` the following can be used to compile and run
+the benchmakrs:
 
     git clone https://github.com/cmuparlay/parlayhash.git
     cd parlayhash
@@ -94,7 +96,7 @@ In addition to our own tables, the repository includes the following
 For some of these you need to have the relevant library installed (e.g., boost, folly, abseil, tbb).   The sharded versions are not designed to grow.
 
 The benchmarks will run by default on the number of hardware threads
-you have on the machine.  It will run over two data sizes (100K and
+you have on the machine.  They will run over two data sizes (100K and
 10M), two update percents (5% and 50%), and two distributions (uniform
 and zipfian=.99).  This is a total of 8 workloads since all
 combinations are tried.  The updates are 50% insertions (without
@@ -104,8 +106,8 @@ operations are finds.  For example, the 50% update workload will have
 consist of two longs.  The experiment is set up so 1/2 the insersions
 and 1/2 the removes are successfull on average.
 
-Performance is reported in millions operations-per-second (mops) for
-each combination as well as the geometric mean over all combinations.
+Performance is reported in millions of operations-per-second (mops) for
+each combination.  The geometric mean over all combinations is also reported.
 Options include:
 
     -n <size>  : just this size
@@ -126,12 +128,12 @@ workloads mentioned above (two sizes x two update rates x two
 distributions).  For our hash maps we show both the times for
 the locked (lock) and lock free (lf) versions.
 
-Colums 2 and 3 correspond to 1 thread and 128 threads when the table is initialized
+Colums 2 and 3 correspond to 1 thread and 128 threads when the hash map is initialized
 to the correct size.
-The fourth column is the same but when the table is initialized with size 1 (i.e., it first grows to the full size and then the timings start).   This is meant to test if the tables grow effectively, which all the growing ones do.
-The fifth column is for inserting 10M unique keys on 128 threads when the table starts with size 1 (i.e. it includes the time for growing the table multiple times).
+The fourth column is the same but when the hash map is initialized with size 1 (i.e., it first grows to the full size and then the timings start).   This is meant to test if the hash map grow effectively, which all the growing ones do.
+The fifth column is for inserting 10M unique keys on 128 threads when the hash map starts with size 1 (i.e. it includes the time for growing the hash map multiple times).
 
-| Hash Table | 1 thread | 128 threads | 128 grown | 128 insert |
+| Hash Map | 1 thread | 128 threads | 128 grown | 128 insert |
 | - | - | - | - | - |
 | hash_nogrow lf | 17.2 | 650 | --- | --- |
 | hash_nogrow lock | 17.4 | 681 | --- | --- |
@@ -150,9 +152,9 @@ The fifth column is for inserting 10M unique keys on 128 threads when the table 
 | std (sequential) | 13.2 | --- | --- | --- |
 
 Note our timings include `hash_grow_list`, which is another version of
-our growing hash table.
+our growing hash map.
 
-Many of the other hash tables do very badly under high contention.
+Many of the other hash maps do very badly under high contention.
 For example, here are the full results for `libcuckoo`:
 
 ```
@@ -188,13 +190,13 @@ initial insert geometric mean of mops = 290.741
 
 The only dependences our implementations have are with [parlaylib](https://github.com/cmuparlay/parlaylib), which is included as part of the repository.   Note that parlaylib will start up threads as needed to run certain operations in parallel.   Once no longer needed, these will go to sleep but will still be around.
 
-The only file you need to include directly to use our hash tables is one of:
+The only file you need to include directly to use our hash maps is one of:
 - [include/hash_nogrow/unordered_map.h](include/hash_nogrow/unordered_map.h), or
 - [include/hash_grow/unordered_map.h](include/hash_grow/unordered_map.h)
 
 The only non C++ standard library files that these include are the following:
 - [include/utils/epoch.h](include/utils/epoch.h), which is an implementation of epoch-based safe memory reclamation.   It supports the functions `New<T>(...args)` and `Retire(T* ptr)`, which correspond to `new` and `delete`.   The retire, however, delays destruction until it is safe to do so (i.e., when no operation that was running at the time of the retire is still running).    By default, `epoch.h` uses the parlay pool allocator since it is more efficient than e.g. jemalloc.   You can have it use the default allocator by defining `USE_MALLOC`.   This file require parlaylib.
-- [include/utils/lock.h](include/utils/lock.h), which is a simple implementation of shared locks.  It is only used if you use the lock-based versions of the hash tables.  The implementation has an array with a fixed number of locks (currently 65K), and a location is hashed to one of the locks in the array.   Each lock is a simple spin lock.    This file has no dependences beyond the C++ standard library.
+- [include/utils/lock.h](include/utils/lock.h), which is a simple implementation of shared locks.  It is only used if you use the lock-based versions of the hash maps.  The implementation has an array with a fixed number of locks (currently 65K), and a location is hashed to one of the locks in the array.   Each lock is a simple spin lock.    This file has no dependences beyond the C++ standard library.
 - Files from the [include/parlaylib](include/parlaylib) library.
 
 The other implementations (e.g. tbb, folly, ...) require the relevant libraries, but do not require `parlaylib` themselves.   However, our benchmarking harness uses `parlaylib` to run the benchmarks for all implementations.
