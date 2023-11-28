@@ -147,10 +147,10 @@ workloads mentioned above (two sizes x two update rates x two
 distributions).  For our hash map, we show both the times for
 the locked (lock) and lock free (lf) versions.
 
-Columns 2 -- 4 correspond to 1 thread, 16 threads (8 cores) and 128 threads (64 cores) when the hash map is initialized
+Columns 2 through 4 correspond to 1 thread, 16 threads (8 cores) and 128 threads (64 cores) when the hash map is initialized
 to the correct size.
-The fourth column is the same but when the hash map is initialized with size 1 (i.e., it first grows to the full size and then the timings start).   This is meant to test if the hash map grows effectively, which all the growing maps do.
-The fifth column is for inserting 10M unique keys on 128 threads when the hash map starts with size 1 (i.e., it includes the time for growing the hash map multiple times).
+The fifth column is the same but when the hash map is initialized with size 1 (i.e., it first grows to the full size and then the timings start).   This is meant to test if the hash map grows effectively, which all the growing maps do.
+The sixth column is for inserting 10M unique keys on 128 threads when the hash map starts with size 1 (i.e., it includes the time for growing the hash map multiple times).
 
 <!---
 | hash_nogrow lf | 17.2 | 650 | --- | --- |
@@ -204,6 +204,11 @@ result for `parlay_hash`:
 benchmark geometric mean of mops = 651.735                                           
 initial insert geometric mean of mops = 184.35
 ```
+
+Note that zipfian .99 is what is suggested by the YCSB [Yahoo Cloud
+Serving Benchmark](https://research.yahoo.com/news/yahoo-cloud-serving-benchmark) as a good model for the skew of real-world
+data used in key value stores.
+
 
 ## Code Dependencies
 
