@@ -516,7 +516,7 @@ public:
   unordered_map(long n) : current_table_version(epoch::New<table_version>(n)),
 			  clear_memory_and_scheduler_at_end(false) {}
 
-  unordered_map(long n, bool clear)
+  unordered_map(long n, bool x)
     : current_table_version(epoch::New<table_version>(n)),
       clear_memory_and_scheduler_at_end(true),
       sched_ref(new parlay::internal::scheduler_type(std::thread::hardware_concurrency()))

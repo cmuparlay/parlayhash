@@ -15,6 +15,7 @@
 #endif
 
 //#define USE_MALLOC 1
+#define USE_RESERVE 1
 
 // ***************************
 // epoch structure
@@ -110,6 +111,7 @@ struct alignas(64) epoch_s {
 // ***************************
 
 struct Link {
+  bool ignore;
   Link* next;
   bool skip;
   void* value;
@@ -141,10 +143,12 @@ private:
   struct alignas(256) old_current {
     Link* old;  // linked list of retired items from previous epoch
     Link* current; // linked list of retired items from current epoch
+    Link* reserve;
+    long reserve_size; 
     long epoch; // epoch on last retire, updated on a retire
     long count; // number of retires so far, reset on updating the epoch
     //sys_time time; // time of last epoch update
-    old_current() : old(nullptr), current(nullptr), epoch(0) {}
+    old_current() : old(nullptr), current(nullptr), reserve(nullptr), epoch(0), reserve_size(0) {}
   };
 
   // only used for debugging (i.e. EpochMemCheck=1).
@@ -167,6 +171,24 @@ private:
     lnk->skip = false;
     pid.current = lnk;
     return &(lnk->skip);
+  }
+
+  void append_to_reserve(old_current& pid) {
+    if (pid.old != nullptr) {
+      if (pid.reserve_size > 2000)
+	clear_list(pid.old);
+      else {
+	Link* hold_ptr = pid.reserve;
+	pid.reserve = pid.old;
+	Link* ptr = pid.old;
+	pid.reserve_size++;
+	while (ptr->next != nullptr) {
+	  pid.reserve_size++;
+	  ptr = ptr->next;
+	}
+	ptr->next = hold_ptr;
+      }
+    }
   }
 
   // destructs and frees a linked list of objects 
@@ -192,7 +214,11 @@ private:
 
   void advance_epoch(int i, old_current& pid) {
     if (pid.epoch + 1 < get_epoch().get_current()) {
+#ifdef USE_RESERVE
+      append_to_reserve(pid);
+#else
       clear_list(pid.old);
+#endif
       pid.old = pid.current;
       pid.current = nullptr;
       pid.epoch = get_epoch().get_current();
@@ -216,13 +242,36 @@ private:
 #endif
 
 #ifdef USE_MALLOC
-  nodeT* allocate_node() {return (nodeT*) malloc(sizeof(nodeT));}
-  void free_node(nodeT* x) {return free(x);}
+  void free_node(nodeT* x) {return free(x);}  
 #else
   using Allocator = parlay::type_allocator<nodeT>;
-  nodeT* allocate_node() { return Allocator::alloc();}
   void free_node(nodeT* x) { return Allocator::free(x);}
 #endif
+  
+  nodeT* allocate_node() {
+#ifdef USE_RESERVE
+    auto &pid = pools[worker_id()];
+    if (pid.reserve != nullptr) {
+      Link* tmp = pid.reserve;
+      pid.reserve = pid.reserve->next;
+      pid.reserve_size--;
+      free_link(tmp);
+      Destruct((nodeT*) tmp->value);
+#ifdef EpochMemCheck
+      paddedT* x = pad_from_T(tmp->value);
+      x->head = 55;
+      return (nodeT*) x;
+#else
+      return (nodeT*) tmp->value;
+#endif
+    } else
+#endif
+#ifdef USE_MALLOC
+      return (nodeT*) malloc(sizeof(nodeT));
+#else
+      return Allocator::alloc();
+#endif
+  }
   
 public:
   using T = xT;
@@ -238,7 +287,7 @@ public:
   }
 
   memory_pool_(const memory_pool_&) = delete;
-  ~memory_pool_() {} // clear(); }
+  ~memory_pool_() { clear(); }
 
   // noop since epoch announce is used for the whole operation
   void acquire(T* p) { }
@@ -258,6 +307,10 @@ public:
 #else
      free_node(p);
 #endif
+  }
+
+  void Destruct(T* p) {
+    p->~T();
   }
 
   template <typename ... Args>
@@ -297,15 +350,25 @@ public:
   // retire and return a pointer if want to undo the retire
   bool* Retire(T* p) {
     return add_to_current_list((void*) p);}
+
+  long list_len(Link* ptr) {
+    long n = 0;
+    while (ptr != nullptr) {
+      n++;
+      ptr = ptr->next;
+    }
+    return n;
+  }
   
   // clears all the lists 
   // to be used on termination
   void clear() {
     get_epoch().update_epoch();
-    for (int i=0; i < pools.size(); i++) {
+    for (int i=0; i < num_workers(); i++) {
       clear_list(pools[i].old);
       clear_list(pools[i].current);
-      pools[i].old = pools[i].current = nullptr;
+      clear_list(pools[i].reserve);
+      pools[i].old = pools[i].current = pools[i].reserve = nullptr;
     }
   }
 };
