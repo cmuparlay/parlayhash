@@ -34,19 +34,22 @@ function to std::nullopt and inserts the key into the map with the
 returned value, and returns true.   For example using: `[&] (auto x) {return v;}` will just set
 the given key to have value v whether it was in there or not. 
 
-- `size() -> long` : Returns the number of elements in the map.  It is
-thread-safe, but not linearizable with updates.  However it always
+- `size() -> long` : Returns the number of elements in the map.
+Runs in **parallel** and does work proportional to the
+number of elements in the hash map.   Safe to run with other operations, but is
+not linearizable with updates.  However it always
 includes any elements that are in there from its invocation until its
 response, and never includes an element that is removed before its
 invocation or is inserted after its response.  This means, for
 example, that if there are no concurrent updates, it returns the
-correct size.  It takes work proportional to the hash map size.
+correct size.  
 
 - `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a sequence
-containing all the entries of the map as key-value pairs.  It is
-thread-safe but not linearizable with updates.  Its concurrency
-semantics are the same as for `size`.  It takes work proportional to the
-number of elements in the hash map size.
+containing all the entries of the map as key-value pairs.  Runs in
+**parallel** and takes work proportional to the number of elements in
+the hash map.  Safe to run with other operations, but is not
+linearizable with updates.  Its concurrency semantics are the same as
+for `size`.
 
 <!---
 The type for keys (K) and values (V) must be copyable, and might be
@@ -76,6 +79,7 @@ isolation (i.e., mutually exclusive of any other invocation of the
 function by an upsert on the same key) and just once.  With the
 lock-free version the function could be run multiple times
 concurrently, although the value of only one will be used.
+
 
 ## Benchmarks
 
@@ -166,8 +170,8 @@ The fifth column is for inserting 10M unique keys on 128 threads when the hash m
 | boost_hash | 23.3 | 77.6 | 41.2 | 41.2 | 13 | 
 | parallel_hashmap | 24.4 | 17.8 | 10.4 | 11.4 | 8 |
 | folly_sharded | 16.5 | 76.9 | 125 |--- | --- |
-| abseil (sequential) | 40.1 | --- | --- | --- |
-| std (sequential) | 13.2 | --- | --- | --- |
+| abseil (sequential) | 40.1 | --- | --- | --- | --- |
+| std (sequential) | 13.2 | --- | --- | --- | --- |
 
 Many of the other hash maps do badly on many threads under high contention.
 For example, here are the full results for `libcuckoo` on 128 threads:
