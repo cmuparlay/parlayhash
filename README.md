@@ -143,7 +143,7 @@ workloads mentioned above (two sizes x two update rates x two
 distributions).  For our hash map, we show both the times for
 the locked (lock) and lock free (lf) versions.
 
-Columns 2 and 3 correspond to 1 thread and 128 threads when the hash map is initialized
+Columns 2 -- 4 correspond to 1 thread, 16 threads (8 cores) and 128 threads (64 cores) when the hash map is initialized
 to the correct size.
 The fourth column is the same but when the hash map is initialized with size 1 (i.e., it first grows to the full size and then the timings start).   This is meant to test if the hash map grows effectively, which all the growing maps do.
 The fifth column is for inserting 10M unique keys on 128 threads when the hash map starts with size 1 (i.e., it includes the time for growing the hash map multiple times).
@@ -155,22 +155,22 @@ The fifth column is for inserting 10M unique keys on 128 threads when the hash m
 | hash_grow lock | 13.2 | 622 | 583 | 75 |
 --->
 
-| Hash Map | 1 thread | 128 threads | 128 grown | 128 insert |
-| - | - | - | - | - |
-| parlay_hash lf | 15.9 | 651 | 631 | 112 |
-| parlay_hash lock | 16.1 | 692 | 679 | 99 |
-| tbb_hash | 9.3 | 64.6 | 61.4 | 23 |
-| libcuckoo | 11.5 | 33.1 | 33.9 | 6.3 |
-| growt | 7.2 | 156 | 146 | 59 |
-| folly_hash | 11.9 | failed | failed | 41 |
-| boost_hash | 23.3 | 41.2 | 41.2 | 13 | 
-| parallel_hashmap | 24.4 | 10.4 | 11.4 | 8 |
-| folly_sharded | 16.5 | 125 | --- | --- |
+| Hash Map | 1 thread | 16 threads | 128 threads | 128 grown | 128 insert |
+| - | - | - | - | - | - |
+| parlay_hash lf | 15.9 | 162 | 651 | 631 | 112 |
+| parlay_hash lock | 16.1 | 156 | 692 | 679 | 99 |
+| tbb_hash | 9.3 | 62.4 | 64.6 | 61.4 | 23 |
+| libcuckoo | 11.5 | 50.5 | 33.1 | 33.9 | 6.3 |
+| growt | 7.2 | 40.8 | 156 | 146 | 59 |
+| folly_hash | 11.9 | 82.4 | failed | failed | 41 |
+| boost_hash | 23.3 | 77.6 | 41.2 | 41.2 | 13 | 
+| parallel_hashmap | 24.4 | 17.8 | 10.4 | 11.4 | 8 |
+| folly_sharded | 16.5 | 125 | 76.6 |--- | --- |
 | abseil (sequential) | 40.1 | --- | --- | --- |
 | std (sequential) | 13.2 | --- | --- | --- |
 
-Many of the other hash maps do badly under high contention.
-For example, here are the full results for `libcuckoo`:
+Many of the other hash maps do badly on many threads under high contention.
+For example, here are the full results for `libcuckoo` on 128 threads:
 
 ```
 ./libcuckoo,5%update,n=100000,p=128,z=0,grow=0,insert_mops=181,mops=536
