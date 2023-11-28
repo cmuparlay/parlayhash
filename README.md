@@ -165,7 +165,7 @@ The fifth column is for inserting 10M unique keys on 128 threads when the hash m
 | folly_hash | 11.9 | 82.4 | failed | failed | 41 |
 | boost_hash | 23.3 | 77.6 | 41.2 | 41.2 | 13 | 
 | parallel_hashmap | 24.4 | 17.8 | 10.4 | 11.4 | 8 |
-| folly_sharded | 16.5 | 125 | 76.6 |--- | --- |
+| folly_sharded | 16.5 | 76.9 | 125 |--- | --- |
 | abseil (sequential) | 40.1 | --- | --- | --- |
 | std (sequential) | 13.2 | --- | --- | --- |
 
