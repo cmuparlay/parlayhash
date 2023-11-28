@@ -82,6 +82,9 @@
 
 namespace parlay {
 
+  //constexpr bool default_clear_at_end = true;
+  constexpr bool default_clear_at_end = false;
+
 template <typename K,
 	  typename V,
 	  class Hash = std::hash<K>,
@@ -242,6 +245,7 @@ private:
   // the current table version
   // points to next larger table version if one exists
   std::atomic<table_version*> current_table_version;
+  table_version* initial_table_version;
 
   // called when table should be expanded (i.e. when some bucket is too large)
   // allocates a new table version and links the old one to it
@@ -252,7 +256,8 @@ private:
       // if fail on lock, someone else is working on it, so skip
       get_locks().try_lock((long) ht, [&] {
 	 if (ht->next == nullptr) {
-	   ht->next = epoch::memory_pool<table_version>::New(ht);
+	   //ht->next = epoch::memory_pool<table_version>::New(ht);
+	   ht->next = new table_version(ht);
 	   //std::cout << "expand to: " << n * grow_factor << std::endl;
 	 }
 	 return true;});
@@ -345,7 +350,7 @@ private:
 	// and retire the old table
 	if (++next->finished_block_count == next->block_status.size()) {
 	  current_table_version = next;
-	  epoch::memory_pool<table_version>::Retire(t);
+	  //epoch::memory_pool<table_version>::Retire(t);
 	}
       } else {
 	// If working then wait until Done
@@ -513,13 +518,11 @@ public:
   // The public interface
   // *********************************************
 
-  unordered_map(long n) : current_table_version(epoch::New<table_version>(n)),
-			  clear_memory_and_scheduler_at_end(false) {}
-
-  unordered_map(long n, bool x)
-    : current_table_version(epoch::New<table_version>(n)),
-      clear_memory_and_scheduler_at_end(true),
-      sched_ref(new parlay::internal::scheduler_type(std::thread::hardware_concurrency()))
+  unordered_map(long n, bool clear_at_end = default_clear_at_end)
+    : current_table_version(new table_version(n)),
+      initial_table_version(current_table_version.load()),
+      clear_memory_and_scheduler_at_end(clear_at_end),
+      sched_ref(clear_at_end ? new parlay::internal::scheduler_type(std::thread::hardware_concurrency()) : nullptr)
   {}
 
   ~unordered_map() {
@@ -528,9 +531,13 @@ public:
        head_ptr h = buckets[i].load();
        if (!h.is_forwarded()) 
 	 retire_all_list(h);});
-    epoch::memory_pool<table_version>::Retire(current_table_version.load());
+    table_version* tv = initial_table_version;
+    while (tv != nullptr) {
+      table_version* tv_next = tv->next;
+      delete tv;
+      tv = tv_next;
+    }
     if (clear_memory_and_scheduler_at_end) {
-      epoch::memory_pool<table_version>::clear();
       epoch::memory_pool<link>::clear();
       delete sched_ref;
     }

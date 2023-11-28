@@ -157,8 +157,8 @@ The fifth column is for inserting 10M unique keys on 128 threads when the hash m
 
 | Hash Map | 1 thread | 128 threads | 128 grown | 128 insert |
 | - | - | - | - | - |
-| parlay_hash lf | 15.9 | 625 | 626 | 100 |
-| parlay_hash lock | 16.1 | 670 | 678 | 88 |
+| parlay_hash lf | 15.9 | 651 | 631 | 112 |
+| parlay_hash lock | 16.1 | 692 | 679 | 99 |
 | tbb_hash | 9.3 | 64.6 | 61.4 | 23 |
 | libcuckoo | 11.5 | 33.1 | 33.9 | 6.3 |
 | growt | 7.2 | 156 | 146 | 59 |
@@ -189,16 +189,16 @@ The last four workloads are for z=.99 (zipfian parameter .99), and it does abysm
 result for `parlay_hash`:
 
 ```
-./parlay_hash,5%update,n=100000,p=128,z=0,grow=0,insert_mops=296,mops=1868
-./parlay_hash,5%update,n=10000000,p=128,z=0,grow=0,insert_mops=281,mops=674
-./parlay_hash,50%update,n=100000,p=128,z=0,grow=0,insert_mops=302,mops=626
-./parlay_hash,50%update,n=10000000,p=128,z=0,grow=0,insert_mops=282,mops=469
-./parlay_hash,5%update,n=100000,p=128,z=0.99,grow=0,insert_mops=287,mops=1046
-./parlay_hash,5%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=282,mops=954
-./parlay_hash,50%update,n=100000,p=128,z=0.99,grow=0,insert_mops=311,mops=265   
-./parlay_hash,50%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=282,mops=325
-benchmark geometric mean of mops = 650.435
-initial insert geometric mean of mops = 290.741
+./parlay_hash,5%update,n=100000,p=128,z=0,grow=0,insert_mops=83,mops=2024            
+./parlay_hash,5%update,n=10000000,p=128,z=0,grow=0,insert_mops=226,mops=659          
+./parlay_hash,50%update,n=100000,p=128,z=0,grow=0,insert_mops=123,mops=698           
+./parlay_hash,50%update,n=10000000,p=128,z=0,grow=0,insert_mops=318,mops=470         
+./parlay_hash,5%update,n=100000,p=128,z=0.99,grow=0,insert_mops=105,mops=1056        
+./parlay_hash,5%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=318,mops=969       
+./parlay_hash,50%update,n=100000,p=128,z=0.99,grow=0,insert_mops=168,mops=216        
+./parlay_hash,50%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=317,mops=333      
+benchmark geometric mean of mops = 651.735                                           
+initial insert geometric mean of mops = 184.35
 ```
 
 ## Code Dependencies

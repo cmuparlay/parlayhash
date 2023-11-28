@@ -14,7 +14,7 @@
 #define EpochMemCheck 1
 #endif
 
-//#define USE_MALLOC 1
+#define USE_MALLOC 1
 #define USE_RESERVE 1
 
 // ***************************
@@ -264,7 +264,7 @@ private:
 #else
       return (nodeT*) tmp->value;
 #endif
-    } else
+    }
 #endif
 #ifdef USE_MALLOC
       return (nodeT*) malloc(sizeof(nodeT));
@@ -365,6 +365,7 @@ public:
   void clear() {
     get_epoch().update_epoch();
     for (int i=0; i < num_workers(); i++) {
+      pools[i].reserve_size = 0;
       clear_list(pools[i].old);
       clear_list(pools[i].current);
       clear_list(pools[i].reserve);
