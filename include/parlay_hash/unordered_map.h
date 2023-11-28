@@ -505,12 +505,22 @@ private:
     }
   }
 
+  parlay::internal::scheduler_type* sched_ref;
+  bool clear_memory_and_scheduler_at_end;
+
 public:
   // *********************************************
   // The public interface
   // *********************************************
 
-  unordered_map(long n) : current_table_version(epoch::New<table_version>(n)) {}
+  unordered_map(long n) : current_table_version(epoch::New<table_version>(n)),
+			  clear_memory_and_scheduler_at_end(false) {}
+
+  unordered_map(long n, bool clear)
+    : current_table_version(epoch::New<table_version>(n)),
+      clear_memory_and_scheduler_at_end(true),
+      sched_ref(new parlay::internal::scheduler_type(std::thread::hardware_concurrency()))
+  {}
 
   ~unordered_map() {
     auto& buckets = current_table_version.load()->buckets;
@@ -519,6 +529,11 @@ public:
        if (!h.is_forwarded()) 
 	 retire_all_list(h);});
     epoch::memory_pool<table_version>::Retire(current_table_version.load());
+    if (clear_memory_and_scheduler_at_end) {
+      epoch::memory_pool<table_version>::clear();
+      epoch::memory_pool<link>::clear();
+      delete sched_ref;
+    }
   }
 
   std::optional<V> find(const K& k) {

@@ -35,18 +35,18 @@ returned value, and returns true.   For example using: `[&] (auto x) {return v;}
 the given key to have value v whether it was in there or not. 
 
 - `size() -> long` : Returns the number of elements in the map.  It is
-not linearizable with the other functions, but always includes any
-elements that are in there from its invocation until its response, and
-never includes an element that is removed before its invocation or is
-inserted after its response.  This means, for example, that it returns
-the correct size if no other functions are concurrent.  It takes work
-proportional to the hash map size.
+thread-safe, but not linearizable with updates.  However it always
+includes any elements that are in there from its invocation until its
+response, and never includes an element that is removed before its
+invocation or is inserted after its response.  This means, for
+example, that if there are no concurrent updates, it returns the
+correct size.  It takes work proportional to the hash map size.
 
 - `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a sequence
-containing all the entries of the map as key-value pairs.  Not
-linearizable with the other functions, but has the same concurrency
-semantics as `size`.   It takes work proportional to the number of
-elements in the hash map size.
+containing all the entries of the map as key-value pairs.  It is
+thread-safe but not linearizable with updates.  Its concurrency
+semantics are the same as for `size`.  It takes work proportional to the
+number of elements in the hash map size.
 
 <!---
 The type for keys (K) and values (V) must be copyable, and might be
