@@ -114,9 +114,9 @@ In addition to our hash map, the repository includes the following open source h
 
 For some of these you need to have the relevant library installed
 (e.g., boost, folly, abseil, tbb).  All of the hash maps except the
-sharded versions are designed to grow.  All of them except `growt`
-support arbitrary copyable key and value types when supplied hash and
-equality functions for the keys.
+sharded versions are designed to grow.  All of them support arbitrary
+copyable key and value types when supplied hash and equality functions
+for the keys.
 
 Adding another hash table simply requires adding a stub file `other/<myhash>/unordered_map.h`
 (e.g., see [other/boost/hash/unordered_map.h](other/boost/hash/unordered_map.h))
@@ -189,7 +189,7 @@ f53ec94, Nov 1, 2023).  We reported the bug and the developers replied
 that it is due to a bug in their hazard-pointer implementation (a
 16-bit counter is overflowing).
 
-Many of the other hash maps do badly on many threads under high contention.
+Many of the hash maps do badly on many threads under high contention.
 For example, here are the full results for `libcuckoo` on 128 threads:
 
 ```

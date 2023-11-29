@@ -490,9 +490,11 @@ private:
     head_ptr head = t->buckets[i].load();
     if (!head.is_forwarded())
       retire_all_list(head);
-    table_version* next = t->next.load();
-    for (int j = 0; j < grow_factor; j++)
-      clear_bucket(next, grow_factor * i + j);
+    else {
+      table_version* next = t->next.load();
+      for (int j = 0; j < grow_factor; j++)
+	clear_bucket(next, grow_factor * i + j);
+    }
   }
 
   // Return size of bucket i of table version t.
