@@ -1,7 +1,8 @@
-# ParlayHash : A Header-Only Fast Concurrent Hash Map.
+# ParlayHash : A Header-Only Scalable Concurrent Hash Map.
 
 A growable concurrent hash map supporting **wait-free finds** and mostly **lock-free
 updates** (some locks are taken when growing, but when not growing all updates are lock free).
+It is designed to scale well to  hundreds of threads and work well under high contention.
 
 The simplest way to use the library is to copy the [include](include) directory into your code directory
 and then include the following in your code:
@@ -14,8 +15,9 @@ and then include the following in your code:
 
 The library supports the following interface for any copyable key type `K` and value type `V`.
 
-- `parlay::unordered_map<K,V,Hash=std::hash<K>,Equal=std::equal_to<K>>(n)` :
-constructor for map of initial size n.
+- `parlay::unordered_map<K,V,Hash=std::hash<K>,Equal=std::equal_to<K>>(long n, bool cleanup=false)` :
+constructor for map of initial size n.  If `cleanup` is set, all memory pools and scheduler threads will
+be cleaned up on destruction, otherwise they can be shared among hash maps.
 
 - `find(const K&) -> std::optional<V>` : If the key is in the map, returns the value associated
   with it, otherwise returns std::nullopt.
@@ -44,7 +46,8 @@ invocation or is inserted after its response.  This means, for
 example, that if there are no concurrent updates, it returns the
 correct size.  
 
-- `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a sequence
+- `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a [parlay]
+(https://github.com/cmuparlay/parlaylib) sequence
 containing all the entries of the map as key-value pairs.  Runs in
 **parallel** and takes work proportional to the number of elements in
 the hash map.  Safe to run with other operations, but is not
@@ -97,7 +100,7 @@ the benchmarks:
     ./parlay_hash           // run the benchmark for our map
     ...
 
-In addition to our own hash map, the repository includes the following
+In addition to our hash map, the repository includes the following open source hash maps:
 - ./tbb_hash            ([tbb concurrent hash map](https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_unordered_map_cls.html))
 - ./libcuckoo           ([libcuckoo's cuckooohash_map](https://github.com/efficient/libcuckoo))
 - ./growt               ([growt's concurrent hash map](https://github.com/TooBiased/growt))
@@ -113,6 +116,14 @@ For some of these you need to have the relevant library installed
 sharded versions are designed to grow.  All of them except `growt`
 support arbitrary copyable key and value types when supplied hash and
 equality functions for the keys.
+
+Adding another hash table simply requires adding a stub file `other/<myhash>/unordered_map.h`
+(e.g., see [other/boost/hash/unordered_map.h](other/boost/hash/unordered_map.h))
+and adding a line of the form:
+
+    add_benchmark(<myhash> other <link_libraries> <compiler_options> <compiler_definitions>)
+
+to [CMakeFile.txt](benchmarks/CMakeFiles.txt).
 
 The benchmarks will run by default on the number of hardware threads
 you have on your machine.  They will run over two data sizes (100K and
@@ -205,7 +216,7 @@ benchmark geometric mean of mops = 651.735
 initial insert geometric mean of mops = 184.35
 ```
 
-Note that zipfian .99 is what is suggested by the YCSB [Yahoo Cloud
+We note that zipfian .99 is what is suggested by the YCSB [Yahoo Cloud
 Serving Benchmark](https://research.yahoo.com/news/yahoo-cloud-serving-benchmark) as a good model for the skew of real-world
 data used in key value stores.
 
@@ -221,8 +232,8 @@ Note that parlaylib will start up threads as needed to run certain operations in
 
 The file [include/parlay_hash/unordered_map.h](include/parylay_hash/unordered_map.h) is mostly self contained.
 The only non C++ standard library files that it uses are the following:
-- [include/utils/epoch.h](include/utils/epoch.h), which is an implementation of epoch-based safe memory reclamation.   It supports the functions `New<T>(...args)` and `Retire(T* ptr)`, which correspond to `new` and `delete`.   The retire, however, delays destruction until it is safe to do so (i.e., when no operation that was running at the time of the retire is still running).    By default, `epoch.h` uses the parlay pool allocator since it is more efficient than e.g. jemalloc.   You can have it use the default allocator by defining `USE_MALLOC`. 
-- [include/utils/lock.h](include/utils/lock.h), which is a simple implementation of shared locks.  It is only used if you use the lock-based versions of the hash maps.  The implementation has an array with a fixed number of locks (currently 65K), and a location is hashed to one of the locks in the array.   Each lock is a simple spin lock.    This file has no dependencies beyond the C++ standard library.
+- [include/utils/epoch.h](include/utils/epoch.h), which is an implementation of epoch-based safe memory reclamation.   It supports the functions `New<T>(...args)` and `Retire(T* ptr)`, which correspond to `new` and `delete`.   The retire, however, delays destruction until it is safe to do so (i.e., when no operation that was running at the time of the retire is still running).
+- [include/utils/lock.h](include/utils/lock.h), which is a simple implementation of shared locks.  It is only used if you use the lock-based version of the parlay_hash.  The implementation has an array with a fixed number of locks (currently 65K), and a location is hashed to one of the locks in the array.   Each lock is a simple spin lock.    This file has no dependencies beyond the C++ standard library.
 - Files from the [include/parlaylib](include/parlaylib) library.
 
 The other implementations (e.g. tbb, folly, ...) require the relevant libraries, but do not require `parlaylib` themselves.   However, our benchmarking harness uses `parlaylib` to run the benchmarks for all implementations.
