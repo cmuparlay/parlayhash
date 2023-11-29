@@ -153,23 +153,22 @@ Options include:
 ## Timings
 
 Here are some timings on a AWS EC2 c6i.metal instance.  This machine
-has two Intel Xeon Ice Lake chips with 32 cores each.  Each core is 2-way hyperthreaded, for a
-total of 128 threads.  Each number reports the geometric mean of mops over the eight
-workloads mentioned above (two sizes x two update rates x two
-distributions).  For our hash map, we show both the times for
-the locked (lock) and lock free (lf) versions.
+has two Intel Xeon Ice Lake chips with 32 cores each.  Each core is
+2-way hyperthreaded, for a total of 128 threads.  Each number reports
+the geometric mean of mops over the eight workloads mentioned above
+(two sizes x two update rates x two distributions).  For our hash map,
+we show both the times for the locked (lock) and lock free (lf)
+versions.  Times were taken for code available November 2023.
 
-Columns 2 through 4 correspond to 1 thread, 16 threads (8 cores) and 128 threads (64 cores) when the hash map is initialized
-to the correct size.
-The fifth column is the same but when the hash map is initialized with size 1 (i.e., it first grows to the full size and then the timings start).   This is meant to test if the hash map grows effectively, which all the growing maps do.
-The sixth column is for inserting 10M unique keys on 128 threads when the hash map starts with size 1 (i.e., it includes the time for growing the hash map multiple times).
-
-<!---
-| hash_nogrow lf | 17.2 | 650 | --- | --- |
-| hash_nogrow lock | 17.4 | 681 | --- | --- |
-| hash_grow lf | 13.4 | 592 | 577 | 103 |
-| hash_grow lock | 13.2 | 622 | 583 | 75 |
---->
+Columns 2 through 4 correspond to 1 thread, 16 threads (8 cores) and
+128 threads (64 cores) when the hash map is initialized to the correct
+size.  The fifth column is the same but when the hash map is
+initialized with size 1 (i.e., it first grows to the full size and
+then the timings start).  This is meant to test if the hash map grows
+effectively, which all the growing maps do.  The sixth column is for
+inserting 10M unique keys on 128 threads when the hash map starts with
+size 1 (i.e., it includes the time for growing the hash map multiple
+times).
 
 | Hash Map | 1 thread | 16 threads | 128 threads | 128 grown | 128 insert |
 | - | - | - | - | - | - |
@@ -184,6 +183,11 @@ The sixth column is for inserting 10M unique keys on 128 threads when the hash m
 | folly_sharded | 16.5 | 76.9 | 125 |--- | --- |
 | abseil (sequential) | 40.1 | --- | --- | --- | --- |
 | std (sequential) | 13.2 | --- | --- | --- | --- |
+
+The folly ConcurrentHashMap failed on 128 threads (for version
+f53ec94, Nov 1, 2023).  We reported the bug and the developers replied
+that it is due to a bug in their hazard-pointer implementation (a
+16-bit counter is overflowing).
 
 Many of the other hash maps do badly on many threads under high contention.
 For example, here are the full results for `libcuckoo` on 128 threads:
