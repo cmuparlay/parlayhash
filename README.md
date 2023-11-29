@@ -1,8 +1,9 @@
-# ParlayHash : A Header-Only Scalable Concurrent Hash Map.
+# ParlayHash :
+A Header-Only Scalable Concurrent Hash Map.
 
 A growable concurrent hash map supporting **wait-free finds** and mostly **lock-free
 updates** (some locks are taken when growing, but when not growing all updates are lock free).
-It is designed to scale well to  hundreds of threads and work well under high contention.
+It is designed to scale well to  hundreds of threads and work reasonably well under high contention.
 
 The simplest way to use the library is to copy the [include](include) directory into your code directory
 and then include the following in your code:

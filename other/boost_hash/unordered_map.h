@@ -11,7 +11,7 @@ struct unordered_map {
 
   std::optional<V> find(const K& k) {
     std::optional<V> result;
-    table.visit(k, [&](auto&& x) { result = x.second; });
+    table.cvisit(k, [&](auto&& x) { result = x.second; });
     return result;
   }
 
