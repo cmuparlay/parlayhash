@@ -431,12 +431,12 @@ private:
     link* old_ptr = old_head;
 #ifndef USE_LOCKS
     auto [cnt, new_ptr] = update_list(old_ptr, k, f);
-    if (cnt == 0) {
+    if (cnt == 0) { // not in bucket, so insert new element
       new_ptr = epoch::New<link>(std::pair(k, f(std::optional<V>())), old_ptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr)))
 	return true;
       epoch::Delete(new_ptr);
-    } else {
+    } else { // use the updated list
       if (weak_cas(s, old_head, head_ptr(new_ptr))) {
 	retire_list(old_ptr, cnt);
 	return false;
@@ -450,10 +450,11 @@ private:
       link* new_ptr = epoch::New<link>(std::pair(k, f(std::optional<V>())), old_ptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr)))
 	return std::optional(true); // try succeeded, returing that a new element is inserted
-      epoch::Delete(new_ptr);
+      epoch::Delete(new_ptr); // failed, so delete and try again
     } else {
       if (get_locks().try_lock((long) s, [=] {
 	  if (!(s->load() == old_head)) return false;
+	  // note that the invocation of f is inside the lock
 	  auto [cnt, new_ptr] = update_list(old_ptr, k, f);
 	  *s = head_ptr(new_ptr);
 	  retire_list(old_ptr, cnt);
