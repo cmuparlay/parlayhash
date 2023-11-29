@@ -185,7 +185,7 @@ times).
 | std (sequential) | 13.2 | --- | --- | --- | --- |
 
 The folly ConcurrentHashMap failed on 128 threads (for version
-f53ec94, Nov 1, 2023).  We reported the bug and the developers replied
+f53ec94, Nov 1, 2023).  We [reported the bug](https://github.com/facebook/folly/issues/2097) and the developers replied
 that it is due to a bug in their hazard-pointer implementation (a
 16-bit counter is overflowing).
 
