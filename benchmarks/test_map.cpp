@@ -25,6 +25,7 @@ using namespace parlay;
 #endif
 
 struct IntHash {
+  using is_avalanching = void; // used by boost_hash to avoid secondary hashing
   std::size_t operator()(K const& k) const noexcept {
     auto x = k * UINT64_C(0xbf58476d1ce4e5b9); // linear transform
     return (x ^ (x >> 31));  // non-linear transform

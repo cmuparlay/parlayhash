@@ -179,7 +179,7 @@ The sixth column is for inserting 10M unique keys on 128 threads when the hash m
 | libcuckoo | 11.5 | 50.5 | 33.1 | 33.9 | 6.3 |
 | growt | 7.2 | 40.8 | 156 | 146 | 59 |
 | folly_hash | 11.9 | 82.4 | failed | failed | 41 |
-| boost_hash | 23.3 | 77.6 | 41.2 | 41.2 | 13 | 
+| boost_hash | 24.7 | 77.6 | 57.2 | 41.2 | 13 | 
 | parallel_hashmap | 24.4 | 17.8 | 10.4 | 11.4 | 8 |
 | folly_sharded | 16.5 | 76.9 | 125 |--- | --- |
 | abseil (sequential) | 40.1 | --- | --- | --- | --- |
