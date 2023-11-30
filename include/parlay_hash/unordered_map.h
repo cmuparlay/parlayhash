@@ -1,3 +1,4 @@
+
 // Initial Author: Guy Blelloch
 // Developed as part of the flock library
 // 
@@ -71,6 +72,11 @@
 #include "../parlay/delayed.h"
 #include "../utils/epoch.h"
 #include "../utils/lock.h"
+//#include <parlay/primitives.h>
+//#include <parlay/sequence.h>
+//#include <parlay/delayed.h>
+//#include "utils/epoch.h"
+//#include "utils/lock.h"
 
 //#define USE_LOCKS 1
 
@@ -83,24 +89,21 @@ template <typename K,
 struct unordered_map {
 
 private:
-  // set to grow by factor of 8 (2^3) each time table expands
+  // set to grow by factor of 8 (2^3)
   static constexpr int log_grow_factor = 3;
   static constexpr int grow_factor = 1 << log_grow_factor;
 
-  // groups of block_size buckets are copied to next larger table by a single thread
+  // groups of block_size buckets are copied over by a single thread
   static constexpr int block_size = 64;
 
-  using KV = std::pair<K,V>;
-
-  // Can be used to clear out epoch memory pool at end
   static constexpr bool default_clear_at_end = false;
-  bool clear_memory_and_scheduler_at_end;
-  parlay::internal::scheduler_type* sched_ref;
+
+  using KV = std::pair<K,V>;
 
   // *********************************************
   // Linked lists used for each bucket
   // *********************************************
-  
+
   struct link {
     KV element;
     link* next;
@@ -186,13 +189,13 @@ private:
   // *********************************************
 
   // The structure stored in each bucket.  It includes a pointer to
-  // the first link of a bucket list or marker indicating bucket is forwarded.
+  // the first link or marker indicating bucket is forwarded.
   struct head_ptr {
     size_t ptr;
-    static head_ptr forwarded_link() {return head_ptr(reinterpret_cast<link*>(1ul));}
+    static head_ptr forwarded_link() {return head_ptr((link*) 1ul);}
     bool is_forwarded() {return ptr == 1ul ;}
-    head_ptr(link* ptr) : ptr(reinterpret_cast<size_t>(ptr)) {}
-    operator link*() {return reinterpret_cast<link*>(ptr);}
+    head_ptr(link* ptr) : ptr((size_t) ptr) {}
+    operator link*() {return (link*) ptr;}
     bool operator ==(const head_ptr h) {return ptr == h.ptr;}
   };
       
@@ -247,14 +250,12 @@ private:
   // the current table version
   // points to next larger table version if one exists
   std::atomic<table_version*> current_table_version;
-
-  // The first table version.  Used for cleanup.
   table_version* initial_table_version;
 
   // *********************************************
   // Functions for exanding the table
   // *********************************************
-  
+
   // called when table should be expanded (i.e. when some bucket is too large)
   // allocates a new table version and links the old one to it
   void expand_table(table_version* ht) {
@@ -271,7 +272,7 @@ private:
     }
   }
 
-  // copies key_value into a new table
+  // copies key_value into a new table version
   // note this is not thread safe...i.e. only this thread should be
   // updating the bucket corresponding to the key.
   void copy_element(table_version* t, KV& key_value) {
@@ -284,10 +285,10 @@ private:
   // This is the version if USE_LOCKS is not set.
   void copy_bucket_cas(table_version* t, table_version* next, long i) {
     long exp_start = i * grow_factor;
-    // Clear grow_factor buckets in the next table to put them in.
+    // Clear grow_factor buckets in the next table version to put them in.
     for (int j = exp_start; j < exp_start + grow_factor; j++)
       next->buckets[j] = nullptr;
-    // copy bucket to grow_factor new buckets in next table
+    // copy bucket to grow_factor new buckets in next table version
     while (true) {
       head_ptr bucket = t->buckets[i].load();
       link* ptr = bucket;
@@ -302,7 +303,6 @@ private:
 	break;
       }
       // If the cas failed then someone updated bucket in the meantime so need to retry.
-      // Should happen rarely
       // Before retrying need to clear out already added buckets..
       for (int j = exp_start; j < exp_start + grow_factor; j++) {
 	head_ptr bucket = next->buckets[j].load();
@@ -318,7 +318,7 @@ private:
     long exp_start = i * grow_factor;
     bucket* bck = &(t->buckets[i]);
     while (!get_locks().try_lock((long) bck, [=] {
-      // Clear grow_factor buckets in the next table to put them in.
+      // Clear grow_factor buckets in the next table version to put them in.
       for (int j = exp_start; j < exp_start + grow_factor; j++)
         next->buckets[j] = nullptr;
       link* next_ptr = t->buckets[i].load();
@@ -354,7 +354,7 @@ private:
 	}
 	assert(next->block_status[block_num] == Working);
 	next->block_status[block_num] = Done;
-	// if all blocks have been copied then can set current table to next.
+	// if all blocks have been copied then can set current table to next
 	if (++next->finished_block_count == next->block_status.size()) {
 	  current_table_version = next;
 	}
@@ -368,7 +368,7 @@ private:
   }
 
   // *********************************************
-  // Operations for finding, inserting, upserting, and removing from a bucket.
+  // The internal find and update functions (find, insert, upsert and remove)
   // *********************************************
 
   std::optional<V> find_in_bucket(table_version* t, bucket* s, const K& k) {
@@ -408,7 +408,7 @@ private:
   }
 
   std::optional<std::optional<V>>
-  try_insert_to_bucket(table_version* t, bucket* s, const K& k, const V& v) {
+  try_insert_into_bucket(table_version* t, bucket* s, const K& k, const V& v) {
     head_ptr old_head = s->load();
     get_active_bucket(t, s, k, old_head);
     link* old_ptr = old_head;
@@ -433,12 +433,12 @@ private:
     link* old_ptr = old_head;
 #ifndef USE_LOCKS
     auto [cnt, new_ptr] = update_list(old_ptr, k, f);
-    if (cnt == 0) { // not in bucket, so insert new element
+    if (cnt == 0) {
       new_ptr = link_pool->New(std::pair(k, f(std::optional<V>())), old_ptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr)))
 	return true;
       link_pool->Delete(new_ptr);
-    } else { // use the updated list
+    } else {
       if (weak_cas(s, old_head, head_ptr(new_ptr))) {
 	retire_list(old_ptr, cnt);
 	return false;
@@ -452,11 +452,10 @@ private:
       link* new_ptr = link_pool->New(std::pair(k, f(std::optional<V>())), old_ptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr)))
 	return std::optional(true); // try succeeded, returing that a new element is inserted
-      link_pool->Delete(new_ptr); // failed, so delete and try again
+      link_pool->Delete(new_ptr);
     } else {
       if (get_locks().try_lock((long) s, [=] {
 	  if (!(s->load() == old_head)) return false;
-	  // note that the invocation of f is inside the lock
 	  auto [cnt, new_ptr] = update_list(old_ptr, k, f);
 	  *s = head_ptr(new_ptr);
 	  retire_list(old_ptr, cnt);
@@ -487,7 +486,7 @@ private:
     return std::nullopt;
   }
 
-  // Clear bucket i of table t, and any forwarded buckets
+  // Clear bucket i of table version t, and any forwarded buckets
   void clear_bucket(table_version* t, long i) {
     head_ptr head = t->buckets[i].load();
     if (!head.is_forwarded())
@@ -529,6 +528,9 @@ private:
     }
   }
 
+  parlay::internal::scheduler_type* sched_ref;
+  bool clear_memory_and_scheduler_at_end;
+
 public:
   // *********************************************
   // The public interface
@@ -564,8 +566,7 @@ public:
     table_version* ht = current_table_version.load();
     bucket* s = ht->get_bucket(k);
     __builtin_prefetch (s);
-    return epoch::with_epoch([=] {
-      return find_in_bucket(ht, s, k);});
+    return epoch::with_epoch([=] {return find_in_bucket(ht, s, k);});
   }
 
   bool insert(const K& k, const V& v) {
@@ -576,7 +577,7 @@ public:
     return epoch::with_epoch([=] {
       auto y = parlay::try_loop([=] {
 	  copy_if_needed(ht, idx);
-          return try_insert_to_bucket(ht, s, k, v);});
+          return try_insert_into_bucket(ht, s, k, v);});
       return !y.has_value();});
   }
 
@@ -588,7 +589,7 @@ public:
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {
       return parlay::try_loop([=] {
-	  copy_if_needed(ht, idx);
+	  copy_if_needed(ht, idx); // checks if table needs to grow
           return try_upsert_bucket(ht, s, k, f);});});
   }
 
@@ -603,19 +604,15 @@ public:
 	  return try_remove_from_bucket(ht, s, k);});
       return y.has_value();});
   }
-
-  // runs in parallel across the buckets
+		   
   long size() {
-    return entries().size();
     table_version* t = current_table_version.load();
     return epoch::with_epoch([&] {
-      // The delayed means the sequence of bucket sizes is not materialized
-      auto s = parlay::delayed::tabulate(t->size, [&] (size_t i) {
+      auto s = parlay::tabulate(t->size, [&] (size_t i) {
 	  return bucket_size(t, i);});
       return parlay::reduce(s);});
   }
 
-  // runs in parallel across the buckets
   parlay::sequence<KV> entries() {
     table_version* t = current_table_version.load();
     return epoch::with_epoch([&] {
@@ -623,7 +620,7 @@ public:
         parlay::sequence<KV> r;
 	bucket_entries(t, i, r);
 	return r;});
-      return parlay::flatten(s);});
+      return flatten(s);});
   }
 };
 
