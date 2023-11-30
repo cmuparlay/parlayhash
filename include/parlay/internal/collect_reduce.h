@@ -28,7 +28,7 @@ constexpr const size_t CR_SEQ_THRESHOLD = 8192;
 
 // Sequential version of collect_reduce
 // The helper must supply an init() function to initialize a bucket,
-// a get_key(.) function to extrat a key from an element of A, 
+// a get_key(.) function to extrat a key from an element of A,
 // a get_val(.) function to extract a value from an element of A, and
 // a update(.,.) function to add in a new value into a bucket.
 // all keys must be less than num_buckets.
@@ -78,7 +78,7 @@ auto collect_reduce_few(Seq const &A, Helper const &helper, size_t num_buckets) 
 // that appear many times into their own bucket.
 // Otherwise items can end up in the same bucket.
 // E is the type of element
-// HashEq must contain 
+// HashEq must contain
 //    a key_type
 //    a hash function : key_type -> size_t
 //    an equality function : key_type x key_type -> bool
@@ -128,7 +128,7 @@ struct get_bucket {
     }
 
     // add to the hash table if at least copy_cutoff copies appear in sample
-    // give added items consecutive numbers.   
+    // give added items consecutive numbers.
     heavy_hitters = 0;
     hash_table = sequence<KI>(table_size, std::make_pair(key_type(), -1));
     for (size_t i = 0; i < table_size; i++) {

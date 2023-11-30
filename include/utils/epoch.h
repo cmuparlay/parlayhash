@@ -28,13 +28,13 @@ namespace epoch {
   inline int worker_id() {return parlay::my_thread_id(); }
   inline int num_workers() {return parlay::num_thread_ids();}
   constexpr int max_num_workers = 1024;
-  
+
 struct alignas(64) epoch_s {
-	
+
   // functions to run when epoch is incremented
   std::vector<std::function<void()>> before_epoch_hooks;
   std::vector<std::function<void()>> after_epoch_hooks;
-  
+
   struct alignas(64) announce_slot {
     std::atomic<long> last;
     announce_slot() : last(-1l) {}
@@ -51,7 +51,7 @@ struct alignas(64) epoch_s {
   long get_current() {
     return current_epoch.load();
   }
-  
+
   long get_my_epoch() {
     return announcements[worker_id()].last;
   }
@@ -84,12 +84,12 @@ struct alignas(64) epoch_s {
     do {
       workers = num_workers();
       if (workers > max_num_workers) {
-	std::cerr << "number of threads: " << workers
-		  << ", greater than max_num_threads: " << max_num_workers << std::endl;
-	abort;
+	      std::cerr << "number of threads: " << workers
+		              << ", greater than max_num_threads: " << max_num_workers << std::endl;
+	      abort();
       }
       for (int i=0; i < workers; i++)
-	if ((announcements[i].last != -1l) && announcements[i].last < current_e) 
+	if ((announcements[i].last != -1l) && announcements[i].last < current_e)
 	  return;
     } while (num_workers() != workers); // this is unlikely to loop
 
@@ -129,7 +129,7 @@ struct Link {
   inline Link* allocate_link() {return list_allocator::alloc();}
   inline void free_link(Link* x) {return list_allocator::free(x);}
 #endif
-  
+
   using namespace std::chrono;
 
 template <typename xT>
@@ -144,7 +144,7 @@ private:
     Link* old;  // linked list of retired items from previous epoch
     Link* current; // linked list of retired items from current epoch
     Link* reserve;
-    long reserve_size; 
+    long reserve_size;
     long epoch; // epoch on last retire, updated on a retire
     long count; // number of retires so far, reset on updating the epoch
     //sys_time time; // time of last epoch update
@@ -191,7 +191,7 @@ private:
     }
   }
 
-  // destructs and frees a linked list of objects 
+  // destructs and frees a linked list of objects
   void clear_list(Link* ptr) {
     while (ptr != nullptr) {
       Link* tmp = ptr;
@@ -242,12 +242,12 @@ private:
 #endif
 
 #ifdef USE_MALLOC
-  void free_node(nodeT* x) {return free(x);}  
+  void free_node(nodeT* x) {return free(x);}
 #else
   using Allocator = parlay::type_allocator<nodeT>;
   void free_node(nodeT* x) { return Allocator::free(x);}
 #endif
-  
+
   nodeT* allocate_node() {
 #ifdef USE_RESERVE
     auto &pid = pools[worker_id()];
@@ -272,10 +272,10 @@ private:
       return Allocator::alloc();
 #endif
   }
-  
+
 public:
   using T = xT;
-  
+
   memory_pool_() {
     long workers = max_num_workers;
     long update_threshold = 10 * num_workers();
@@ -291,12 +291,12 @@ public:
 
   // noop since epoch announce is used for the whole operation
   void acquire(T* p) { }
-  
+
   paddedT* pad_from_T(T* p) {
      size_t offset = ((char*) &((paddedT*) p)->value) - ((char*) p);
      return (paddedT*) (((char*) p) - offset);
   }
-  
+
   // destructs and frees the object immediately
   void Delete(T* p) {
      p->~T();
@@ -338,7 +338,7 @@ public:
 #endif
     return true;
   }
-			   
+
   template <typename F, typename ... Args>
   // f is a function that initializes a new object before it is shared
   T* new_init(F f, Args... args) {
@@ -359,8 +359,8 @@ public:
     }
     return n;
   }
-  
-  // clears all the lists 
+
+  // clears all the lists
   // to be used on termination
   void clear() {
     get_epoch().update_epoch();
@@ -381,7 +381,7 @@ public:
   }
 
   } // namespace internal
-  
+
   template <typename T>
   struct memory_pool {
     template <typename ... Args>
@@ -405,7 +405,7 @@ public:
   template <typename T>
   static bool check_ptr(T* p) {return internal::get_pool<T>().check_not_corrupted(p);}
 
-  template <typename T>  
+  template <typename T>
   static void clear() {internal::get_pool<T>().clear();}
 
   template <typename T>

@@ -21,7 +21,7 @@ using namespace parlay;
 #ifdef USE_HANDLE
 #define HANDLE handle,
 #else
-#define HANDLE 
+#define HANDLE
 #endif
 
 struct IntHash {
@@ -59,7 +59,7 @@ test_loop(commandLine& C,
   // generate 2*n unique numbers in random order
   // get rid of top bit since growt seems to fail if used (must use it itself)
   //auto x = parlay::delayed_tabulate(1.2* 2 * n,[&] (size_t i) {
-  //		 return (K) (parlay::hash64(i) >> 1) ;}); 
+  //		 return (K) (parlay::hash64(i) >> 1) ;});
   //auto y = parlay::random_shuffle(parlay::remove_duplicates(x));
   //auto a = parlay::tabulate(2 * n, [&] (size_t i) {return y[i];});
 
@@ -68,7 +68,7 @@ test_loop(commandLine& C,
 
   // take m numbers from a in uniform or zipfian distribution
   parlay::sequence<K> b;
-  if (zipfian_param != 0.0) { 
+  if (zipfian_param != 0.0) {
     Zipfian z(2 * n, zipfian_param);
     b = parlay::tabulate(m, [&] (int i) { return a[z(i)]; });
     a = parlay::random_shuffle(a);
@@ -82,18 +82,18 @@ test_loop(commandLine& C,
   // half the updates will be inserts and half removes
   auto op_types = parlay::tabulate(m, [&] (size_t i) -> op_type {
         auto h = parlay::hash64(m+i)%200;
-        if (h < update_percent) return Insert; 
+        if (h < update_percent) return Insert;
         else if (h < 2*update_percent) return Remove;
 	else return Find; });
 
   parlay::sequence<double> insert_times;
   parlay::sequence<double> bench_times;
-    
+
   for (int i = 0; i < rounds + warmup; i++) { {
     map_type map = grow ? map_type(1) : map_type(n);
     size_t np = n/p;
     size_t mp = m/p;
-    
+
     // initialize the map with n distinct elements
     auto start_insert = std::chrono::system_clock::now();
 #ifdef USE_HANDLE
@@ -114,9 +114,9 @@ test_loop(commandLine& C,
 
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
     double imops = n / insert_time.count() / 1e6;
-    if (!warmup || i>0) 
+    if (!warmup || i>0)
       insert_times.push_back(imops);
-    
+
     long initial_size = map.size();
 
     // keep track of some statistics, one entry per thread
@@ -131,7 +131,7 @@ test_loop(commandLine& C,
     if (verbose) std::cout << "entries inserted" << std::endl;
 
     auto start = std::chrono::system_clock::now();
-		   
+
     // start up p threads, each doing a sequence of operations
     parlay::parallel_for(0, p, [&] (size_t i) {
       int cnt = 0;
@@ -147,7 +147,7 @@ test_loop(commandLine& C,
 #ifdef USE_HANDLE
       auto handle = map.get_handle();
 #endif
-      
+
       while (true) {
 	// every once in a while check if time is over
 	if (cnt >= 100) {
@@ -185,11 +185,11 @@ test_loop(commandLine& C,
 	    if (map.upsert(HANDLE b[j], [] (std::optional<V> v) {return 123;})) {added++; update_success_count++;}
 	  } else {
 	    if (map.insert(HANDLE b[j], 123)) {added++; update_success_count++;}
-	  } 
+	  }
 #else
 	  if (map.insert(HANDLE b[j], 123)) {added++; update_success_count++;}
 #endif
-	} else { // (op_types[k] == Remove) 
+	} else { // (op_types[k] == Remove)
 	  if (map.remove(HANDLE b[j])) {removed++; update_success_count++;}
 	}
 
@@ -204,7 +204,7 @@ test_loop(commandLine& C,
     auto current = std::chrono::system_clock::now();
     std::chrono::duration<double> duration = current - start;
     if (warmup && i==0) continue;
-    
+
     size_t num_ops = parlay::reduce(totals);
     size_t queries = parlay::reduce(query_counts);
     double latency_count = (double) parlay::reduce(latency_counts);
@@ -243,7 +243,7 @@ test_loop(commandLine& C,
     if (initial_size + added - removed != final_cnt) {
       std::cout << "bad final size: intial size = " << initial_size
 		<< ", net added " << (added - removed)
-		<< ", final size = " << final_cnt 
+		<< ", final size = " << final_cnt
 		<< std::endl;
     }
   }
@@ -257,12 +257,12 @@ test_loop(commandLine& C,
   return std::tuple{ geometric_mean(insert_times),
       geometric_mean(bench_times)};
 }
-    
+
 int main(int argc, char* argv[]) {
   commandLine P(argc,argv,"[-n <size>] [-r <rounds>] [-p <procs>] [-z <zipfian_param>] [-u <update percent>] [-verbose]");
 
   long n = P.getOptionIntValue("-n", 0);
-  int p = P.getOptionIntValue("-p", parlay::num_workers());  
+  int p = P.getOptionIntValue("-p", parlay::num_workers());
   int rounds = P.getOptionIntValue("-r", 2);
   double zipfian_param = P.getOptionDoubleValue("-z", -1.0);
   int update_percent = P.getOptionIntValue("-u", -1);
@@ -283,7 +283,7 @@ int main(int argc, char* argv[]) {
 
   parlay::sequence<std::tuple<double,double>> results;
 
-  for (auto zipfian_param : zipfians) 
+  for (auto zipfian_param : zipfians)
     for (auto update_percent : percents) {
       for (auto n : sizes) {
 	results.push_back(test_loop(P, n, p, rounds, zipfian_param, update_percent, upsert,
@@ -298,5 +298,5 @@ int main(int argc, char* argv[]) {
     std::cout << "benchmark geometric mean of mops = " << geometric_mean(bench_times) << std::endl;
     std::cout << "initial insert geometric mean of mops = " << geometric_mean(insert_times) << std::endl;
   }
-  return false;
+  return 0;
 }
