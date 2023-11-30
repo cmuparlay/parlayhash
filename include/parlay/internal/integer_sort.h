@@ -57,28 +57,28 @@ void seq_radix_sort_(slice<InIterator, InIterator> In,
     size_t round_bits = (std::min)(radix, bits);
     size_t num_buckets = (size_t{1} << round_bits);
     size_t mask = num_buckets - 1;
-    
+
     if (swapped) {
       auto get_key = [&](size_t i) -> size_t {
         return (g(Out[i]) >> bit_offset) & mask;
       };
       seq_count_sort_<uninitialized_relocate_tag>(Out, In, delayed_seq<size_t>(n, get_key), counts, num_buckets);
     }
-    
+
     else {
       auto get_key = [&](size_t i) -> size_t {
         return (g(In[i]) >> bit_offset) & mask;
       };
 
       seq_count_sort_<uninitialized_relocate_tag>(In, Out, delayed_seq<size_t>(n, get_key), counts, num_buckets);
-      
+
     }
-                    
+
     bits = bits - round_bits;
     bit_offset = bit_offset + round_bits;
     swapped = !swapped;
   }
-  
+
   if (swapped && inplace) {
     uninitialized_relocate_n(In.begin(), Out.begin(), In.size());
   }
@@ -170,7 +170,7 @@ sequence<size_t> integer_sort_r(slice<InIterator, InIterator> In,
   //  - Out points to uninitialized memory
   //  [Postconditions]
   //  - If inplace_tag is std::true_type, then Out points to uninitialized memory
-  //  - If inplace_tag is std::false_type, then Out points to the resulting sorted objects  
+  //  - If inplace_tag is std::false_type, then Out points to the resulting sorted objects
   //
   // Parameter Tmp
   //  [Preconditions]
@@ -187,17 +187,17 @@ sequence<size_t> integer_sort_r(slice<InIterator, InIterator> In,
                                range_value_type_t<slice<OutIterator, OutIterator>>>);
   static_assert(std::is_same_v<range_value_type_t<slice<InIterator, InIterator>>,
                                range_value_type_t<slice<TmpIterator, TmpIterator>>>);
-                               
+
   // assignment_type can only be one of uninitialized_copy_tag or uninitialized_relocate_tag
   static_assert(std::is_same_v<assignment_tag, uninitialized_copy_tag> || std::is_same_v<assignment_tag, uninitialized_relocate_tag>);
-  
+
   // assignment_tag is only allowed to be uninitialized_copy_tag if inplace_tag is std::false type
   static_assert(inplace_tag::value == false || std::is_same_v<assignment_tag, uninitialized_relocate_tag>);
-  
+
 
   using T = typename slice<InIterator, InIterator>::value_type;
   timer t("integer sort", false);
-  
+
   size_t n = In.size();
   size_t cache_per_thread = 1000000;
   auto sz = 2 * (size_t)sizeof(T) * n / cache_per_thread;
@@ -225,14 +225,14 @@ sequence<size_t> integer_sort_r(slice<InIterator, InIterator> In,
         parallel_for(0, In.size(), [&](size_t i) {
           assign_uninitialized(Out[i], In[i]);     // Copy from In[i] to Out[i]
         });
-      }  
+      }
     }
     return sequence<size_t>();
   }
   // for small inputs or little parallelism use sequential radix sort
   else if ((n < PARLAY_INTEGER_SORT_BASE_CASE_SIZE || parallelism < .0001) && !return_offsets) {
     seq_radix_sort<inplace_tag, assignment_tag>(In, Out, Tmp, g, key_bits);
-    return sequence<size_t>(); 
+    return sequence<size_t>();
   }
   // few bits, just do a single parallel count sort
   else if (key_bits <= base_bits) {
@@ -240,18 +240,18 @@ sequence<size_t> integer_sort_r(slice<InIterator, InIterator> In,
     auto f = [&](size_t i) { return static_cast<size_t>(g(In[i]) & mask); };
     auto get_bits = delayed_seq<size_t>(n, f);
     size_t num_bkts = (num_buckets == 0) ? (size_t{1} << key_bits) : num_buckets;
-    
+
     // only uses one bucket optimization (last argument) if inplace
     std::tie(offsets, one_bucket) = count_sort<assignment_tag>(In, Out,
       make_slice(get_bits), num_bkts, parallelism, inplace_tag::value);
     t.next("count sort");
-  
+
     if constexpr (inplace_tag::value == true) {
       if (!one_bucket) {
         uninitialized_relocate_n(In.begin(), Out.begin(), In.size());
       }
     }
-    
+
     if (return_offsets)
       return offsets;
     else
@@ -276,7 +276,7 @@ sequence<size_t> integer_sort_r(slice<InIterator, InIterator> In,
     if (one_bucket) {
       return integer_sort_r<inplace_tag, assignment_tag>(In, Out, Tmp, g, shift_bits, 0, parallelism);
     }
-    
+
     // After this point, Out is guaranteed to be initialized
 
     sequence<size_t> inner_offsets(return_offsets ? num_buckets + 1 : 0);
