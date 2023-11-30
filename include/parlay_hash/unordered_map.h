@@ -107,6 +107,8 @@ private:
     link(KV element, link* next) : element(element), next(next) {}
   };
 
+  epoch::internal::memory_pool_<link>* link_pool;
+
   // Find key in list, return nullopt if not found
   static std::pair<std::optional<V>,long> find_in_list(link* nxt, const K& k) {
     long n = 0;
@@ -123,14 +125,14 @@ private:
   // Returns a triple consisting of the position of the key in the list (1 based),
   // the head of the new list with the key removed, and a pointer to the link with the key.
   // If the key is not found, returns (0, nullptr, nullptr).
-  static std::tuple<int, link*, link*> remove_from_list(link* nxt, const K& k) {
+  std::tuple<int, link*, link*> remove_from_list(link* nxt, const K& k) {
     if (nxt == nullptr) return std::tuple(0, nullptr, nullptr);
     else if (KeyEqual{}(nxt->element.first, k))
       return std::tuple(1, nxt->next, nxt); 
     else {
       auto [len, ptr, rptr] = remove_from_list(nxt->next, k);
       if (len == 0) return std::tuple(0, nullptr, nullptr);
-      return std::tuple(len + 1, epoch::New<link>(nxt->element, ptr), rptr);
+      return std::tuple(len + 1, link_pool->New(nxt->element, ptr), rptr);
     }
   }
 
@@ -139,32 +141,32 @@ private:
   // the head of the new list with the key updated.
   // If the key is not found, returns (0, nullptr).
   template <typename F>
-  static std::pair<int, link*> update_list(link* nxt, const K& k, const F& f) {
+  std::pair<int, link*> update_list(link* nxt, const K& k, const F& f) {
     if (nxt == nullptr) return std::pair(0, nullptr);
     else if (KeyEqual{}(nxt->element.first, k)) 
-      return std::pair(1, epoch::New<link>(std::pair(k,f(nxt->element.second)), nxt->next));
+      return std::pair(1, link_pool->New(std::pair(k,f(nxt->element.second)), nxt->next));
     else {
       auto [len, ptr] = update_list(nxt->next, k, f);
       if (len == 0) return std::pair(len, ptr);
-      return std::pair(len + 1, epoch::New<link>(nxt->element, ptr));
+      return std::pair(len + 1, link_pool->New(nxt->element, ptr));
     }
   }
 
   // retires the first n elements of a list
-  static void retire_list(link* nxt, int n) {
+  void retire_list(link* nxt, int n) {
     while (n > 0) {
       n--;
       link* tmp = nxt->next;
-      epoch::Retire(nxt);
+      link_pool->Retire(nxt);
       nxt = tmp;
     }
   }
 
   // retires all elements of a list
-  static void retire_all_list(link* nxt) {
+  void retire_all_list(link* nxt) {
     while (nxt != nullptr) {
       link* tmp = nxt->next;
-      epoch::Retire(nxt);
+      link_pool->Retire(nxt);
       nxt = tmp;
     }
   }
@@ -272,10 +274,10 @@ private:
   // copies key_value into a new table
   // note this is not thread safe...i.e. only this thread should be
   // updating the bucket corresponding to the key.
-  static void copy_element(table_version* t, KV& key_value) {
+  void copy_element(table_version* t, KV& key_value) {
     size_t idx = t->get_index(key_value.first);
     link* ptr = t->buckets[idx].load();
-    t->buckets[idx] = epoch::New<link>(key_value, ptr);
+    t->buckets[idx] = link_pool->New(key_value, ptr);
   }
 
   // copies a bucket into grow_factor new buckets.
@@ -414,28 +416,28 @@ private:
     if (len > t->overflow_size) expand_table(t);
     // if already in the hash map, then return the current value
     if (x.has_value()) return std::optional<std::optional<V>>(x);
-    link* new_ptr = epoch::New<link>(std::pair(k,v), old_ptr);
+    link* new_ptr = link_pool->New(std::pair(k,v), old_ptr);
     head_ptr new_head = new_ptr;
     if (weak_cas(s, old_head, new_head))
       // successfully inserted
       return std::optional(std::optional<V>());
-    epoch::Delete(new_ptr);
+    link_pool->Delete(new_ptr);
     // try failed, return std::nullopt to indicate that need to try again
     return std::nullopt;
   }
 
   template <typename F>
-  static std::optional<bool> try_upsert_bucket(table_version* t, bucket* s, const K& k, F& f) {
+  std::optional<bool> try_upsert_bucket(table_version* t, bucket* s, const K& k, F& f) {
     head_ptr old_head = s->load();
     get_active_bucket(t, s, k, old_head);
     link* old_ptr = old_head;
 #ifndef USE_LOCKS
     auto [cnt, new_ptr] = update_list(old_ptr, k, f);
     if (cnt == 0) { // not in bucket, so insert new element
-      new_ptr = epoch::New<link>(std::pair(k, f(std::optional<V>())), old_ptr);
+      new_ptr = link_pool->New(std::pair(k, f(std::optional<V>())), old_ptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr)))
 	return true;
-      epoch::Delete(new_ptr);
+      link_pool->Delete(new_ptr);
     } else { // use the updated list
       if (weak_cas(s, old_head, head_ptr(new_ptr))) {
 	retire_list(old_ptr, cnt);
@@ -447,10 +449,10 @@ private:
     // update_list must be in a lock, so we first check if an update needs to be done
     // at all so we can avoid the lock if not necessary (i.e. key is not in the list).
     if (!find_in_list(old_ptr, k).first.has_value()) {
-      link* new_ptr = epoch::New<link>(std::pair(k, f(std::optional<V>())), old_ptr);
+      link* new_ptr = link_pool->New(std::pair(k, f(std::optional<V>())), old_ptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr)))
 	return std::optional(true); // try succeeded, returing that a new element is inserted
-      epoch::Delete(new_ptr); // failed, so delete and try again
+      link_pool->Delete(new_ptr); // failed, so delete and try again
     } else {
       if (get_locks().try_lock((long) s, [=] {
 	  if (!(s->load() == old_head)) return false;
@@ -466,7 +468,7 @@ private:
     return std::nullopt;
   }
 
-  static std::optional<std::optional<V>> try_remove_from_bucket(table_version* t, bucket* s, const K& k) {
+  std::optional<std::optional<V>> try_remove_from_bucket(table_version* t, bucket* s, const K& k) {
     head_ptr old_head = s->load();
     get_active_bucket(t, s, k, old_head);
     link* old_ptr = old_head;
@@ -533,10 +535,11 @@ public:
   // *********************************************
 
   unordered_map(long n, bool clear_at_end = default_clear_at_end)
-    : current_table_version(new table_version(n)),
-      initial_table_version(current_table_version.load()),
-      clear_memory_and_scheduler_at_end(clear_at_end),
-      sched_ref(clear_at_end ? new parlay::internal::scheduler_type(std::thread::hardware_concurrency()) : nullptr)
+    : clear_memory_and_scheduler_at_end(clear_at_end),
+      sched_ref(clear_at_end ? new parlay::internal::scheduler_type(std::thread::hardware_concurrency()) : nullptr),
+      link_pool(clear_at_end ? new epoch::internal::memory_pool_<link>() : &epoch::internal::get_pool<link>()),
+      current_table_version(new table_version(n)),
+      initial_table_version(current_table_version.load())
   {}
 
   ~unordered_map() {
@@ -552,7 +555,7 @@ public:
       tv = tv_next;
     }
     if (clear_memory_and_scheduler_at_end) {
-      epoch::memory_pool<link>::clear();
+      delete link_pool;
       delete sched_ref;
     }
   }
