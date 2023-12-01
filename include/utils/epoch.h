@@ -39,6 +39,7 @@
 
 #include <atomic>
 #include <vector>
+#include <list>
 #include <limits>
 #include "parlay/thread_specific.h"
 
@@ -52,7 +53,6 @@
 #endif
 
 #define USE_MALLOC 1
-#define USE_RESERVE 1
 
 #ifndef USE_MALLOC
 #include "parlay/alloc.h"
@@ -146,29 +146,6 @@ struct alignas(64) epoch_s {
     return epoch;
   }
 
-
-// ***************************
-// links for retired lists
-// ***************************
-
-struct alignas(32) Link {
-  Link* next;
-  void* value;
-  bool skip; // if true indicates the value should not be deleted
-  Link(Link* next, void* value, bool skip) : next(next), value(value), skip(skip) {}
-};
-
-#ifdef USE_MALLOC
-  inline Link* new_link(Link* next, void* value, bool skip) {
-    return new Link(next, value, skip);}
-  inline void free_link(Link* x) {return free(x);}
-#else
-  using list_allocator = typename parlay::type_allocator<Link>;
-  inline Link* new_link(Link* next, void* value, bool skip) {
-    return list_allocator::New(next, value, skip);}
-  inline void free_link(Link* x) {return list_allocator::free(x);}
-#endif
-
 // ***************************
 // type specific pools
 // ***************************
@@ -181,17 +158,17 @@ private:
 
   //static constexpr double milliseconds_between_epoch_updates = 20.0;
   //using sys_time = time_point<std::chrono::system_clock>;
+  using list_entry = std::pair<bool, T*>;
 
   // each thread keeps one of these
   struct alignas(256) old_current {
-    Link* old;  // linked list of retired items from previous epoch
-    Link* current; // linked list of retired items from current epoch
-    Link* reserve;  // linked list of items that could be destructed, but delayed so they can be reused
-    long reserve_size; // lenght of the reserve list
+    std::list<list_entry> old;  // linked list of retired items from previous epoch
+    std::list<list_entry> current; // linked list of retired items from current epoch
+    std::list<list_entry> reserve;  // linked list of items that could be destructed, but delayed so they can be reused
     long epoch; // epoch on last retire, updated on a retire
     long count; // number of retires so far, reset on updating the epoch
     //sys_time time; // time of last epoch update
-    old_current() : old(nullptr), current(nullptr), reserve(nullptr), epoch(0), reserve_size(0) {}
+    old_current() : epoch(0), count(0) {}
   };
 
   std::vector<old_current> pools;
@@ -214,62 +191,23 @@ private:
 
   // given a pointer to value in a wrapper, return a pointer to the wrapper.
   wrapper* wrapper_from_value(T* p) {
-     size_t offset = ((char*) &((wrapper*) p)->value) - ((char*) p);
-     return (wrapper*) (((char*) p) - offset);
+    size_t offset = ((char*) &((wrapper*) p)->value) - ((char*) p);
+    return (wrapper*) (((char*) p) - offset);
   }
 
-  // add a pointer to the current list
-  bool* add_to_current_list(void* p) {
-    auto i = worker_id();
-    auto &pid = pools[i];
-    advance_epoch(i, pid);
-    Link* lnk = new_link(pid.current, p, false);
-    pid.current = lnk;
-    return &(lnk->skip);
-  }
-
-  // Takes items from old that could be destructed and puts them on
-  // the reserved list if the list is not too long.  Future
-  // allocations can be taken from the reserved list avoiding an
-  // actual free and allocate.  Avoids problems with various memory
-  // allocators, such as jemalloc.
-  void append_to_reserve(old_current& pid) {
-    if (pid.old != nullptr) {
-      if (pid.reserve_size > 1000)
-	clear_list(pid.old);
-      else {
-	Link* hold_ptr = pid.reserve;
-	pid.reserve = pid.old;
-	Link* ptr = pid.old;
-	pid.reserve_size++;
-	while (ptr->next != nullptr) {
-	  pid.reserve_size++;
-	  ptr = ptr->next;
-	}
-	ptr->next = hold_ptr;
+  // destructs entries on a list
+  void clear_list(std::list<list_entry>& lst) {
+    for (list_entry& x : lst)
+      if (!x.first) {
+	x.second->~T();
+	free_wrapper(wrapper_from_value(x.second));
       }
-    }
-  }
-
-  // destructs and frees a linked list of objects
-  void clear_list(Link* ptr) {
-    while (ptr != nullptr) {
-      Link* tmp = ptr;
-      ptr = ptr->next;
-      if (!tmp->skip) Delete((T*) tmp->value);
-      free_link(tmp);
-    }
   }
 
   void advance_epoch(int i, old_current& pid) {
     if (pid.epoch + 1 < get_epoch().get_current()) {
-#ifdef USE_RESERVE
-      append_to_reserve(pid);
-#else
-      clear_list(pid.old);
-#endif
-      pid.old = pid.current;
-      pid.current = nullptr;
+      pid.reserve.splice(pid.reserve.end(), pid.old);
+      pid.old = std::move(pid.current);
       pid.epoch = get_epoch().get_current();
     }
     // a heuristic
@@ -292,24 +230,15 @@ private:
 #endif
 
   wrapper* allocate_wrapper() {
-#ifdef USE_RESERVE
     auto &pid = pools[worker_id()];
-    while (pid.reserve != nullptr && pid.reserve->skip) {
-      Link* nxt = pid.reserve;
-      free_link(pid.reserve);
-      pid.reserve = nxt;
+    if (!pid.reserve.empty()) {
+      list_entry x = pid.reserve.front();
+      pid.reserve.pop_front();
+      if (!x.first) {
+	x.second->~T();
+	return wrapper_from_value(x.second);
+      }
     }
-    // take from the reserved list if any available
-    if (pid.reserve != nullptr) {
-      Link* tmp = pid.reserve;
-      pid.reserve = pid.reserve->next;
-      pid.reserve_size--;
-      T* v = (T*) tmp->value;
-      v->~T();
-      free_link(tmp); 
-      return wrapper_from_value(v);
-    }
-#endif
 #ifdef USE_MALLOC
     return (wrapper*) malloc(sizeof(wrapper));
 #else
@@ -317,7 +246,7 @@ private:
 #endif
   }
 
-public:
+ public:
   memory_pool() {
     long workers = max_num_workers;
     long update_threshold = 10 * num_workers();
@@ -336,19 +265,19 @@ public:
 
   // destructs and frees the object immediately
   void Delete(T* p) {
-     wrapper* x = wrapper_from_value(p);
+    wrapper* x = wrapper_from_value(p);
 #ifdef EpochMemCheck
-     // check nothing is corrupted or double deleted
-     if (x->head != default_val || x->tail != default_val) {
-       if (x->head == deleted_val) std::cerr << "double free" << std::endl;
-       else if (x->head != default_val)  std::cerr << "corrupted head" << std::endl;
-       if (x->tail != default_val) std::cerr << "corrupted tail" << std::endl;
-       abort();
-     }
-     x->head = deleted_val;
+    // check nothing is corrupted or double deleted
+    if (x->head != default_val || x->tail != default_val) {
+      if (x->head == deleted_val) std::cerr << "double free" << std::endl;
+      else if (x->head != default_val)  std::cerr << "corrupted head" << std::endl;
+      if (x->tail != default_val) std::cerr << "corrupted tail" << std::endl;
+      abort();
+    }
+    x->head = deleted_val;
 #endif
-     p->~T();
-     free_wrapper(x);
+    p->~T();
+    free_wrapper(x);
   }
 
   template <typename ... Args>
@@ -374,8 +303,8 @@ public:
   }
 
   template <typename F, typename ... Args>
-  // f is a function that initializes a new object before it is shared
-  T* new_init(F f, Args... args) {
+    // f is a function that initializes a new object before it is shared
+    T* new_init(F f, Args... args) {
     T* x = New(args...);
     f(x);
     return x;
@@ -383,24 +312,40 @@ public:
 
   // retire and return a pointer if want to undo the retire
   bool* Retire(T* p) {
-    return add_to_current_list((void*) p);}
+    auto i = worker_id();
+    auto &pid = pools[i];
+    if (pid.reserve.size() > 500) {
+      list_entry x = pid.reserve.front();
+      if (!x.first) {
+	x.second->~T();
+	free_wrapper(wrapper_from_value(x.second));
+      }
+      pid.reserve.pop_front();
+    }
+    advance_epoch(i, pid);
+    pid.current.push_back(list_entry(false, p));
+    return &pid.current.back().first;
+  }
 
   // Clears all the lists, to be used on termination, or could be use
   // at a quiescent point when noone is reading any retired items.
   void clear() {
     get_epoch().update_epoch();
     for (int i=0; i < num_workers(); i++) {
-      pools[i].reserve_size = 0;
       clear_list(pools[i].old);
       clear_list(pools[i].current);
       clear_list(pools[i].reserve);
-      pools[i].old = pools[i].current = pools[i].reserve = nullptr;
     }
+    //Allocator::print_stats();
   }
 };
 
 } // namespace internal
 
+// ***************************
+// The public interface
+// ***************************
+  
   // x should point to the skip field of a link
   inline void undo_retire(bool* x) { *x = true;}
   //inline void undo_allocate(bool* x) { *x = false;}
