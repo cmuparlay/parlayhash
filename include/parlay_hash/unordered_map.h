@@ -110,7 +110,7 @@ private:
     link(KV element, link* next) : element(element), next(next) {}
   };
 
-  epoch::internal::memory_pool_<link>* link_pool;
+  epoch::memory_pool<link>* link_pool;
 
   // Find key in list, return nullopt if not found
   static std::pair<std::optional<V>,long> find_in_list(link* nxt, const K& k) {
@@ -539,7 +539,7 @@ public:
   unordered_map(long n, bool clear_at_end = default_clear_at_end)
     : clear_memory_and_scheduler_at_end(clear_at_end),
       sched_ref(clear_at_end ? new parlay::internal::scheduler_type(std::thread::hardware_concurrency()) : nullptr),
-      link_pool(clear_at_end ? new epoch::internal::memory_pool_<link>() : &epoch::internal::get_pool<link>()),
+      link_pool(clear_at_end ? new epoch::memory_pool<link>() : &epoch::get_default_pool<link>()),
       current_table_version(new table_version(n)),
       initial_table_version(current_table_version.load())
   {}

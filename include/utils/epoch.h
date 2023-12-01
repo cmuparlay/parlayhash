@@ -1,9 +1,46 @@
+// ***************************
+// Epoch-based memory reclamation
+// Supports epoch::with_epoch(F f), which runs f within an epoch.
+// as well as:
+//     epoch::New<T>(args...)
+//     epoch::Retire(T* a)   -- delays destruction and free
+//     epoch::Delete(T* a)   -- destructs and frees immediately
+// Retire delays destruction and free until no operation that was in a
+// with_epoch at the time it was run is still within the with_epoch.
+//
+// When NDEBUG is not set is checks for corruption before and after
+// the structure, and checks for double retires/deletes.  Also
+//     epoch::check_ptr(T* a)
+// will check that the value "a" points to and was allocated by New
+// has not been corrupted.
+//
+// Supports undoing retires.  This can be useful in transactional
+// system in which an operation aborts, and any retires done during
+// the operations have to be undone.  In particular Retire returns a
+// pointer to a boolean.  Running
+//    epoch::undo_retire(bool* x)
+// will undo the retire.  Must be run in same with_epoch as the retire
+// was run, otherwise it could be too late.  If you don't want to undo
+// retires, you can ignore this feature.
+//
+// New<T>, Retire and Delete use a shared pool for the retired lists,
+// which, although not very large, is not cleared until program
+// termination.  A private pool can be created with
+//     epoch::memory_pool<T> a;
+// which then supports a->New(args...), a->Retire(T*) and
+// a->Delete(T*).  On destruction of "a", all elements of retired
+// lists will be destructed and freed.
+//
+// Developed as part of parlay project at CMU, intially for flock then
+// used for verlib, and parlayhash.
+// Current dependence on parlay is just for parlay::my_thread_id() and
+// parlay::num_thread_ids() which are from "parlay/thread_specific.h".
+// ***************************
+
 #include <atomic>
 #include <vector>
 #include <limits>
-
-#include "parlay/alloc.h"
-#include "parlay/primitives.h"
+#include "parlay/thread_specific.h"
 
 #ifndef PARLAY_EPOCH_H_
 #define PARLAY_EPOCH_H_
@@ -16,6 +53,10 @@
 
 #define USE_MALLOC 1
 #define USE_RESERVE 1
+
+#ifndef USE_MALLOC
+#include "parlay/alloc.h"
+#endif
 
 // ***************************
 // epoch structure
@@ -43,7 +84,6 @@ struct alignas(64) epoch_s {
   std::vector<announce_slot> announcements;
   std::atomic<long> current_epoch;
   epoch_s() {
-    //int workers = num_workers();
     announcements = std::vector<announce_slot>(max_num_workers);
     current_epoch = 0;
   }
@@ -85,7 +125,7 @@ struct alignas(64) epoch_s {
       workers = num_workers();
       if (workers > max_num_workers) {
 	      std::cerr << "number of threads: " << workers
-		              << ", greater than max_num_threads: " << max_num_workers << std::endl;
+			<< ", greater than max_num_threads: " << max_num_workers << std::endl;
 	      abort();
       }
       for (int i=0; i < workers; i++)
@@ -106,34 +146,37 @@ struct alignas(64) epoch_s {
     return epoch;
   }
 
+
 // ***************************
-// epoch pools
+// links for retired lists
 // ***************************
 
-struct Link {
-  bool ignore;
+struct alignas(32) Link {
   Link* next;
-  bool skip;
   void* value;
+  bool skip; // if true indicates the value should not be deleted
+  Link(Link* next, void* value, bool skip) : next(next), value(value), skip(skip) {}
 };
 
-  // x should point to the skip field of a link
-  inline void undo_retire(bool* x) { *x = true;}
-  inline void undo_allocate(bool* x) { *x = false;}
-
 #ifdef USE_MALLOC
-  inline Link* allocate_link() {return (Link*) malloc(sizeof(Link));}
+  inline Link* new_link(Link* next, void* value, bool skip) {
+    return new Link(next, value, skip);}
   inline void free_link(Link* x) {return free(x);}
 #else
   using list_allocator = typename parlay::type_allocator<Link>;
-  inline Link* allocate_link() {return list_allocator::alloc();}
+  inline Link* new_link(Link* next, void* value, bool skip) {
+    return list_allocator::New(next, value, skip);}
   inline void free_link(Link* x) {return list_allocator::free(x);}
 #endif
 
-  using namespace std::chrono;
+// ***************************
+// type specific pools
+// ***************************
 
-template <typename xT>
-struct alignas(64) memory_pool_ {
+using namespace std::chrono;
+    
+template <typename T>
+struct alignas(64) memory_pool {
 private:
 
   //static constexpr double milliseconds_between_epoch_updates = 20.0;
@@ -143,39 +186,56 @@ private:
   struct alignas(256) old_current {
     Link* old;  // linked list of retired items from previous epoch
     Link* current; // linked list of retired items from current epoch
-    Link* reserve;
-    long reserve_size;
+    Link* reserve;  // linked list of items that could be destructed, but delayed so they can be reused
+    long reserve_size; // lenght of the reserve list
     long epoch; // epoch on last retire, updated on a retire
     long count; // number of retires so far, reset on updating the epoch
     //sys_time time; // time of last epoch update
     old_current() : old(nullptr), current(nullptr), reserve(nullptr), epoch(0), reserve_size(0) {}
   };
 
-  // only used for debugging (i.e. EpochMemCheck=1).
-  struct paddedT {
+  std::vector<old_current> pools;
+    
+  // wrapper used so can pad for the memory checked version
+  struct wrapper {
+#ifdef EpochMemCheck    
     long pad;
     std::atomic<long> head;
-    xT value;
+    T value;
     std::atomic<long> tail;
+#else
+    T value;
+#endif
   };
 
-  std::vector<old_current> pools;
+  // values used to check for corruption or double delete
+  static constexpr long default_val = 10;
+  static constexpr long deleted_val = 55;
 
+  // given a pointer to value in a wrapper, return a pointer to the wrapper.
+  wrapper* wrapper_from_value(T* p) {
+     size_t offset = ((char*) &((wrapper*) p)->value) - ((char*) p);
+     return (wrapper*) (((char*) p) - offset);
+  }
+
+  // add a pointer to the current list
   bool* add_to_current_list(void* p) {
     auto i = worker_id();
     auto &pid = pools[i];
     advance_epoch(i, pid);
-    Link* lnk = allocate_link();
-    lnk->next = pid.current;
-    lnk->value = p;
-    lnk->skip = false;
+    Link* lnk = new_link(pid.current, p, false);
     pid.current = lnk;
     return &(lnk->skip);
   }
 
+  // Takes items from old that could be destructed and puts them on
+  // the reserved list if the list is not too long.  Future
+  // allocations can be taken from the reserved list avoiding an
+  // actual free and allocate.  Avoids problems with various memory
+  // allocators, such as jemalloc.
   void append_to_reserve(old_current& pid) {
     if (pid.old != nullptr) {
-      if (pid.reserve_size > 2000)
+      if (pid.reserve_size > 1000)
 	clear_list(pid.old);
       else {
 	Link* hold_ptr = pid.reserve;
@@ -196,18 +256,7 @@ private:
     while (ptr != nullptr) {
       Link* tmp = ptr;
       ptr = ptr->next;
-      if (!tmp->skip) {
-#ifdef EpochMemCheck
-	paddedT* x = pad_from_T((T*) tmp->value);
-	if (x->head != 10 || x->tail != 10) {
-	  if (x->head == 55) std::cerr << "double free" << std::endl;
-	  else if (x->head != 10)  std::cerr << "corrupted head" << std::endl;
-	  if (x->tail != 10) std::cerr << "corrupted tail" << std::endl;
-	  assert(false);
-	}
-#endif
-	Delete((T*) tmp->value);
-      }
+      if (!tmp->skip) Delete((T*) tmp->value);
       free_link(tmp);
     }
   }
@@ -235,48 +284,41 @@ private:
     }
   }
 
-#ifdef  EpochMemCheck
-  using nodeT = paddedT;
-#else
-  using nodeT = xT;
-#endif
-
 #ifdef USE_MALLOC
-  void free_node(nodeT* x) {return free(x);}
+  void free_wrapper(wrapper* x) {return free(x);}
 #else
-  using Allocator = parlay::type_allocator<nodeT>;
-  void free_node(nodeT* x) { return Allocator::free(x);}
+  using Allocator = parlay::type_allocator<wrapper>;
+  void free_wrapper(wrapper* x) { return Allocator::free(x);}
 #endif
 
-  nodeT* allocate_node() {
+  wrapper* allocate_wrapper() {
 #ifdef USE_RESERVE
     auto &pid = pools[worker_id()];
+    while (pid.reserve != nullptr && pid.reserve->skip) {
+      Link* nxt = pid.reserve;
+      free_link(pid.reserve);
+      pid.reserve = nxt;
+    }
+    // take from the reserved list if any available
     if (pid.reserve != nullptr) {
       Link* tmp = pid.reserve;
       pid.reserve = pid.reserve->next;
       pid.reserve_size--;
-      free_link(tmp);
-      Destruct((nodeT*) tmp->value);
-#ifdef EpochMemCheck
-      paddedT* x = pad_from_T(tmp->value);
-      x->head = 55;
-      return (nodeT*) x;
-#else
-      return (nodeT*) tmp->value;
-#endif
+      T* v = (T*) tmp->value;
+      v->~T();
+      free_link(tmp); 
+      return wrapper_from_value(v);
     }
 #endif
 #ifdef USE_MALLOC
-      return (nodeT*) malloc(sizeof(nodeT));
+    return (wrapper*) malloc(sizeof(wrapper));
 #else
-      return Allocator::alloc();
+    return Allocator::alloc();
 #endif
   }
 
 public:
-  using T = xT;
-
-  memory_pool_() {
+  memory_pool() {
     long workers = max_num_workers;
     long update_threshold = 10 * num_workers();
     pools = std::vector<old_current>(workers);
@@ -286,55 +328,47 @@ public:
     }
   }
 
-  memory_pool_(const memory_pool_&) = delete;
-  ~memory_pool_() { clear(); }
+  memory_pool(const memory_pool&) = delete;
+  ~memory_pool() { clear(); }
 
   // noop since epoch announce is used for the whole operation
   void acquire(T* p) { }
 
-  paddedT* pad_from_T(T* p) {
-     size_t offset = ((char*) &((paddedT*) p)->value) - ((char*) p);
-     return (paddedT*) (((char*) p) - offset);
-  }
-
   // destructs and frees the object immediately
   void Delete(T* p) {
-     p->~T();
+     wrapper* x = wrapper_from_value(p);
 #ifdef EpochMemCheck
-     paddedT* x = pad_from_T(p);
-     x->head = 55;
-     free_node(x);
-#else
-     free_node(p);
+     // check nothing is corrupted or double deleted
+     if (x->head != default_val || x->tail != default_val) {
+       if (x->head == deleted_val) std::cerr << "double free" << std::endl;
+       else if (x->head != default_val)  std::cerr << "corrupted head" << std::endl;
+       if (x->tail != default_val) std::cerr << "corrupted tail" << std::endl;
+       abort();
+     }
+     x->head = deleted_val;
 #endif
-  }
-
-  void Destruct(T* p) {
-    p->~T();
+     p->~T();
+     free_wrapper(x);
   }
 
   template <typename ... Args>
   T* New(Args... args) {
+    wrapper* x = allocate_wrapper();
 #ifdef EpochMemCheck
-    paddedT* x = allocate_node();
-    x->pad = x->head = x->tail = 10;
+    x->pad = x->head = x->tail = default_val;
+#endif
     T* newv = &x->value;
     new (newv) T(args...);
-    assert(check_not_corrupted(newv));
-#else
-    T* newv = allocate_node();
-    new (newv) T(args...);
-#endif
     return newv;
   }
 
   bool check_not_corrupted(T* ptr) {
 #ifdef EpochMemCheck
-    paddedT* x = pad_from_T(ptr);
-    if (x->pad != 10) std::cerr << "memory_pool: pad word corrupted" << std::endl;
-    if (x->head != 10) std::cerr << "memory_pool: head word corrupted" << std::endl;
-     if (x->tail != 10) std::cerr << "memory_pool: tail word corrupted" << std::endl;
-    return (x->pad == 10 && x->head == 10 && x->tail == 10);
+    wrapper* x = wrapper_from_value(ptr);
+    if (x->pad != default_val) std::cerr << "memory_pool: pad word corrupted" << std::endl;
+    if (x->head != default_val) std::cerr << "memory_pool: head word corrupted" << std::endl;
+    if (x->tail != default_val) std::cerr << "memory_pool: tail word corrupted" << std::endl;
+    return (x->pad == default_val && x->head == default_val && x->tail == default_val);
 #endif
     return true;
   }
@@ -351,17 +385,8 @@ public:
   bool* Retire(T* p) {
     return add_to_current_list((void*) p);}
 
-  long list_len(Link* ptr) {
-    long n = 0;
-    while (ptr != nullptr) {
-      n++;
-      ptr = ptr->next;
-    }
-    return n;
-  }
-
-  // clears all the lists
-  // to be used on termination
+  // Clears all the lists, to be used on termination, or could be use
+  // at a quiescent point when noone is reading any retired items.
   void clear() {
     get_epoch().update_epoch();
     for (int i=0; i < num_workers(); i++) {
@@ -374,42 +399,39 @@ public:
   }
 };
 
+} // namespace internal
+
+  // x should point to the skip field of a link
+  inline void undo_retire(bool* x) { *x = true;}
+  //inline void undo_allocate(bool* x) { *x = false;}
+  
   template <typename T>
-  extern inline memory_pool_<T>& get_pool() {
-    static memory_pool_<T> pool;
+  using memory_pool = internal::memory_pool<T>;
+
+  template <typename T>
+  extern inline memory_pool<T>& get_default_pool() {
+    static memory_pool<T> pool;
     return pool;
   }
 
-  } // namespace internal
-
-  template <typename T>
-  struct memory_pool {
-    template <typename ... Args>
-    static T* New(Args... args) {
-      return internal::get_pool<T>().New(std::forward<Args>(args)...);}
-    static void Delete(T* p) {internal::get_pool<T>().Delete(p);}
-    static bool* Retire(T* p) {return internal::get_pool<T>().Retire(p);}
-    static void clear() {internal::get_pool<T>().clear();}
-  };
-
   template <typename T, typename ... Args>
   static T* New(Args... args) {
-    return internal::get_pool<T>().New(std::forward<Args>(args)...);}
+    return get_default_pool<T>().New(std::forward<Args>(args)...);}
 
   template <typename T>
-  static void Delete(T* p) {internal::get_pool<T>().Delete(p);}
+  static void Delete(T* p) {get_default_pool<T>().Delete(p);}
 
   template <typename T>
-  static void Retire(T* p) {internal::get_pool<T>().Retire(p);}
+  static bool* Retire(T* p) {return get_default_pool<T>().Retire(p);}
 
   template <typename T>
-  static bool check_ptr(T* p) {return internal::get_pool<T>().check_not_corrupted(p);}
+  static bool check_ptr(T* p) {return get_default_pool<T>().check_not_corrupted(p);}
 
   template <typename T>
-  static void clear() {internal::get_pool<T>().clear();}
+  static void clear() {get_default_pool<T>().clear();}
 
-  template <typename T>
-  static void stats() {internal::get_pool<T>().stats();}
+  //template <typename T>
+  //static void stats() {get_default_pool<T>().stats();}
 
   template <typename Thunk>
   auto with_epoch(Thunk f) {
@@ -427,17 +449,3 @@ public:
 } // end namespace epoch
 
 #endif //PARLAY_EPOCH_H_
-
-  // template <typename Thunk>
-  // auto with_epoch(Thunk f) {
-  //   int id = get_epoch().announce();
-  //   if constexpr (std::is_void_v<std::invoke_result_t<Thunk>>) {
-  //     f();
-  //     get_epoch().unannounce(id);
-  //   } else {
-  //     auto v = f();
-  //     get_epoch().unannounce(id);
-  //     return v;
-  //   }
-  // }
-

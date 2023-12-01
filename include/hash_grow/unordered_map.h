@@ -215,53 +215,53 @@ private:
       copy_and_remove(entries, ((BigNode*) old)->entries, cnt+1, k, idx); }
   };
 
-  // the following functions branch to construct the right sized node
   struct table_version;
+  
   static node* insert_to_node(table_version* t, node* old, const K& k, const V& v) {
-    if (old == nullptr) return (node*) epoch::memory_pool<Node<1>>::New(old, k, v);
+    if (old == nullptr) return (node*) epoch::New<Node<1>>(old, k, v);
+    if (old->cnt < 3) return (node*) epoch::New<Node<3>>(old, k, v);
     if (old->cnt > overflow_size) expand_table(t);
-    if (old->cnt < 3) return (node*) epoch::memory_pool<Node<3>>::New(old, k, v);
-    if (old->cnt < 7) return (node*) epoch::memory_pool<Node<7>>::New(old, k, v);
-    if (old->cnt < 31) return (node*) epoch::memory_pool<Node<31>>::New(old, k, v);
-    return (node*) epoch::memory_pool<BigNode>::New(old, k, v);
+    if (old->cnt < 7) return (node*) epoch::New<Node<7>>(old, k, v);
+    if (old->cnt < 31) return (node*) epoch::New<Node<31>>(old, k, v);
+    return (node*) epoch::New<BigNode>(old, k, v);
   }
 
   template <typename F>
   static node* update_node(node* old, const K& k, const F& f, long idx) {
     assert(old != nullptr);
-    if (old->cnt == 1) return (node*) epoch::memory_pool<Node<1>>::New(idx, old, k, f);
-    if (old->cnt <= 3) return (node*) epoch::memory_pool<Node<3>>::New(idx, old, k, f);
-    else if (old->cnt <= 7) return (node*) epoch::memory_pool<Node<7>>::New(idx, old, k, f);
-    else if (old->cnt <= 31) return (node*) epoch::memory_pool<Node<31>>::New(idx,old, k, f);
-    else return (node*) epoch::memory_pool<BigNode>::New(idx, old, k, f);
+    if (old->cnt == 1) return (node*) epoch::New<Node<1>>(idx, old, k, f);
+    if (old->cnt <= 3) return (node*) epoch::New<Node<3>>(idx, old, k, f);
+    if (old->cnt <= 7) return (node*) epoch::New<Node<7>>(idx, old, k, f);
+    if (old->cnt <= 31) return (node*) epoch::New<Node<31>>(idx, old, k, f);
+    return (node*) epoch::New<BigNode>(idx, old, k, f);
   }
 
   static node* remove_from_node(node* old, const K& k, long idx) {
     assert(old != nullptr);
     if (old->cnt == 1) return (node*) nullptr;
-    if (old->cnt == 2) return (node*) epoch::memory_pool<Node<1>>::New(idx, old, k);
-    else if (old->cnt <= 4) return (node*) epoch::memory_pool<Node<3>>::New(idx, old, k);
-    else if (old->cnt <= 8) return (node*) epoch::memory_pool<Node<7>>::New(idx, old, k);
-    else if (old->cnt <= 32) return (node*) epoch::memory_pool<Node<31>>::New(idx, old, k);
-    else return (node*) epoch::memory_pool<BigNode>::New(idx, old, k);
+    if (old->cnt == 2) return (node*) epoch::New<Node<1>>(idx, old, k);
+    else if (old->cnt <= 4) return (node*) epoch::New<Node<3>>(idx, old, k);
+    else if (old->cnt <= 8) return (node*) epoch::New<Node<7>>(idx, old, k);
+    else if (old->cnt <= 32) return (node*) epoch::New<Node<31>>(idx, old, k);
+    else return (node*) epoch::New<BigNode>(idx, old, k);
   }
 
   static void retire_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) epoch::memory_pool<Node<1>>::Retire((Node<1>*) old);
-    else if (old->cnt <= 3) epoch::memory_pool<Node<3>>::Retire((Node<3>*) old);
-    else if (old->cnt <= 7) epoch::memory_pool<Node<7>>::Retire((Node<7>*) old);
-    else if (old->cnt <= 31) epoch::memory_pool<Node<31>>::Retire((Node<31>*) old);
-    else epoch::memory_pool<BigNode>::Retire((BigNode*) old);
+    else if (old->cnt == 1) epoch::Retire((Node<1>*) old);
+    else if (old->cnt <= 3) epoch::Retire((Node<3>*) old);
+    else if (old->cnt <= 7) epoch::Retire((Node<7>*) old);
+    else if (old->cnt <= 31) epoch::Retire((Node<31>*) old);
+    else epoch::Retire((BigNode*) old);
   }
 
   static void destruct_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) epoch::memory_pool<Node<1>>::Delete((Node<1>*) old);
-    else if (old->cnt <= 3) epoch::memory_pool<Node<3>>::Delete((Node<3>*) old);
-    else if (old->cnt <= 7) epoch::memory_pool<Node<7>>::Delete((Node<7>*) old);
-    else if (old->cnt <= 31) epoch::memory_pool<Node<31>>::Delete((Node<31>*) old);
-    else epoch::memory_pool<BigNode>::Delete((BigNode*) old);
+    else if (old->cnt == 1) epoch::Delete((Node<1>*) old);
+    else if (old->cnt <= 3) epoch::Delete((Node<3>*) old);
+    else if (old->cnt <= 7) epoch::Delete((Node<7>*) old);
+    else if (old->cnt <= 31) epoch::Delete((Node<31>*) old);
+    else epoch::Delete((BigNode*) old);
   }
 
   // *********************************************
@@ -329,7 +329,7 @@ private:
       // if fail on lock, someone else is working on it, so skip
       get_locks().try_lock((long) ht, [&] {
 	 if (ht->next == nullptr) {
-	   ht->next = epoch::memory_pool<table_version>::New(ht);
+	   ht->next = epoch::New<table_version>(ht);
 	   //std::cout << "expand to: " << n * grow_factor << std::endl;
 	 }
 	 return true;});
@@ -422,7 +422,7 @@ private:
 	// and retire the old table
 	if (++next->finished_block_count == next->block_status.size()) {
 	  current_table_version = next;
-	  epoch::memory_pool<table_version>::Retire(t);
+	  epoch::Retire(t);
 	}
       } else {
 	// If working then wait until Done
@@ -482,7 +482,7 @@ private:
     if (x.has_value()) return std::optional(x);
     if (try_update(s, old_node, insert_to_node(t, old_node, k, v)))
       return std::optional(std::optional<V>());
-    else return {};
+    return {};
   }
 
   template <typename F>
@@ -506,7 +506,8 @@ private:
 	return true;})) {
       retire_node(old_node);
       return false;
-    } else return {};
+    }
+    return {};
 #endif
   }
 
@@ -535,13 +536,13 @@ public:
   // The public interface
   // *********************************************
 
-  unordered_map(size_t n) : current_table_version(epoch::memory_pool<table_version>::New(n)) {}
+  unordered_map(size_t n) : current_table_version(epoch::New<table_version>(n)) {}
 
   ~unordered_map() {
     auto& buckets = current_table_version.load()->buckets;
     parlay::parallel_for (0, buckets.size(), [&] (size_t i) {
       retire_node(buckets[i].load());});
-    epoch::memory_pool<table_version>::Retire(current_table_version.load());
+    epoch::Retire(current_table_version.load());
   }
 
   std::optional<V> find(const K& k) {

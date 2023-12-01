@@ -200,49 +200,49 @@ private:
   };
 
   static node* insert_to_node(node* old, const K& k, const V& v) {
-    if (old == nullptr) return (node*) epoch::memory_pool<Node<1>>::New(old, k, v);
-    if (old->cnt < 3) return (node*) epoch::memory_pool<Node<3>>::New(old, k, v);
-    else if (old->cnt < 7) return (node*) epoch::memory_pool<Node<7>>::New(old, k, v);
-    else if (old->cnt < 31) return (node*) epoch::memory_pool<Node<31>>::New(old, k, v);
-    else return (node*) epoch::memory_pool<BigNode>::New(old, k, v);
+    if (old == nullptr) return (node*) epoch::New<Node<1>>(old, k, v);
+    if (old->cnt < 3) return (node*) epoch::New<Node<3>>(old, k, v);
+    else if (old->cnt < 7) return (node*) epoch::New<Node<7>>(old, k, v);
+    else if (old->cnt < 31) return (node*) epoch::New<Node<31>>(old, k, v);
+    else return (node*) epoch::New<BigNode>(old, k, v);
   }
 
   template <typename F>
   static node* update_node(node* old, const K& k, const F& f, long idx) {
     assert(old != nullptr);
-    if (old->cnt == 1) return (node*) epoch::memory_pool<Node<1>>::New(idx, old, k, f);
-    if (old->cnt <= 3) return (node*) epoch::memory_pool<Node<3>>::New(idx, old, k, f);
-    else if (old->cnt <= 7) return (node*) epoch::memory_pool<Node<7>>::New(idx, old, k, f);
-    else if (old->cnt <= 31) return (node*) epoch::memory_pool<Node<31>>::New(idx,old, k, f);
-    else return (node*) epoch::memory_pool<BigNode>::New(idx, old, k, f);
+    if (old->cnt == 1) return (node*) epoch::New<Node<1>>(idx, old, k, f);
+    if (old->cnt <= 3) return (node*) epoch::New<Node<3>>(idx, old, k, f);
+    else if (old->cnt <= 7) return (node*) epoch::New<Node<7>>(idx, old, k, f);
+    else if (old->cnt <= 31) return (node*) epoch::New<Node<31>>(idx, old, k, f);
+    else return (node*) epoch::New<BigNode>(idx, old, k, f);
   }
 
   static node* remove_from_node(node* old, const K& k, long idx) {
     assert(old != nullptr);
     if (old->cnt == 1) return (node*) nullptr;
-    if (old->cnt == 2) return (node*) epoch::memory_pool<Node<1>>::New(idx, old, k);
-    else if (old->cnt <= 4) return (node*) epoch::memory_pool<Node<3>>::New(idx, old, k);
-    else if (old->cnt <= 8) return (node*) epoch::memory_pool<Node<7>>::New(idx, old, k);
-    else if (old->cnt <= 32) return (node*) epoch::memory_pool<Node<31>>::New(idx, old, k);
-    else return (node*) epoch::memory_pool<BigNode>::New(idx, old, k);
+    if (old->cnt == 2) return (node*) epoch::New<Node<1>>(idx, old, k);
+    else if (old->cnt <= 4) return (node*) epoch::New<Node<3>>(idx, old, k);
+    else if (old->cnt <= 8) return (node*) epoch::New<Node<7>>(idx, old, k);
+    else if (old->cnt <= 32) return (node*) epoch::New<Node<31>>(idx, old, k);
+    else return (node*) epoch::New<BigNode>(idx, old, k);
   }
 
   static void retire_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) epoch::memory_pool<Node<1>>::Retire((Node<1>*) old);
-    else if (old->cnt <= 3) epoch::memory_pool<Node<3>>::Retire((Node<3>*) old);
-    else if (old->cnt <= 7) epoch::memory_pool<Node<7>>::Retire((Node<7>*) old);
-    else if (old->cnt <= 31) epoch::memory_pool<Node<31>>::Retire((Node<31>*) old);
-    else epoch::memory_pool<BigNode>::Retire((BigNode*) old);
+    else if (old->cnt == 1) epoch::Retire((Node<1>*) old);
+    else if (old->cnt <= 3) epoch::Retire((Node<3>*) old);
+    else if (old->cnt <= 7) epoch::Retire((Node<7>*) old);
+    else if (old->cnt <= 31) epoch::Retire((Node<31>*) old);
+    else epoch::Retire((BigNode*) old);
   }
 
   static void destruct_node(node* old) {
     if (old == nullptr);
-    else if (old->cnt == 1) epoch::memory_pool<Node<1>>::Delete((Node<1>*) old);
-    else if (old->cnt <= 3) epoch::memory_pool<Node<3>>::Delete((Node<3>*) old);
-    else if (old->cnt <= 7) epoch::memory_pool<Node<7>>::Delete((Node<7>*) old);
-    else if (old->cnt <= 31) epoch::memory_pool<Node<31>>::Delete((Node<31>*) old);
-    else epoch::memory_pool<BigNode>::Delete((BigNode*) old);
+    else if (old->cnt == 1) epoch::Delete((Node<1>*) old);
+    else if (old->cnt <= 3) epoch::Delete((Node<3>*) old);
+    else if (old->cnt <= 7) epoch::Delete((Node<7>*) old);
+    else if (old->cnt <= 31) epoch::Delete((Node<31>*) old);
+    else epoch::Delete((BigNode*) old);
   }
 
   // *********************************************
