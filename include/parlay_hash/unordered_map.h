@@ -1,4 +1,3 @@
-
 // Initial Author: Guy Blelloch
 // Developed as part of the flock library
 // 
@@ -197,7 +196,7 @@ private:
   // one bucket of a sequence of buckets
   using bucket = std::atomic<head_ptr>;
 
-  // status of a block
+  // status of a block of buckets
   enum status : char {Empty, Working, Done};
 
   // A single version of the table.
@@ -243,16 +242,17 @@ private:
   };
 
   // the current table version
-  // points to next larger table version if one exists
   std::atomic<table_version*> current_table_version;
+
+  // the initial table version, used for cleanup on destruction
   table_version* initial_table_version;
 
   // *********************************************
   // Functions for exanding the table
   // *********************************************
 
-  // called when table should be expanded (i.e. when some bucket is too large)
-  // allocates a new table version and links the old one to it
+  // Called when table should be expanded (i.e. when some bucket is too large).
+  // Allocates a new table version and links the old one to it.
   void expand_table(table_version* ht) {
     table_version* htt = current_table_version.load();
     if (htt->next == nullptr) {
@@ -267,8 +267,8 @@ private:
     }
   }
 
-  // copies key_value into a new table version
-  // note this is not thread safe...i.e. only this thread should be
+  // Copies a key_value pair into a new table version.
+  // Note this is not thread safe...i.e. only this thread should be
   // updating the bucket corresponding to the key.
   void copy_element(table_version* t, KV& key_value) {
     size_t idx = t->get_index(key_value.first);
@@ -276,7 +276,7 @@ private:
     t->buckets[idx] = link_pool->New(key_value, ptr);
   }
 
-  // copies a bucket into grow_factor new buckets.
+  // Copies a bucket into grow_factor new buckets.
   // This is the version if USE_LOCKS is not set.
   void copy_bucket_cas(table_version* t, table_version* next, long i) {
     long exp_start = i * grow_factor;
@@ -292,13 +292,14 @@ private:
 	copy_element(next, next_ptr->element);
 	next_ptr = next_ptr->next;
       }
+      // try to replace original bucket with forwarded marker
       bool succeeded = t->buckets[i].compare_exchange_strong(bucket, head_ptr::forwarded_link());
       if (succeeded) {
 	retire_all_list(ptr);
 	break;
       }
       // If the cas failed then someone updated bucket in the meantime so need to retry.
-      // Before retrying need to clear out already added buckets..
+      // Before retrying need to clear out already added buckets.
       for (int j = exp_start; j < exp_start + grow_factor; j++) {
 	head_ptr bucket = next->buckets[j].load();
 	next->buckets[j] = nullptr;
@@ -307,7 +308,7 @@ private:
     }
   }
 
-  // copies a bucket into grow_factor new buckets.
+  // Copies a bucket into grow_factor new buckets.
   // This is the version if USE_LOCKS is set.
   void copy_bucket_lock(table_version* t, table_version* next, long i) {
     long exp_start = i * grow_factor;
@@ -326,9 +327,10 @@ private:
       for (volatile int i=0; i < 200; i++);
   }
 
-  // If copying is ongoing (i.e. next is not null), and if the the hash bucket
-  // given by hashid is not already copied, tries to copy block_size buckets, including
-  // that of hashid, to the next larger table version.
+  // If copying is ongoing (i.e., next is not null), and if the the
+  // hash bucket given by hashid is not already copied, tries to copy
+  // the block_size buckets that containing hashid to the next larger
+  // table version.
   void copy_if_needed(table_version* t, long hashid) {
     table_version* next = t->next.load();
     if (next != nullptr) {
@@ -442,7 +444,7 @@ private:
     }
 #else  // use try_lock
     // update_list must be in a lock, so we first check if an update needs to be done
-    // at all so we can avoid the lock if not necessary (i.e. key is not in the list).
+    // at all so we can avoid the lock if not necessary (i.e., key is not in the list).
     if (!find_in_list(old_ptr, k).first.has_value()) {
       link* new_ptr = link_pool->New(std::pair(k, f(std::optional<V>())), old_ptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr)))
