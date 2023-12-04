@@ -107,16 +107,23 @@ In addition to our hash map, the repository includes the following open source h
 - ./growt               ([growt's concurrent hash map](https://github.com/TooBiased/growt))
 - ./folly_hash          ([folly's ConcurrentHashMap](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h))
 - ./boost_hash          ([boost's concurrent_flat_map](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent))
-- ./parallel_hashmap    ([parallel hashmap](https://github.com/greg7mdp/parallel-hashmap))
-- ./folly_sharded       (our own sharded version using folly's efficient [non-concurrent F14map](https://github.com/facebook/folly/blob/main/folly/container/F14Map.h))
-- ./abseil_sharded      (our own sharded version using folly's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container))
-- ./std_sharded         (our own sharded version of std::unordered_map)
+- ./parallel_hashmap    ([parallel hashmap](https://github.com/greg7mdp/parallel-hashmap)) **
+- ./folly_sharded       (our own sharded version using folly's efficient [non-concurrent F14map](https://github.com/facebook/folly/blob/main/folly/container/F14Map.h)) **
+- ./abseil_sharded      (our own sharded version using folly's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container)) **
+- ./std_sharded         (our own sharded version of std::unordered_map) **
 
 For some of these you need to have the relevant library installed
-(e.g., boost, folly, abseil, tbb).  All of the hash maps except the
-sharded versions are designed to grow.  All of them support arbitrary
+(e.g., boost, folly, abseil, tbb).  All of them support arbitrary
 copyable key and value types when supplied hash and equality functions
 for the keys.
+
+The tables marked with ** are "semi" growable.  In particular they all
+sharded and to perform well one needs to select the right number of
+shards, which depends on the expected size and number of threads.  For
+the experiments given below we selected 2^14 shards for all, except
+for parallel_hashmap, which has a limit of 2^12, which we picked.  We
+note this would be very wasteful for small tables, requiring hundreds of
+thousands of bytes even for a table with a single entry.
 
 Adding another hash table simply requires adding a stub file `other/<myhash>/unordered_map.h`
 (e.g., see [other/boost/hash/unordered_map.h](other/boost/hash/unordered_map.h))
@@ -162,27 +169,27 @@ versions.  Times were taken for code available November 2023.
 
 Columns 2 through 4 correspond to 1 thread, 16 threads (8 cores) and
 128 threads (64 cores) when the hash map is initialized to the correct
-size.  The fifth column is the same but when the hash map is
-initialized with size 1 (i.e., it first grows to the full size and
-then the timings start).  This is meant to test if the hash map grows
-effectively, which all the growing maps do.  The sixth column is for
-inserting 10M unique keys on 128 threads when the hash map starts with
-size 1 (i.e., it includes the time for growing the hash map multiple
-times).
+size.  The fifth column is for inserting 10M unique keys on 128
+threads with the table initialized to the correct final size.  The
+sixth column is for inserting 10M unique keys on 128 threads with the
+table initialized to size 1 (i.e., it includes the time for growing
+the hash map multiple times).
 
-| Hash Map | 1 thread | 16 threads | 128 threads | 128 grown | 128 insert |
+| Hash Map | 1 thread | 16 threads | 128 threads | 128 insert | 128 grow |
 | - | - | - | - | - | - |
-| parlay_hash lf | 15.9 | 162 | 651 | 631 | 112 |
-| parlay_hash lock | 16.1 | 156 | 692 | 679 | 99 |
-| tbb_hash | 9.3 | 62.4 | 64.6 | 61.4 | 23 |
-| libcuckoo | 11.5 | 50.5 | 33.1 | 33.9 | 6.3 |
-| growt | 7.2 | 40.8 | 156 | 146 | 59 |
-| folly_hash | 11.9 | 82.4 | failed | failed | 41 |
-| boost_hash | 24.7 | 84.7 | 57.2 | 57.6 | 13.6 | 
-| parallel_hashmap | 24.4 | 17.8 | 10.4 | 11.4 | 8 |
-| folly_sharded | 16.5 | 76.9 | 125 |--- | --- |
+| parlay_hash lf | 15.9 | 162 | 651 | 301 | 112 |
+| parlay_hash lock | 16.1 | 156 | 692 | 269 | 99 |
+| tbb_hash | 9.3 | 62.4 | 64.6 | 23 | 23 |
+| libcuckoo | 11.5 | 50.5 | 33.1 | 293 | 6.3 |
+| growt | 7.8 | 44.6 | 171 | 61 | 61 |
+| folly_hash | 11.9 | 82.4 | failed | 139 | 41 |
+| boost_hash | 24.7 | 84.7 | 57.2 | 31 | 13.6 | 
+| parallel_hashmap | 22 | 80.6 | 110 | --- | --- |
+| folly_sharded | 17.7 | 79 | 115 |--- | --- |
 | abseil (sequential) | 40.1 | --- | --- | --- | --- |
 | std (sequential) | 13.2 | --- | --- | --- | --- |
+
+We do not include growing numbers for the semi growable hash tables.
 
 The folly ConcurrentHashMap failed on 128 threads (for version
 f53ec94, Nov 1, 2023).  We [reported the bug](https://github.com/facebook/folly/issues/2097) and the developers replied

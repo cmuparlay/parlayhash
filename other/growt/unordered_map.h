@@ -15,11 +15,11 @@ template <typename K,
 	  class KeyEqual = std::equal_to<K>>
 struct unordered_map {
 
-  using K_Type = unsigned long;
-  using V_Type = unsigned long;
-  using hasher_type    = utils_tm::hash_tm::murmur2_hash;
+  using K_Type = K;
+  using V_Type = V;
+  using hasher_type    = Hash; //utils_tm::hash_tm::murmur2_hash;
   using allocator_type = growt::AlignedAllocator<>;
-
+  
   using table_type =
     typename growt::table_config<K_Type, V_Type, hasher_type, allocator_type,
 				 hmod::growable, hmod::deletion>::table_type;
@@ -44,7 +44,7 @@ struct unordered_map {
   }
 
   handle_type get_handle() {
-    return handle_type(table.get_handle());
+    return table.get_handle();
   }
 
   unordered_map(size_t n) : table(table_type(n)) {}

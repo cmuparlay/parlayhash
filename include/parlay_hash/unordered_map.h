@@ -448,7 +448,7 @@ private:
     // at all so we can avoid the lock if not necessary (i.e., key is not in the list).
     auto [x, len] = find_in_list(old_ptr, k);
     if (len > t->overflow_size) expand_table(t);
-    if (!x.first.has_value()) {
+    if (!x.has_value()) {
       link* new_ptr = link_pool->New(std::pair(k, f(std::optional<V>())), old_ptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr)))
 	return std::optional(true); // try succeeded, returing that a new element is inserted

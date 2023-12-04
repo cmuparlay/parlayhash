@@ -26,7 +26,7 @@ struct unordered_map {
   }
 
   unordered_map(size_t n) {
-    table.reserve(n);
+    table = Table(n); //.reserve(n);
   }
 
   long size() {return table.size();}

@@ -34,10 +34,7 @@ struct unordered_map {
     return table.erase(k);
   }
 
-  unordered_map(size_t n) {
-    Table map(n);
-    table = map;
-  }
+  unordered_map(size_t n) : table(Table(n)) {}
 
   long size() {return table.size();}
 };

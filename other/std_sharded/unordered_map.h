@@ -13,6 +13,8 @@ template <typename K,
 	  typename WriteGuard = std::unique_lock<Mutex>>
 struct unordered_map {
 
+  static constexpr int log_num_shards = 14;
+  
   using umap = std::unordered_map<K, V, Hash, KeyEqual>;
   struct entry {
     Mutex m;
@@ -49,7 +51,7 @@ struct unordered_map {
   unordered_map(size_t n) {
     int n_bits = std::round(std::log2(n));
     int bits = std::min(15, n_bits - 2);
-    num_buckets = 1l << bits; // must be a power of 2
+    num_buckets = 1ul << log_num_shards;
 
     table = std::vector<entry>(num_buckets);
     for (int i=0; i < num_buckets; i++)
