@@ -65,6 +65,7 @@
 // Requires some extra memory to pad the front and back of a structure.
 #define EpochMemCheck 1
 #endif
+#define EpochMemCheck 1
 
 #define USE_MALLOC 1
 #define USE_STEPPING 1
@@ -118,6 +119,7 @@ struct alignas(64) epoch_s {
 
   int announce() {
     size_t id = worker_id();
+    assert(id < max_num_workers);
     while (true) {
       long current_e = get_current();
       long tmp = current_e;
@@ -203,7 +205,7 @@ struct alignas(64) epoch_s {
   }
 
 // ***************************
-// type specific pools
+// type specific memory pools
 // ***************************
 
 using namespace std::chrono;
@@ -219,7 +221,8 @@ private:
 #ifdef USE_UNDO
     bool keep_;
     bool keep() {return keep_;}
-    bool list_entry() : keep_(false) {}
+    list_entry() : keep_(false) {}
+    list_entry(T* ptr) : ptr(ptr), keep_(false) {}
 #else
     bool keep() {return false;}
 #endif
@@ -269,13 +272,14 @@ private:
 	x.ptr->~T();
 	free_wrapper(wrapper_from_value(x.ptr));
       }
+    lst.clear();
   }
 
   void advance_epoch(int i, old_current& pid) {
 #ifndef USE_UNDO
     int delay = 1;
 #else
-    int delay = 0;
+    int delay = 5;
 #endif
     if (pid.epoch + delay < get_epoch().get_current()) {
       pid.reserve.splice(pid.reserve.end(), pid.old);
@@ -311,7 +315,7 @@ private:
     // check nothing is corrupted or double deleted
     if (x->head != default_val || x->tail != default_val) {
       if (x->head == deleted_val) std::cerr << "double free" << std::endl;
-      else if (x->head != default_val)  std::cerr << "corrupted head" << std::endl;
+      else if (x->head != default_val)  std::cerr << "corrupted head" << x->head << std::endl;
       if (x->tail != default_val) std::cerr << "corrupted tail: " << x->tail << std::endl;
       abort();
     }
@@ -359,7 +363,6 @@ private:
  public:
   memory_pool() {
     long workers = max_num_workers;
-    long update_threshold = 10 * num_workers();
     pools = std::vector<old_current>(workers);
     for (int i = 0; i < workers; i++) {
       pools[i].retire_count = 0;
@@ -370,7 +373,7 @@ private:
   memory_pool(const memory_pool&) = delete;
   ~memory_pool() { clear(); }
 
-  // noop since epoch announce is used for the whole operation
+  // for backwards compatibility
   void acquire(T* p) { }
 
   template <typename ... Args>
@@ -381,23 +384,9 @@ private:
     return newv;
   }
 
-  bool check_not_corrupted(T* ptr, bool silent=false) {
-#ifdef EpochMemCheck
-    if (ptr == nullptr) return true;
-    wrapper* x = wrapper_from_value(ptr);
-    if (!silent) {
-      if (x->pad != default_val) std::cerr << "memory_pool, check: pad word corrupted" << x->pad << std::endl;
-      if (x->head != default_val) std::cerr << "memory_pool, check: head word corrupted" << x->head << std::endl;
-      if (x->tail != default_val) std::cerr << "memory_pool, check: tail word corrupted: " << x->tail << std::endl;
-    }
-    return (x->pad == default_val && x->head == default_val && x->tail == default_val);
-#endif
-    return true;
-  }
-
+  // f is a function that initializes a new object before it is shared
   template <typename F, typename ... Args>
-    // f is a function that initializes a new object before it is shared
-    T* new_init(F f, Args... args) {
+  T* New_Init(F f, Args... args) {
     T* x = New(args...);
     f(x);
     return x;
@@ -422,7 +411,7 @@ private:
     advance_epoch(i, pid);
     pid.current.push_back(list_entry{p});
 #ifdef USE_UNDO
-    return &pid.current.back().keep;
+    return &pid.current.back().keep_;
 #endif
   }
 
@@ -432,11 +421,25 @@ private:
     free_wrapper(wrapper_from_value(p));
   }
 
+  bool check_ptr(T* ptr, bool silent=false) {
+#ifdef EpochMemCheck
+    if (ptr == nullptr) return true;
+    wrapper* x = wrapper_from_value(ptr);
+    if (!silent) {
+      if (x->pad != default_val) std::cerr << "memory_pool, check: pad word corrupted" << x->pad << std::endl;
+      if (x->head != default_val) std::cerr << "memory_pool, check: head word corrupted" << x->head << std::endl;
+      if (x->tail != default_val) std::cerr << "memory_pool, check: tail word corrupted: " << x->tail << std::endl;
+    }
+    return (x->pad == default_val && x->head == default_val && x->tail == default_val);
+#endif
+    return true;
+  }
+
   // Clears all the lists, to be used on termination, or could be use
   // at a quiescent point when noone is reading any retired items.
   void clear() {
-    // std::cout << pools[0].old.size() << ","
-    // 	      << pools[0].current.size() << ","
+    //std::cout << pools[0].old.size() << ", "
+    // 	      << pools[0].current.size() << ", "
     // 	      << pools[0].reserve.size() << std::endl;
     get_epoch().update_epoch();
     for (int i=0; i < num_workers(); i++) {
@@ -446,6 +449,8 @@ private:
     }
     //Allocator::print_stats();
   }
+
+  void stats() {}
 };
 
 } // namespace internal
@@ -482,7 +487,7 @@ private:
     
   template <typename T>
   static bool check_ptr(T* p, bool silent=false) {
-    return get_default_pool<T>().check_not_corrupted(p, silent);}
+    return get_default_pool<T>().check_ptr(p, silent);}
 
   template <typename T>
   static void clear() {get_default_pool<T>().clear();}

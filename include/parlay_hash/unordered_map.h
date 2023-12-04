@@ -136,7 +136,7 @@ private:
   // Update element with a given key in a list.  Uses path copying.
   // Returns a pair consisting of the position of the key in the list (1 based), and
   // the head of the new list with the key updated.
-  // If the key is not found, returns (0, nullptr).
+  // If the key is not found, returns (l, nullptr), where l is the length of the list.
   template <typename F>
   std::pair<int, link*> update_list(link* nxt, const K& k, const F& f) {
     if (nxt == nullptr) return std::pair(0, nullptr);
@@ -144,13 +144,13 @@ private:
       return std::pair(1, link_pool->New(std::pair(k,f(nxt->element.second)), nxt->next));
     else {
       auto [len, ptr] = update_list(nxt->next, k, f);
-      if (len == 0) return std::pair(len, ptr);
+      if (ptr == nullptr) return std::pair(len + 1, nullptr);
       return std::pair(len + 1, link_pool->New(nxt->element, ptr));
     }
   }
 
   // retires the first n elements of a list
-  void retire_list(link* nxt, int n) {
+  void retire_list_n(link* nxt, int n) {
     while (n > 0) {
       n--;
       link* tmp = nxt->next;
@@ -160,7 +160,7 @@ private:
   }
 
   // retires all elements of a list
-  void retire_all_list(link* nxt) {
+  void retire_list(link* nxt) {
     while (nxt != nullptr) {
       link* tmp = nxt->next;
       link_pool->Retire(nxt);
@@ -295,7 +295,7 @@ private:
       // try to replace original bucket with forwarded marker
       bool succeeded = t->buckets[i].compare_exchange_strong(bucket, head_ptr::forwarded_link());
       if (succeeded) {
-	retire_all_list(ptr);
+	retire_list(ptr);
 	break;
       }
       // If the cas failed then someone updated bucket in the meantime so need to retry.
@@ -303,7 +303,7 @@ private:
       for (int j = exp_start; j < exp_start + grow_factor; j++) {
 	head_ptr bucket = next->buckets[j].load();
 	next->buckets[j] = nullptr;
-	retire_all_list(bucket);
+	retire_list(bucket);
       }
     }
   }
@@ -430,22 +430,25 @@ private:
     link* old_ptr = old_head;
 #ifndef USE_LOCKS
     auto [cnt, new_ptr] = update_list(old_ptr, k, f);
-    if (cnt == 0) {
+    if (new_ptr == nullptr) {
+      if (cnt > t->overflow_size) expand_table(t);
       new_ptr = link_pool->New(std::pair(k, f(std::optional<V>())), old_ptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr)))
 	return true;
       link_pool->Delete(new_ptr);
     } else {
       if (weak_cas(s, old_head, head_ptr(new_ptr))) {
-	retire_list(old_ptr, cnt);
+	retire_list_n(old_ptr, cnt);
 	return false;
       }
-      retire_list(new_ptr, cnt);
+      retire_list_n(new_ptr, cnt);
     }
 #else  // use try_lock
     // update_list must be in a lock, so we first check if an update needs to be done
     // at all so we can avoid the lock if not necessary (i.e., key is not in the list).
-    if (!find_in_list(old_ptr, k).first.has_value()) {
+    auto [x, len] = find_in_list(old_ptr, k);
+    if (len > t->overflow_size) expand_table(t);
+    if (!x.first.has_value()) {
       link* new_ptr = link_pool->New(std::pair(k, f(std::optional<V>())), old_ptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr)))
 	return std::optional(true); // try succeeded, returing that a new element is inserted
@@ -455,7 +458,7 @@ private:
 	  if (!(s->load() == old_head)) return false;
 	  auto [cnt, new_ptr] = update_list(old_ptr, k, f);
 	  *s = head_ptr(new_ptr);
-	  retire_list(old_ptr, cnt);
+	  retire_list_n(old_ptr, cnt);
 	  return true;}))
 	return std::optional(false); // try succeeded, returning that no new element is inserted
     }
@@ -475,10 +478,10 @@ private:
     if (cnt == 0) return std::optional(std::optional<V>());
     if (weak_cas(s, old_head, head_ptr(new_ptr))) {
       // remove succeeded, return value that was removed
-      retire_list(old_ptr, cnt);
+      retire_list_n(old_ptr, cnt);
       return std::optional(std::optional<V>(val_ptr->element.second));
     }
-    retire_list(new_ptr, cnt - 1);
+    retire_list_n(new_ptr, cnt - 1);
     // try failed, return std::nullopt to indicate that need to try again
     return std::nullopt;
   }
@@ -487,7 +490,7 @@ private:
   void clear_bucket(table_version* t, long i) {
     head_ptr head = t->buckets[i].load();
     if (!head.is_forwarded())
-      retire_all_list(head);
+      retire_list(head);
     else {
       table_version* next = t->next.load();
       for (int j = 0; j < grow_factor; j++)
