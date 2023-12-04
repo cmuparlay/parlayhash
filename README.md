@@ -184,8 +184,8 @@ the hash map multiple times).
 | growt | 7.8 | 44.6 | 171 | 61 | 61 |
 | folly_hash | 11.9 | 82.4 | failed | 139 | 41 |
 | boost_hash | 24.7 | 84.7 | 57.2 | 31 | 13.6 | 
-| parallel_hashmap | 22 | 80.6 | 110 | --- | --- |
-| folly_sharded | 17.7 | 79 | 115 |--- | --- |
+| parallel_hashmap | 22 | 80.6 | 110 | 199 | --- |
+| folly_sharded | 17.7 | 79 | 115 | 380 | --- |
 | abseil (sequential) | 40.1 | --- | --- | --- | --- |
 | std (sequential) | 13.2 | --- | --- | --- | --- |
 
