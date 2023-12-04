@@ -5,7 +5,7 @@ template <typename K,
           class Hash = std::hash<K>,
           class KeyEqual = std::equal_to<K>>
 struct unordered_map {
-  using Table = phmap::parallel_flat_hash_map_m<K, V, Hash, KeyEqual>;
+   using Table = phmap::parallel_flat_hash_map<K, V, Hash, KeyEqual, std::allocator<std::pair<const K, V>>, 12, std::mutex>;
 
   Table table;
 
