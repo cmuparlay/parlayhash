@@ -94,13 +94,25 @@ private:
 
   static constexpr bool default_clear_at_end = false;
 
-  using KV = std::pair<K,V>;
+  struct KV {
+    using Key = K;
+    using Value = V;
+    K key;
+    V value;
+    bool equal(const K& k) const {return KeyEqual{}(key, k);}
+    bool operator==(const KV& kv) const {return key == kv.key && value == kv.value;}
+    bool operator!=(const KV& kv) const {return key != kv.key || value != kv.value;}
+    const K& get_key() const {return key;}
+    const V& get_value() const {return value;}
+    KV(const K& k, const V& v) : key(k), value(v) {}
+    KV() {}
+  };
   
   // *********************************************
   // Buckect structure
   // *********************************************
 
-  using bstruct = buckets_struct<K,V,Hash,KeyEqual>;
+  using bstruct = buckets_struct<KV>;
   bstruct bcks;
   using bucket = typename bstruct::bucket;
   using state = typename bstruct::state;
@@ -136,9 +148,9 @@ private:
     table_version(long n) 
        : next(nullptr),
 	 finished_block_count(0),
-	 num_bits(1 + parlay::log2_up(std::max<long>(block_size, n))),
+	 num_bits(parlay::log2_up(std::max<long>(block_size, n))),
 	 size(1ul << num_bits),
-	 overflow_size(num_bits < 18 ? 9 : 12),
+	 overflow_size(40), //num_bits < 18 ? 9 : 12),
 	 buckets(parlay::sequence<bucket>::uninitialized(size)) {
       parlay::parallel_for(0, size, [&] (long i) { bstruct::initialize(buckets[i]);});
     }
@@ -176,7 +188,7 @@ private:
       get_locks().try_lock((long) ht, [&] {
 	 if (ht->next == nullptr) {
 	   ht->next = new table_version(ht);
-	   //std::cout << "expand to: " << n * grow_factor << std::endl;
+	   std::cout << "expand to: " << n * grow_factor << std::endl;
 	 }
 	 return true;});
     }
@@ -185,9 +197,9 @@ private:
   // Copies a key_value pair into a new table version.
   // Note this is not thread safe...i.e. only this thread should be
   // updating the bucket corresponding to the key.
-  void copy_element(table_version* t, KV& key_value) {
-    size_t idx = t->get_index(key_value.first);
-    bcks.push_entry(t->buckets[idx], key_value);
+  void copy_element(table_version* t, KV& entry) {
+    size_t idx = t->get_index(entry.get_key());
+    bcks.push_entry(t->buckets[idx], entry);
   }
 
   // Copies a bucket into grow_factor new buckets.
@@ -273,7 +285,7 @@ private:
   // The internal find and update functions (find, insert, upsert and remove)
   // *********************************************
 
-  std::optional<V> find_in_bucket(table_version* t, bucket* s, const K& k) {
+  std::optional<KV> find_in_bucket(table_version* t, bucket* s, const K& k) {
     state x = bcks.get_state(*s);
     // if bucket is forwarded, go to next version
     if (x.is_forwarded()) {
@@ -327,6 +339,11 @@ private:
     }
   }
 
+  std::optional<V> strip_key(const std::optional<KV>& entry) {
+    if (entry.has_value()) return std::optional((*entry).value);
+    return std::nullopt;
+  }
+  
   parlay::internal::scheduler_type* sched_ref;
   bool clear_memory_and_scheduler_at_end;
 
@@ -363,8 +380,21 @@ public:
   std::optional<V> find(const K& k) {
     table_version* ht = current_table_version.load();
     bucket* s = ht->get_bucket(k);
-    __builtin_prefetch (s);
-    return epoch::with_epoch([=] {return find_in_bucket(ht, s, k);});
+    state x = bcks.get_state(*s);
+    if (!x.is_forwarded()) {
+      if (x.length() == 0) return std::optional<V>();
+      if (x.entry.equal(k)) return std::optional(x.entry.value);
+      // long len = x.length();
+      // for (long i = 0; i < std::min(len, bcks.block_size); i++)
+      // 	if (x.entries[i].equal(k))
+      // 	  return std::optional(x.entries[i].value);
+      // if (len <= block_size) return std::optional<V>();
+      //auto [y, flag] = bcks.fast_find(x, k);
+      //if (flag) return strip_key(y);
+    }
+    //__builtin_prefetch (s);
+    return epoch::with_epoch([=] {
+       return strip_key(find_in_bucket(ht, s, k));});
   }
 
   bool insert(const K& k, const V& v) {
@@ -375,11 +405,11 @@ public:
     return epoch::with_epoch([&] {
        auto y = parlay::try_loop([&] {
 	  copy_if_needed(ht, idx);
-          auto [x, len] = bcks.try_insert(s, k, v);
+          auto [x, len] = bcks.try_insert(s, KV(k, v));
 	  if (!x.has_value()) get_active_bucket(ht, s, k);
 	  else if (len > ht->overflow_size) expand_table(ht);
 	  return x;});
-      return !y.has_value();});
+       return !y.has_value();});
   }
 
   // template <typename F>
@@ -409,6 +439,7 @@ public:
 	  if (!x.has_value()) 
 	    get_active_bucket(ht, s, k);
 	  return x;});
+      //std::cout << "dsize: " << size() << ", " << y.has_value() << std::endl;
       return y.has_value();});
   }
 		   
