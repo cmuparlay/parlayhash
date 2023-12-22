@@ -316,8 +316,9 @@ private:
 
   // Add all entries in bucket i of table version t to result.
   // Needs to follow through to forwarded buckets accumuate entries.
-  void bucket_entries(table_version* t, long i, parlay::sequence<KV>& result) {
-    state head = bcks.get_state(t->buckets[i]);
+  template <typename Seq>
+  static void bucket_entries(table_version* t, long i, Seq& result) {
+    state head = bstruct::get_state(t->buckets[i]);
     if (!head.is_forwarded()) {
       for (auto& e : head) result.push_back(e);
     } else {
@@ -334,6 +335,44 @@ public:
   // *********************************************
   // The public interface
   // *********************************************
+
+  struct Iterator {
+    std::vector<KV> entries;
+    KV entry;
+    table_version* t;
+    int i;
+    long bucket_num;
+    bool single;
+    bool end;
+    Iterator(bool end) : t(nullptr), i(0), bucket_num(-2l), single(false), end(true) {}
+    Iterator(table_version* t) :
+      t(t), i(0), bucket_num(-1l), single(false), end(false) {
+      get_next_bucket();
+    }
+    Iterator(KV entry) : entry(entry), single(true), end(false) {}
+    void get_next_bucket() {
+      while (entries.size() == 0 && ++bucket_num < t->size)
+	bucket_entries(t, bucket_num, entries);
+      if (bucket_num == t->size) end = true;
+    }
+    Iterator& operator++() {
+      if (++i == entries.size()) {
+	i = 0;
+	entries.clear();
+	get_next_bucket();
+      }
+      return *this;
+    }
+    KV& operator*() {
+      if (single) return entry;
+      return entries[i];}
+    bool operator!=(const Iterator& iterator) {
+      return !(end ? iterator.end : (bucket_num == iterator.bucket_num &&
+				     i == iterator.i));
+    }
+  };
+  Iterator begin() { return Iterator(current_table_version.load());}
+  Iterator end() { return Iterator(true);}
 
   unordered_map(long n, bool clear_at_end = default_clear_at_end)
     : clear_memory_and_scheduler_at_end(clear_at_end),
@@ -360,13 +399,25 @@ public:
     }
   }
 
-  std::optional<V> find(const K& k) {
+  std::optional<V> Find(const K& k) {
     table_version* ht = current_table_version.load();
     bucket* s = ht->get_bucket(k);
     __builtin_prefetch (s);
     return epoch::with_epoch([=] {return find_in_bucket(ht, s, k);});
   }
 
+  Iterator find_(const K& k) {
+    auto r = Find(k);
+    if (!r.has_value()) return Iterator(true);
+    return Iterator(KV(k,*r));
+  }
+
+  std::optional<V> find(const K& k) {
+    return find_internal(k);
+    auto i = find_(k);
+    if (i != end()) return (*i).second;
+  }
+  
   bool insert(const K& k, const V& v) {
     table_version* ht = current_table_version.load();
     long idx = ht->get_index(k);
@@ -429,6 +480,9 @@ public:
 	return r;});
       return flatten(s);});
   }
+
+
+
 };
 
 } // namespace parlay

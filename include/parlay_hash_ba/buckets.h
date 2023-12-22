@@ -141,7 +141,9 @@ public:
   }
     
   bool try_mark_as_forwarded(bucket& bck, state old_s) {
-    if (bck.cas(old_s, state::forwarded_state())) {
+    auto [new_s, tg] = bck.ll();
+    if (!(new_s == old_s)) return false;
+    if (bck.sc(tg, state::forwarded_state())) {
       retire_state(old_s);
       return true;
     }
@@ -227,7 +229,7 @@ public:
 
   std::pair<std::optional<std::optional<Entry>>, long>
   try_insert(bucket* s, const Entry& entry) {
-    state old_s = s->load();
+    auto [old_s,tg] = s->ll();
     if (old_s.is_forwarded())
       return std::pair(std::nullopt, 0);
     auto [x, len] = find_in_state(old_s, entry.get_key());
@@ -236,7 +238,7 @@ public:
       return std::pair(std::optional(x), len);
     state new_s = old_s;
     push_state(new_s, entry);
-    if (s->cas(old_s, new_s)) {
+    if (s->sc(tg, new_s)) {
       return std::pair(std::optional(x), len + 1);
     }
     //std::cout << "cas failed: " << entry.key << ", " << (s->load() == old_s) << std::endl;
@@ -286,7 +288,7 @@ public:
   }
 	  
   std::optional<std::optional<Entry>> try_remove(bucket* bck, const K& k) {
-    state s_old = bck->load();    
+    auto [s_old, tg] = bck->ll();    
     if (s_old.is_forwarded())
       return std::nullopt;
     // if list is empty, then return that no remove needs to be done
@@ -297,7 +299,7 @@ public:
     // if list does not contain key, then return that no remove needs to be done
     if (!entry.has_value())
       return std::optional(entry);
-    if (bck->cas(s_old, s_new)) {
+    if (bck->sc(tg, s_new)) {
       // remove succeeded, return value that was removed
       retire_after_successful_remove(s_old, only_one);
       return std::optional(entry);

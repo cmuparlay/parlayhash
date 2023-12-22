@@ -25,6 +25,7 @@ template<typename V, class KeyEqual = std::equal_to<V>>
 struct alignas(32) big_atomic {
 
   using vtype = long;
+  using tag = vtype;
 
   std::atomic<vtype> version;
   V val;
@@ -38,6 +39,16 @@ struct alignas(32) big_atomic {
       V v = val;
       std::atomic_thread_fence(std::memory_order_acquire);
       if ((ver & 1) == 0 && version.load(std::memory_order_relaxed) == ver) return v;
+    }
+  }
+
+  std::pair<V,tag> ll() {
+    while (true) {
+      vtype ver = version.load(std::memory_order_acquire);
+      V v = val;
+      std::atomic_thread_fence(std::memory_order_acquire);
+      if ((ver & 1) == 0 && version.load(std::memory_order_relaxed) == ver)
+	return std::pair(v,ver);
     }
   }
 
@@ -98,6 +109,38 @@ struct alignas(32) big_atomic {
       delay = std::min(2 * delay, 1000);
     }
   }
+
+  bool sc(tag expected_tag, const V& v) {
+    vtype ver = version.load();
+    bool result = true;
+    int delay = 100;
+    if (expected_tag != ver) {
+      //while (ver == version.load(std::memory_order_acquire))
+        ;
+      return false;
+    }
+    while (true) {
+      if (get_locks().try_lock((long)this, [&] {
+            V current_v = val;
+            if (version.load(std::memory_order_acquire) != expected_tag)
+              result = false;
+            else {
+              version.store(ver + 1, std::memory_order_relaxed);
+              std::atomic_thread_fence(std::memory_order_release);
+              val = v;
+              version.store(ver + 2, std::memory_order_release);
+            }
+            return true;
+          }))
+        return result;
+      if (version.load() != expected_tag) return false;
+      for (volatile int i = 0; i < delay; i++)
+        ;
+      delay = std::min(2 * delay, 1000);
+    }
+  }
+
+
 };
 
 }  // namespace parlay
