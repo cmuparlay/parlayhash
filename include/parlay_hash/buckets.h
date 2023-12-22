@@ -1,30 +1,27 @@
-  template <typename K,
-	    typename V,
-	    class Hash = std::hash<K>,
-	    class KeyEqual = std::equal_to<K>>
-  struct buckets_struct {
-
+template <class Entry>
+struct buckets_struct {
   private:
-    using KV = std::pair<K,V>;
+  using K = typename Entry::Key;
+  using V = typename Entry::Value;
     
     struct link {
-      KV element;
+      Entry element;
       link* next;
-      link(KV element, link* next) : element(element), next(next) {}
+      link(Entry element, link* next) : element(element), next(next) {}
     };
 
     epoch::memory_pool<link>* link_pool;
     bool clear_at_end;
 
     // Find key in list, return nullopt if not found
-    static std::pair<std::optional<V>,long> find_in_list(link* nxt, const K& k) {
+    static std::pair<std::optional<Entry>,long> find_in_list(link* nxt, const K& k) {
       long n = 0;
-      while (nxt != nullptr && !KeyEqual{}(nxt->element.first, k)) {
+      while (nxt != nullptr && !nxt->element.equal(k)) {
 	nxt = nxt->next;
 	n++;
       }
       if (nxt == nullptr) return std::pair(std::nullopt, n);
-      else return std::pair(nxt->element.second,0);
+      else return std::pair(nxt->element, 0);
     }
 
     // Remove key from list using path copying (i.e. does not update any links, but copies
@@ -34,7 +31,7 @@
     // If the key is not found, returns (0, nullptr, nullptr).
     std::tuple<int, link*, link*> remove_from_list(link* nxt, const K& k) {
       if (nxt == nullptr) return std::tuple(0, nullptr, nullptr);
-      else if (KeyEqual{}(nxt->element.first, k))
+      else if (nxt->element.equal(k))
 	return std::tuple(1, nxt->next, nxt); 
       else {
 	auto [len, ptr, rptr] = remove_from_list(nxt->next, k);
@@ -50,7 +47,7 @@
     template <typename F>
     std::pair<int, link*> update_list(link* nxt, const K& k, const F& f) {
       if (nxt == nullptr) return std::pair(0, nullptr);
-      else if (KeyEqual{}(nxt->element.first, k)) 
+      else if (nxt->element.equal(k))
 	return std::pair(1, link_pool->New(std::pair(k,f(nxt->element.second)), nxt->next));
       else {
 	auto [len, ptr] = update_list(nxt->next, k, f);
@@ -102,7 +99,7 @@
 	link* cur;
 	Iterator(link* cur) : cur(cur) {}
 	Iterator& operator++() {cur = cur->next; return *this;}
-	KV& operator*() {return cur->element;}
+	Entry& operator*() {return cur->element;}
 	bool operator!=(Iterator& iterator) {return cur != iterator.cur;}
       };
       Iterator begin() { return Iterator((link*) ptr);}
@@ -153,12 +150,12 @@
       bck = head_ptr::forwarded_link();
     }
 
-    void push_entry(bucket& bck, KV key_value) {
+    void push_entry(bucket& bck, Entry key_value) {
       link* ptr = bck.load();
       bck = link_pool->New(key_value, ptr);
     }
 
-    bool try_push_if_empty(bucket& bck, KV key_value) {
+    bool try_push_if_empty(bucket& bck, Entry key_value) {
       link* ptr = bck.load();
       if (ptr == nullptr) {
 	head_ptr new_l = link_pool->New(key_value, nullptr);
@@ -180,20 +177,21 @@
       return list_length(s);
     }
 
-    static std::optional<V> find(state& s, const K& k) {
+    static std::optional<Entry> find(state& s, const K& k) {
       return find_in_list(s, k).first;
     }
 
-    std::pair<std::optional<std::optional<V>>, long>
-    try_insert(bucket* s, const K& k, const V& v) {
+    std::pair<std::optional<std::optional<Entry>>, long>
+    try_insert(bucket* s, const Entry& entry) {
       head_ptr old_head = s->load();    
       if (old_head.is_forwarded()) return std::pair(std::nullopt, 0);
       link* old_ptr = old_head;
-      auto [x, len] = find_in_list(old_ptr, k);
+      auto [x, len] = find_in_list(old_ptr, entry.get_key());
       // if (len > t->overflow_size) expand_table(t);
       // if already in the hash map, then return the current value
-      if (x.has_value()) return std::pair(std::optional(x), len);
-      link* new_ptr = link_pool->New(std::pair(k,v), old_ptr);
+      if (x.has_value()) 
+	return std::pair(std::optional(x), len);
+      link* new_ptr = link_pool->New(entry, old_ptr);
       head_ptr new_head = new_ptr;
       if (weak_cas(s, old_head, new_head))
 	// successfully inserted
@@ -203,19 +201,19 @@
       return std::pair(std::nullopt, 0);
     }
 
-    std::optional<std::optional<V>> try_remove(bucket* s, const K& k) {
+    std::optional<std::optional<Entry>> try_remove(bucket* s, const K& k) {
       head_ptr old_head = s->load();    
       if (old_head.is_forwarded()) return std::nullopt;
       link* old_ptr = old_head;
       // if list is empty, then return that no remove needs to be done
-      if (old_ptr == nullptr) return std::optional(std::optional<V>());
+      if (old_ptr == nullptr) return std::optional(std::optional<Entry>());
       auto [cnt, new_ptr, val_ptr] = remove_from_list(old_ptr, k);
       // if list does not contain key, then return that no remove needs to be done
-      if (cnt == 0) return std::optional(std::optional<V>());
+      if (cnt == 0) return std::optional(std::optional<Entry>());
       if (weak_cas(s, old_head, head_ptr(new_ptr))) {
 	// remove succeeded, return value that was removed
 	retire_list_n(old_ptr, cnt);
-	return std::optional(std::optional<V>(val_ptr->element.second));
+	return std::optional(std::optional<Entry>(val_ptr->element));
       }
       retire_list_n(new_ptr, cnt - 1);
       // try failed, return std::nullopt to indicate that need to try again

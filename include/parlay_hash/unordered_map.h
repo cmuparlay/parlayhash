@@ -94,13 +94,25 @@ private:
 
   static constexpr bool default_clear_at_end = false;
 
-  using KV = std::pair<K,V>;
+  struct KV {
+    using Key = K;
+    using Value = V;
+    K key;
+    V value;
+    bool equal(const K& k) const {return KeyEqual{}(key, k);}
+    bool operator==(const KV& kv) const {return key == kv.key && value == kv.value;}
+    bool operator!=(const KV& kv) const {return key != kv.key || value != kv.value;}
+    const K& get_key() const {return key;}
+    const V& get_value() const {return value;}
+    KV(const K& k, const V& v) : key(k), value(v) {}
+    KV() {}
+  };
   
   // *********************************************
   // Buckect structure
   // *********************************************
 
-  using bstruct = buckets_struct<K,V,Hash,KeyEqual>;
+  using bstruct = buckets_struct<KV>;
   bstruct bcks;
   using bucket = typename bstruct::bucket;
   using state = typename bstruct::state;
@@ -186,7 +198,7 @@ private:
   // Note this is not thread safe...i.e. only this thread should be
   // updating the bucket corresponding to the key.
   void copy_element(table_version* t, KV& key_value) {
-    size_t idx = t->get_index(key_value.first);
+    size_t idx = t->get_index(key_value.get_key());
     bcks.push_entry(t->buckets[idx], key_value);
   }
 
@@ -273,7 +285,7 @@ private:
   // The internal find and update functions (find, insert, upsert and remove)
   // *********************************************
 
-  std::optional<V> find_in_bucket(table_version* t, bucket* s, const K& k) {
+  std::optional<KV> find_in_bucket(table_version* t, bucket* s, const K& k) {
     state x = bcks.get_state(*s);
     // if bucket is forwarded, go to next version
     if (x.is_forwarded()) {
@@ -330,6 +342,11 @@ private:
 
   parlay::internal::scheduler_type* sched_ref;
   bool clear_memory_and_scheduler_at_end;
+
+  std::optional<V> strip_key(const std::optional<KV>& entry) {
+    if (entry.has_value()) return std::optional((*entry).value);
+    return std::nullopt;
+  }
 
 public:
   // *********************************************
@@ -399,7 +416,7 @@ public:
     }
   }
 
-  std::optional<V> Find(const K& k) {
+  std::optional<KV> Find(const K& k) {
     table_version* ht = current_table_version.load();
     bucket* s = ht->get_bucket(k);
     __builtin_prefetch (s);
@@ -409,13 +426,13 @@ public:
   Iterator find_(const K& k) {
     auto r = Find(k);
     if (!r.has_value()) return Iterator(true);
-    return Iterator(KV(k,*r));
+    return Iterator(*r);
   }
 
   std::optional<V> find(const K& k) {
-    return find_internal(k);
+    return strip_key(Find(k));
     auto i = find_(k);
-    if (i != end()) return (*i).second;
+    if (i != end()) return (*i).value;
   }
   
   bool insert(const K& k, const V& v) {
@@ -426,7 +443,7 @@ public:
     return epoch::with_epoch([&] {
        auto y = parlay::try_loop([&] {
 	  copy_if_needed(ht, idx);
-          auto [x, len] = bcks.try_insert(s, k, v);
+          auto [x, len] = bcks.try_insert(s, KV(k,v));
 	  if (!x.has_value()) get_active_bucket(ht, s, k);
 	  else if (len > ht->overflow_size) expand_table(ht);
 	  return x;});
