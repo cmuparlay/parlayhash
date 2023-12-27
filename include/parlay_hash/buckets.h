@@ -1,8 +1,10 @@
+
+namespace parlay {
+  
 template <class Entry>
 struct buckets_struct {
   private:
   using K = typename Entry::Key;
-  using V = typename Entry::Value;
     
     struct link {
       Entry element;
@@ -14,14 +16,14 @@ struct buckets_struct {
     bool clear_at_end;
 
     // Find key in list, return nullopt if not found
-    static std::pair<std::optional<Entry>,long> find_in_list(link* nxt, const K& k) {
+    static std::pair<Entry*,long> find_in_list(link* nxt, const K& k) {
       long n = 0;
       while (nxt != nullptr && !nxt->element.equal(k)) {
 	nxt = nxt->next;
 	n++;
       }
-      if (nxt == nullptr) return std::pair(std::nullopt, n);
-      else return std::pair(nxt->element, 0);
+      if (nxt == nullptr) return std::pair(nullptr, n);
+      else return std::pair(&nxt->element, 0);
     }
 
     // Remove key from list using path copying (i.e. does not update any links, but copies
@@ -177,11 +179,11 @@ struct buckets_struct {
       return list_length(s);
     }
 
-    static std::optional<Entry> find(state& s, const K& k) {
+    static Entry* find(state& s, const K& k) {
       return find_in_list(s, k).first;
     }
 
-    std::pair<std::optional<std::optional<Entry>>, long>
+    std::pair<std::optional<Entry*>, long>
     try_insert(bucket* s, const Entry& entry) {
       head_ptr old_head = s->load();    
       if (old_head.is_forwarded()) return std::pair(std::nullopt, 0);
@@ -189,31 +191,31 @@ struct buckets_struct {
       auto [x, len] = find_in_list(old_ptr, entry.get_key());
       // if (len > t->overflow_size) expand_table(t);
       // if already in the hash map, then return the current value
-      if (x.has_value()) 
+      if (x != nullptr) 
 	return std::pair(std::optional(x), len);
       link* new_ptr = link_pool->New(entry, old_ptr);
       head_ptr new_head = new_ptr;
       if (weak_cas(s, old_head, new_head))
 	// successfully inserted
-	return std::pair(std::optional(x), len + 1);
+	return std::pair(std::optional(nullptr), len + 1);
       link_pool->Delete(new_ptr);
       // try failed, return std::nullopt to indicate that need to try again
       return std::pair(std::nullopt, 0);
     }
 
-    std::optional<std::optional<Entry>> try_remove(bucket* s, const K& k) {
+    std::optional<Entry*> try_remove(bucket* s, const K& k) {
       head_ptr old_head = s->load();    
       if (old_head.is_forwarded()) return std::nullopt;
       link* old_ptr = old_head;
       // if list is empty, then return that no remove needs to be done
-      if (old_ptr == nullptr) return std::optional(std::optional<Entry>());
+      if (old_ptr == nullptr) return std::optional(nullptr);
       auto [cnt, new_ptr, val_ptr] = remove_from_list(old_ptr, k);
       // if list does not contain key, then return that no remove needs to be done
-      if (cnt == 0) return std::optional(std::optional<Entry>());
+      if (cnt == 0) return std::optional(nullptr);
       if (weak_cas(s, old_head, head_ptr(new_ptr))) {
 	// remove succeeded, return value that was removed
 	retire_list_n(old_ptr, cnt);
-	return std::optional(std::optional<Entry>(val_ptr->element));
+	return std::optional(&val_ptr->element);
       }
       retire_list_n(new_ptr, cnt - 1);
       // try failed, return std::nullopt to indicate that need to try again
@@ -265,3 +267,4 @@ struct buckets_struct {
 //   }
 
   };
+} // end namespace parlay
