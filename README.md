@@ -108,6 +108,7 @@ In addition to our hash map, the repository includes the following open source h
 - ./folly_hash          ([folly's ConcurrentHashMap](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h))
 - ./boost_hash          ([boost's concurrent_flat_map](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent))
 - ./parallel_hashmap    ([parallel hashmap](https://github.com/greg7mdp/parallel-hashmap)) **
+- ./seq_hash    ([seq's concurrent hashmap](https://github.com/Thermadiag/seq/blob/main/docs/concurrent_map.md)) **
 - ./folly_sharded       (our own sharded version using folly's efficient [non-concurrent F14map](https://github.com/facebook/folly/blob/main/folly/container/F14Map.h)) **
 - ./abseil_sharded      (our own sharded version using folly's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container)) **
 - ./std_sharded         (our own sharded version of std::unordered_map) **
@@ -179,14 +180,16 @@ the hash map multiple times).
 | - | - | - | - | - | - |
 | parlay_hash lf | 15.9 | 162 | 651 | 301 | 112 |
 | parlay_hash lock | 16.1 | 156 | 692 | 269 | 99 |
-| tbb_hash | 9.3 | 62.4 | 64.6 | 23 | 23 |
-| libcuckoo | 11.5 | 50.5 | 33.1 | 293 | 6.3 |
+| tbb_hash | 9.3 | 62 | 64 | 23 | 23 |
+| libcuckoo | 11.5 | 51 | 33 | 293 | 6.3 |
 | growt | 7.8 | 44.6 | 171 | 61 | 61 |
-| folly_hash | 11.9 | 82.4 | failed | 139 | 41 |
-| boost_hash | 24.7 | 84.7 | 57.2 | 31 | 13.6 | 
-| parallel_hashmap | 22 | 80.6 | 110 | 199 | --- |
+| folly_hash | 11.9 | 82 | failed | 139 | 41 |
+| boost_hash | 24.7 | 84 | 57 | 31 | 14 | 
+| parallel_hashmap | 22 | 81 | 110 | 199 | --- |
+| seq_hash | 25.4 | 114 | 104 | 248 | --- |
 | folly_sharded | 17.7 | 79 | 115 | 380 | --- |
 | abseil (sequential) | 40.1 | --- | --- | --- | --- |
+| folly_F14 (sequential) | 28.5 | --- | --- | --- | --- |
 | std (sequential) | 13.2 | --- | --- | --- | --- |
 
 We do not include growing numbers for the semi growable hash tables.
