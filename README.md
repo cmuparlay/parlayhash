@@ -182,7 +182,7 @@ the hash map multiple times).
 | parlay_hash lock | 16.1 | 156 | 692 | 269 | 99 |
 | tbb_hash | 9.3 | 62 | 64 | 23 | 23 |
 | libcuckoo | 11.5 | 51 | 33 | 293 | 6.3 |
-| growt | 7.8 | 45 | 171 | 61 | 61 |
+<!--- | growt | 7.8 | 45 | 171 | 61 | 61 | --->
 | folly_hash | 11.9 | 82 | failed | 139 | 41 |
 | boost_hash | 24.7 | 84 | 57 | 31 | 14 | 
 | parallel_hashmap | 22 | 81 | 110 | 199 | --- |
