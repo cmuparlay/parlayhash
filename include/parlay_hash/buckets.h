@@ -6,7 +6,7 @@ struct buckets_struct {
   private:
   using K = typename Entry::Key;
     
-    struct link {
+  struct link {
       Entry element;
       link* next;
       link(Entry element, link* next) : element(element), next(next) {}
