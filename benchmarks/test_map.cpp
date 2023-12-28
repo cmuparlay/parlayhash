@@ -7,6 +7,7 @@
 #include <parlay/random.h>
 #include "zipfian.h"
 #include "parse_command_line.h"
+#include "trigrams.h"
 
 using K = unsigned long;
 using V = unsigned long;
@@ -32,7 +33,12 @@ struct IntHash {
   }
 };
 
-using map_type = unordered_map<K,V,IntHash>;
+struct StringHash {
+  using is_avalanching = void; // used by boost_hash to avoid secondary hashing
+  std::size_t operator()(std::string const& k) const noexcept {
+    return parlay::hash<std::string>{}(k);
+  }
+};
 
 double geometric_mean(const parlay::sequence<double>& vals) {
   double product = 1;
@@ -40,22 +46,14 @@ double geometric_mean(const parlay::sequence<double>& vals) {
   return  pow(product, 1.0 / vals.size());
 }
 
-std::tuple<double,double>
-test_loop(commandLine& C,
-	  long n,   // num entries in map
-	  long p,   // num threads
-	  long rounds,  // num trials
-	  double zipfian_param, // zipfian parameter [0:1) (0 is uniform, .99 is high skew)
-	  int update_percent, // percent of operations that are either insert or delete (1/2 each)
-	  bool upsert, // use upsert instead of insert
-	  double trial_time, // time to run one trial
-	  double latency_cutoff, // cutoff to measure percent below
-	  bool verbose, // show some more info
-	  bool warmup,  // run one warmup round
-	  bool grow) {  // start with table of size 1
+std::pair<parlay::sequence<K>,parlay::sequence<K>>
+generate_integer_distribution(long n,   // num entries in map
+			      long p,
+			      double zipfian_param) // zipfian parameter [0:1) (0 is uniform, .99 is high skew)
+{
   // total samples used
   long m = 10 * n + 1000 * p;
-
+  
   // generate 2*n unique numbers in random order
   // get rid of top bit since growt seems to fail if used (must use it itself)
   //auto x = parlay::delayed_tabulate(1.2* 2 * n,[&] (size_t i) {
@@ -75,8 +73,41 @@ test_loop(commandLine& C,
   } else {
     b = parlay::tabulate(m, [&] (int i) {return a[parlay::hash64(i) % (2 * n)]; });
   }
+  return std::pair(a,b);
+}
 
+std::pair<parlay::sequence<std::string>,parlay::sequence<std::string>>
+generate_string_distribution(long n) {
+  auto b = trigramWords(n);
+  auto a = parlay::remove_duplicates(b);
+  return std::pair(a,b);
+}
+
+template <typename Hash, typename K>
+std::tuple<double,double>
+test_loop(commandLine& C,
+	  std::string info,
+	  const parlay::sequence<K>& a,
+	  const parlay::sequence<K>& b,
+	  long p,   // num threads
+	  long rounds,  // num trials
+	  int update_percent, // percent of operations that are either insert or delete (1/2 each)
+	  bool upsert, // use upsert instead of insert
+	  double trial_time, // time to run one trial
+	  double latency_cutoff, // cutoff to measure percent below
+	  bool verbose, // show some more info
+	  bool warmup,  // run one warmup round
+	  bool grow) {  // start with table of size 1
+
+  int vsize = 3;
+  using V = std::array<unsigned long, 3>;
+  V default_value;
+  for (auto& x : default_value) x = 1;
+
+  using map_type = unordered_map<K,V,Hash>;
   enum op_type : char {Find, Insert, Remove};
+  long n = a.size()/2;
+  long m = b.size();
 
   // generate the operation types with update_percent updates
   // half the updates will be inserts and half removes
@@ -103,10 +134,10 @@ test_loop(commandLine& C,
       long s = i * block_size;
       long e = std::min(s + block_size, n);
       for (int j = s; j < e; j++)
-	map.insert(HANDLE a[j], 123); }, 1, true);
+	map.insert(HANDLE a[j], default_value); }, 1, true);
 #else
     parlay::parallel_for(0, n, [&] (size_t i) {
-	map.insert(a[i], 123); });
+	map.insert(a[i], default_value); });
 #endif
     if (map.size() != n)
       std::cout << "bad initial size = " << map.size() << std::endl;
@@ -171,23 +202,25 @@ test_loop(commandLine& C,
 	  query_count++;
 #ifdef Latency
 	  auto start_op_time = std::chrono::system_clock::now();
-	  query_success_count += map.find(HANDLE b[j]).has_value();
+	  auto r = map.find(HANDLE b[j]);
+	  query_success_count += r.has_value() ? (*r)[0] : 0;
 	  auto current = std::chrono::system_clock::now();
 	  std::chrono::duration<double> duration = current - start_op_time;
 	  if (duration.count() * 1000000 < latency_cutoff)
 	    latency_count++;
 #else
-	  query_success_count += map.find(HANDLE b[j]).has_value();
+	  auto r = map.find(HANDLE b[j]);
+	  query_success_count += r.has_value() ? (*r)[0] : 0;
 #endif
 	} else if (op_types[k] == Insert) {
 #ifdef UPSERT
 	  if (upsert) {
-	    if (map.upsert(HANDLE b[j], [] (std::optional<V> v) {return 123;})) {added++; update_success_count++;}
+	    if (map.upsert(HANDLE b[j], [&] (std::optional<V> v) {return default_value;})) {added++; update_success_count++;}
 	  } else {
-	    if (map.insert(HANDLE b[j], 123)) {added++; update_success_count++;}
+	    if (map.insert(HANDLE b[j], default_value)) {added++; update_success_count++;}
 	  }
 #else
-	  if (map.insert(HANDLE b[j], 123)) {added++; update_success_count++;}
+	  if (map.insert(HANDLE b[j], default_value)) {added++; update_success_count++;}
 #endif
 	} else { // (op_types[k] == Remove)
 	  if (map.remove(HANDLE b[j])) {removed++; update_success_count++;}
@@ -214,7 +247,7 @@ test_loop(commandLine& C,
               << update_percent << "%update,"
               << "n=" << n << ","
               << "p=" << p << ","
-              << "z=" << zipfian_param << ","
+              << info << ","
 #ifdef Latency
       	      << latency_count / queries * 100.0 << "%@" << latency_cutoff << "usec,"
 #endif
@@ -286,11 +319,23 @@ int main(int argc, char* argv[]) {
   for (auto zipfian_param : zipfians)
     for (auto update_percent : percents) {
       for (auto n : sizes) {
-	results.push_back(test_loop(P, n, p, rounds, zipfian_param, update_percent, upsert,
-				    trial_time, latency_cuttoff, verbose, warmup, grow));
+	auto [a, b] = generate_integer_distribution(n, p, zipfian_param);
+	std::stringstream str;
+	str << "z=" << zipfian_param;
+	results.push_back(test_loop<IntHash>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+					     trial_time, latency_cuttoff, verbose, warmup, grow));
       }
       if (print_means) std::cout << std::endl;
     }
+
+  for (auto update_percent : percents) {
+    long n = 250000000;
+    auto [a, b] = generate_string_distribution(n);
+    std::stringstream str;
+    str << "tristr";
+    results.push_back(test_loop<StringHash>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+					    trial_time, latency_cuttoff, verbose, warmup, grow));
+  }
 
   auto insert_times = parlay::map(results, [] (auto x) {return std::get<0>(x);});
   auto bench_times = parlay::map(results, [] (auto x) {return std::get<1>(x);});

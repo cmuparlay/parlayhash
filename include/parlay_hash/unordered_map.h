@@ -134,7 +134,12 @@ public :
   iterator erase(iterator pos) { return erase(pos); }
 
   template <typename F>
-  bool upsert(const K& k, const F& f) {return m.upsert(k, f);}
+  bool upsert(const K& k, const F& f) {
+    auto g = [&] (std::optional<Entry> entry) {
+	       if (entry.has_value())
+		 return Entry((*entry).key, f((*entry).value));
+	       else return Entry((*entry).key, f(std::nullopt));};
+    return m.upsert(k, g);}
 
   V operator [](const K& k) {
     auto r = Find(k);

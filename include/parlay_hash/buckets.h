@@ -50,7 +50,7 @@ struct buckets_struct {
     std::pair<int, link*> update_list(link* nxt, const K& k, const F& f) {
       if (nxt == nullptr) return std::pair(0, nullptr);
       else if (nxt->element.equal(k))
-	return std::pair(1, link_pool->New(std::pair(k,f(nxt->element.second)), nxt->next));
+	return std::pair(1, link_pool->New(f(nxt->element), nxt->next));
       else {
 	auto [len, ptr] = update_list(nxt->next, k, f);
 	if (ptr == nullptr) return std::pair(len + 1, nullptr);
@@ -108,7 +108,7 @@ struct buckets_struct {
       Iterator end() { return Iterator(nullptr);}
     };
 
-        // If using locks, acts like std::compare_exchange_weak, i.e., can fail
+    // If using locks, acts like std::compare_exchange_weak, i.e., can fail
     // even if old_v == s->load() since it uses a try lock.
     // If lock free, then will always succeed if equal
     static bool weak_cas(std::atomic<head_ptr>* s, head_ptr old_v, head_ptr new_v) {
@@ -222,49 +222,48 @@ struct buckets_struct {
       return std::nullopt;
     }
 
-    //   template <typename F>
-//   std::optional<bool> try_upsert_bucket(table_version* t, bucket* s, const K& k, F& f) {
-//     head_ptr old_head = s->load();
-//     get_active_bucket(t, s, k, old_head);
-//     link* old_ptr = old_head;
-// #ifndef USE_LOCKS
-//     auto [cnt, new_ptr] = bcks.update_list(old_ptr, k, f);
-//     if (new_ptr == nullptr) {
-//       if (cnt > t->overflow_size) expand_table(t);
-//       new_ptr = bcks.link_pool->New(std::pair(k, f(std::optional<V>())), old_ptr);
-//       if (weak_cas(s, old_head, head_ptr(new_ptr)))
-// 	return true;
-//       bcks.link_pool->Delete(new_ptr);
-//     } else {
-//       if (weak_cas(s, old_head, head_ptr(new_ptr))) {
-// 	bcks.retire_list_n(old_ptr, cnt);
-// 	return false;
-//       }
-//       bcks.retire_list_n(new_ptr, cnt);
-//     }
-// #else  // use try_lock
-//     // update_list must be in a lock, so we first check if an update needs to be done
-//     // at all so we can avoid the lock if not necessary (i.e., key is not in the list).
-//     auto [x, len] = bcks.find_in_list(old_ptr, k);
-//     if (len > t->overflow_size) expand_table(t);
-//     if (!x.has_value()) {
-//       link* new_ptr = bcks.link_pool->New(std::pair(k, f(std::optional<V>())), old_ptr);
-//       if (weak_cas(s, old_head, head_ptr(new_ptr)))
-// 	return std::optional(true); // try succeeded, returing that a new element is inserted
-//       bcks.link_pool->Delete(new_ptr);
-//     } else {
-//       if (get_locks().try_lock((long) s, [=] {
-// 	  if (!(s->load() == old_head)) return false;
-// 	  auto [cnt, new_ptr] = bcks.update_list(old_ptr, k, f);
-// 	  *s = head_ptr(new_ptr);
-// 	  bcks.retire_list_n(old_ptr, cnt);
-// 	  return true;}))
-// 	return std::optional(false); // try succeeded, returning that no new element is inserted
-//     }
-// #endif
-//     // try failed, return std::nullopt to indicate that need to try again
-//     return std::nullopt;
-//   }
+  template <typename F>
+  std::pair<std::optional<bool>, long>
+  try_upsert(bucket* s, const K& k, F& f) {
+    head_ptr old_head = s->load();
+    if (old_head.is_forwarded()) return std::pair(std::nullopt, 0);
+    link* old_ptr = old_head;
+#ifndef USE_LOCKS
+    auto [cnt, new_ptr] = update_list(old_ptr, k, f);
+    if (new_ptr == nullptr) {
+      new_ptr = link_pool->New(f(std::optional<Entry>()), old_ptr);
+      if (weak_cas(s, old_head, head_ptr(new_ptr)))
+	return std::pair(std::optional(true), cnt+1);
+      link_pool->Delete(new_ptr);
+    } else {
+      if (weak_cas(s, old_head, head_ptr(new_ptr))) {
+	retire_list_n(old_ptr, cnt);
+	return std::pair(std::optional(false), cnt);
+      }
+      retire_list_n(new_ptr, cnt);
+    }
+#else  // use try_lock
+    // update_list must be in a lock, so we first check if an update needs to be done
+    // at all so we can avoid the lock if not necessary (i.e., key is not in the list).
+    auto [x, cnt] = find_in_list(old_ptr, k);
+    if (!x.has_value()) {
+      link* new_ptr = link_pool->New(f(std::optional<Entry>()), old_ptr);
+      if (weak_cas(s, old_head, head_ptr(new_ptr)))
+	return std::pair(std::optional(true), cnt + 1); // try succeeded, returing that a new element is inserted
+      link_pool->Delete(new_ptr);
+    } else {
+      if (get_locks().try_lock((long) s, [=] {
+	  if (!(s->load() == old_head)) return false;
+	  auto [cnt, new_ptr] = update_list(old_ptr, k, f);
+	  *s = head_ptr(new_ptr);
+	  retire_list_n(old_ptr, cnt);
+	  return true;}))
+	return std::pair(std::optional(false), cnt); // try succeeded, returning that no new element is inserted
+    }
+#endif
+    // try failed, return std::nullopt to indicate that need to try again
+    return std::pair(std::nullopt, 0);
+  }
 
   };
 } // end namespace parlay

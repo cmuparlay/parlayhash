@@ -155,7 +155,7 @@ private:
       for (int j = exp_start; j < exp_start + grow_factor; j++)
         bcks.initialize(next->buckets[j]);
       // copy to new buckets
-      for (auto& e : get_state(t->buckets[i]))
+      for (auto& e : bcks.get_state(t->buckets[i]))
 	copy_element(next, e);
       // mark as forwarded
       bcks.mark_as_forwarded(t->buckets[i]);
@@ -389,20 +389,21 @@ public:
     return std::pair(Iterator(*r),false);
   }
 
-  // template <typename F>
-  // bool upsert(const K& k, const F& f) {
-  //   table_version* ht = current_table_version.load();
-  //   long idx = ht->get_index(k);
-  //   bucket* s = &ht->buckets[idx];
-  //   __builtin_prefetch (s);
-  //   return epoch::with_epoch([=] {
-  //     return parlay::try_loop([=] {
-  // 	  copy_if_needed(ht, idx); // checks if table needs to grow
-  //         return try_upsert_bucket(ht, s, k, f);});});
-  // }
-
   template <typename F>
-  bool upsert(const K& k, const F& f) {return false;}
+  bool upsert(const K& k, const F& f) {
+    table_version* ht = current_table_version.load();
+    long idx = ht->get_index(k);
+    bucket* s = &ht->buckets[idx];
+    __builtin_prefetch (s);
+    return epoch::with_epoch([&] {
+      return parlay::try_loop([&] {
+  	  copy_if_needed(ht, idx); 
+	  auto [x, len] = bcks.try_upsert(s, k, f);
+	  if (!x.has_value())
+	    get_active_bucket(ht, s, k);
+	  else if (len > ht->overflow_size) expand_table(ht);
+	  return x;});});
+  }
 
   std::optional<Entry> Remove(const K& k) {
     table_version* ht = current_table_version.load();
