@@ -9,6 +9,8 @@
 #include "parse_command_line.h"
 #include "trigrams.h"
 
+#define STRING 1
+
 using K = unsigned long;
 using V = unsigned long;
 using namespace parlay;
@@ -102,7 +104,7 @@ test_loop(commandLine& C,
   using V = std::array<unsigned long, vsize>;
   V default_value;
   for (auto& x : default_value) x = 1;
-
+  
   using map_type = unordered_map<K,V,Hash>;
   enum op_type : char {Find, Insert, Remove};
   long n = a.size()/2;
@@ -327,6 +329,7 @@ int main(int argc, char* argv[]) {
       if (print_means) std::cout << std::endl;
     }
 
+#ifdef STRING
   for (auto update_percent : percents) {
     long n = 250000000;
     auto [a, b] = generate_string_distribution(n);
@@ -335,6 +338,7 @@ int main(int argc, char* argv[]) {
     results.push_back(test_loop<StringHash,4>(P, str.str(), a, b, p, rounds, update_percent, upsert,
 					    trial_time, latency_cuttoff, verbose, warmup, grow));
   }
+#endif
 
   auto insert_times = parlay::map(results, [] (auto x) {return std::get<0>(x);});
   auto bench_times = parlay::map(results, [] (auto x) {return std::get<1>(x);});

@@ -13,7 +13,7 @@ template <typename K,
 	  class KeyEqual = std::equal_to<K>>
 struct unordered_map {
 
-  using Table = folly::ConcurrentHashMap<int, int, Hash, KeyEqual, std::allocator<uint8_t>, 12>;
+  using Table = folly::ConcurrentHashMap<K, V, Hash, KeyEqual, std::allocator<uint8_t>, 12>;
   Table table;
 
   std::optional<V> find(const K& k) {
