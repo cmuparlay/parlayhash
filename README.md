@@ -104,7 +104,6 @@ the benchmarks:
 In addition to our hash map, the repository includes the following open source hash maps:
 - ./tbb_hash            ([tbb concurrent hash map](https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_unordered_map_cls.html))
 - ./libcuckoo           ([libcuckoo's cuckooohash_map](https://github.com/efficient/libcuckoo))
-- ./growt               ([growt's concurrent hash map](https://github.com/TooBiased/growt))
 - ./folly_hash          ([folly's ConcurrentHashMap](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h))
 - ./boost_hash          ([boost's concurrent_flat_map](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent))
 - ./parallel_hashmap    ([parallel hashmap](https://github.com/greg7mdp/parallel-hashmap)) **
@@ -112,6 +111,10 @@ In addition to our hash map, the repository includes the following open source h
 - ./folly_sharded       (our own sharded version using folly's efficient [non-concurrent F14map](https://github.com/facebook/folly/blob/main/folly/container/F14Map.h)) **
 - ./abseil_sharded      (our own sharded version using folly's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container)) **
 - ./std_sharded         (our own sharded version of std::unordered_map) **
+
+<!--- 
+- ./growt               ([growt's concurrent hash map](https://github.com/TooBiased/growt))
+--->
 
 For some of these you need to have the relevant library installed
 (e.g., boost, folly, abseil, tbb).  All of them support arbitrary
@@ -182,7 +185,6 @@ the hash map multiple times).
 | parlay_hash lock | 16.1 | 156 | 692 | 269 | 99 |
 | tbb_hash | 9.3 | 62 | 64 | 23 | 23 |
 | libcuckoo | 11.5 | 51 | 33 | 293 | 6.3 |
-<!--- | growt | 7.8 | 45 | 171 | 61 | 61 | --->
 | folly_hash | 11.9 | 82 | failed | 139 | 41 |
 | boost_hash | 24.7 | 84 | 57 | 31 | 14 | 
 | parallel_hashmap | 22 | 81 | 110 | 199 | --- |
@@ -191,6 +193,8 @@ the hash map multiple times).
 | abseil (sequential) | 40.1 | --- | --- | --- | --- |
 | folly_F14 (sequential) | 28.5 | --- | --- | --- | --- |
 | std (sequential) | 13.2 | --- | --- | --- | --- |
+
+<!--- | growt | 7.8 | 45 | 171 | 61 | 61 | --->
 
 We do not include growing numbers for the semi growable hash tables.
 
