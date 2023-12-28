@@ -23,8 +23,8 @@ private:
 
   using map = parlay_hash<Entry>;
   map m;
-  static constexpr auto identity = [] (const Entry& kv) {return kv;};
-  static constexpr auto get_value = [] (const Entry& kv) {return kv.value;};
+  static constexpr auto identity = [] (const Entry& k) {return k;};
+  static constexpr auto return_true = [] (const Entry& k) {return true;};
   static constexpr bool default_clear_at_end = false;
 
 public :
@@ -43,9 +43,8 @@ public :
   long count(const K& k) { return (contains(k)) ? 1 : 0; }
   bool contains(const K& k) { return Find(k).has_value();}
 
-  template <typename F = decltype(get_value)>
-  auto Find(const K& k, const F& f = get_value) {
-    return m.Find(k, f);
+  bool Find(const K& k) {
+    return m.Find(k, return_true).has_value();
   }
 
   iterator find(const K& k) { return m.find(k); }
@@ -54,13 +53,12 @@ public :
     return m.insert(Entry(entry));
   }
 
-  template <typename F = decltype(get_value)>
-  auto Insert(const K& key, const F& f = get_value) {
-    return m.Insert(Entry(key), f);
+  bool Insert(const K& key) {
+    return m.Insert(Entry(key), return_true).has_value();
   }
 
   std::optional<Entry> Remove(const K& k) {
-    return m.Remove(k);
+    return m.Remove(k, return_true).has_value();
   }
 
   iterator erase(iterator pos) {

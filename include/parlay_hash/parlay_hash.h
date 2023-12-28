@@ -405,19 +405,21 @@ public:
 	  return x;});});
   }
 
-  std::optional<Entry> Remove(const K& k) {
+  template <typename F = decltype(identity)>
+  auto Remove(const K& k, const F& f = identity) {
+    using rtype = typename std::result_of<F(Entry)>::type;
     table_version* ht = current_table_version.load();
     long idx = ht->get_index(k);
     bucket* s = &ht->buckets[idx];
     __builtin_prefetch (s);
-    return epoch::with_epoch([&] () -> std::optional<Entry> {
+    return epoch::with_epoch([&] () -> std::optional<rtype> {
       auto y = parlay::try_loop([&] {
 	  copy_if_needed(ht, idx);
 	  auto x = bcks.try_remove(s, k);
 	  if (!x.has_value()) 
 	    get_active_bucket(ht, s, k);
 	  return x;});
-      if (y != nullptr) return(std::optional(std::move(*y)));
+      if (y != nullptr) return std::optional(f(*y));
       else return {};});
   }
 
