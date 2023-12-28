@@ -83,7 +83,7 @@ generate_string_distribution(long n) {
   return std::pair(a,b);
 }
 
-template <typename Hash, typename K>
+template <typename Hash, int vsize, typename K>
 std::tuple<double,double>
 test_loop(commandLine& C,
 	  std::string info,
@@ -99,8 +99,7 @@ test_loop(commandLine& C,
 	  bool warmup,  // run one warmup round
 	  bool grow) {  // start with table of size 1
 
-  int vsize = 3;
-  using V = std::array<unsigned long, 3>;
+  using V = std::array<unsigned long, vsize>;
   V default_value;
   for (auto& x : default_value) x = 1;
 
@@ -322,8 +321,8 @@ int main(int argc, char* argv[]) {
 	auto [a, b] = generate_integer_distribution(n, p, zipfian_param);
 	std::stringstream str;
 	str << "z=" << zipfian_param;
-	results.push_back(test_loop<IntHash>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-					     trial_time, latency_cuttoff, verbose, warmup, grow));
+	results.push_back(test_loop<IntHash,1>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+					       trial_time, latency_cuttoff, verbose, warmup, grow));
       }
       if (print_means) std::cout << std::endl;
     }
@@ -333,7 +332,7 @@ int main(int argc, char* argv[]) {
     auto [a, b] = generate_string_distribution(n);
     std::stringstream str;
     str << "tristr";
-    results.push_back(test_loop<StringHash>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+    results.push_back(test_loop<StringHash,4>(P, str.str(), a, b, p, rounds, update_percent, upsert,
 					    trial_time, latency_cuttoff, verbose, warmup, grow));
   }
 
