@@ -72,7 +72,7 @@
 #include "../utils/epoch.h"
 #include "../utils/lock.h"
 
-#define USE_LOCKS 1
+//#define USE_LOCKS 1
 
 namespace parlay {
 
