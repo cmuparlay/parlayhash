@@ -134,7 +134,9 @@ public:
 
   static state get_state(bucket& bck) { return bck.load(); }
   
-  static void initialize(bucket& bck) { bck.store(state()); }
+  static void initialize(bucket& bck) {
+    new (&bck) big_atomic<state>();
+    bck.store(state()); }
 
   void retire_state(state& s) {
     retire_list(s.get_head());

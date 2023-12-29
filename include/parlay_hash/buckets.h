@@ -1,3 +1,5 @@
+#ifndef PARLAY_BUCKETS_STRUCT_
+#define PARLAY_BUCKETS_STRUCT_
 
 namespace parlay {
   
@@ -267,3 +269,5 @@ struct buckets_struct {
 
   };
 } // end namespace parlay
+
+#endif // PARLAY_BUCKETS_STRUCT_

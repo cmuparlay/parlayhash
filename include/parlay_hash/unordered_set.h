@@ -54,10 +54,10 @@ public :
   }
 
   bool Insert(const K& key) {
-    return m.Insert(Entry(key), return_true).has_value();
+    return !m.Insert(Entry(key), return_true).has_value();
   }
 
-  std::optional<Entry> Remove(const K& k) {
+  bool Remove(const K& k) {
     return m.Remove(k, return_true).has_value();
   }
 

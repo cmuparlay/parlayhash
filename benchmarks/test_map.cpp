@@ -9,13 +9,14 @@
 #include "parse_command_line.h"
 #include "trigrams.h"
 
-#define STRING 1
+//#define STRING 1
 
 using K = unsigned long;
 using V = unsigned long;
 using namespace parlay;
 
 #include "unordered_map.h"
+
 
 // leave undefined if measuring througput since measuring latency will slow down throughput
 //#define Latency 1
@@ -48,7 +49,8 @@ double geometric_mean(const parlay::sequence<double>& vals) {
   return  pow(product, 1.0 / vals.size());
 }
 
-std::pair<parlay::sequence<K>,parlay::sequence<K>>
+template <typename int_type>
+std::pair<parlay::sequence<int_type>,parlay::sequence<int_type>>
 generate_integer_distribution(long n,   // num entries in map
 			      long p,
 			      double zipfian_param) // zipfian parameter [0:1) (0 is uniform, .99 is high skew)
@@ -64,10 +66,10 @@ generate_integer_distribution(long n,   // num entries in map
   //auto a = parlay::tabulate(2 * n, [&] (size_t i) {return y[i];});
 
   // have to exlude key = 0 since growt does not seem to allow it
-  auto a = parlay::random_shuffle(parlay::tabulate(2 * n, [] (K i) { return i + 1;}));
+  auto a = parlay::random_shuffle(parlay::tabulate(2 * n, [] (int_type i) { return i + 1;}));
 
   // take m numbers from a in uniform or zipfian distribution
-  parlay::sequence<K> b;
+  parlay::sequence<int_type> b;
   if (zipfian_param != 0.0) {
     Zipfian z(2 * n, zipfian_param);
     b = parlay::tabulate(m, [&] (int i) { return a[z(i)]; });
@@ -85,12 +87,12 @@ generate_string_distribution(long n) {
   return std::pair(a,b);
 }
 
-template <typename Hash, int vsize, typename K>
+template <typename Map>
 std::tuple<double,double>
 test_loop(commandLine& C,
 	  std::string info,
-	  const parlay::sequence<K>& a,
-	  const parlay::sequence<K>& b,
+	  const parlay::sequence<typename Map::K>& a,
+	  const parlay::sequence<typename Map::K>& b,
 	  long p,   // num threads
 	  long rounds,  // num trials
 	  int update_percent, // percent of operations that are either insert or delete (1/2 each)
@@ -101,11 +103,7 @@ test_loop(commandLine& C,
 	  bool warmup,  // run one warmup round
 	  bool grow) {  // start with table of size 1
 
-  using V = std::array<unsigned long, vsize>;
-  V default_value;
-  for (auto& x : default_value) x = 1;
-  
-  using map_type = unordered_map<K,V,Hash>;
+  using K = typename Map::K;
   enum op_type : char {Find, Insert, Remove};
   long n = a.size()/2;
   long m = b.size();
@@ -122,7 +120,7 @@ test_loop(commandLine& C,
   parlay::sequence<double> bench_times;
 
   for (int i = 0; i < rounds + warmup; i++) { {
-    map_type map = grow ? map_type(1) : map_type(n);
+    Map map = grow ? Map(1) : Map(n);
     size_t np = n/p;
     size_t mp = m/p;
 
@@ -135,10 +133,10 @@ test_loop(commandLine& C,
       long s = i * block_size;
       long e = std::min(s + block_size, n);
       for (int j = s; j < e; j++)
-	map.insert(HANDLE a[j], default_value); }, 1, true);
+	map.insert(HANDLE a[j]); }, 1, true);
 #else
     parlay::parallel_for(0, n, [&] (size_t i) {
-	map.insert(a[i], default_value); });
+	map.insert(a[i]); });
 #endif
     if (map.size() != n)
       std::cout << "bad initial size = " << map.size() << std::endl;
@@ -203,28 +201,26 @@ test_loop(commandLine& C,
 	  query_count++;
 #ifdef Latency
 	  auto start_op_time = std::chrono::system_clock::now();
-	  auto r = map.find(HANDLE b[j]);
-	  query_success_count += r.has_value() ? (*r)[0] : 0;
+	  query_success_count += map.find(b[j]);
 	  auto current = std::chrono::system_clock::now();
 	  std::chrono::duration<double> duration = current - start_op_time;
 	  if (duration.count() * 1000000 < latency_cutoff)
 	    latency_count++;
 #else
-	  auto r = map.find(HANDLE b[j]);
-	  query_success_count += r.has_value() ? (*r)[0] : 0;
+	  query_success_count += map.find(b[j]);
 #endif
 	} else if (op_types[k] == Insert) {
-#ifdef UPSERT
+#ifdef UPSERTX
 	  if (upsert) {
 	    if (map.upsert(HANDLE b[j], [&] (std::optional<V> v) {return default_value;})) {added++; update_success_count++;}
 	  } else {
 	    if (map.insert(HANDLE b[j], default_value)) {added++; update_success_count++;}
 	  }
 #else
-	  if (map.insert(HANDLE b[j], default_value)) {added++; update_success_count++;}
+	  if (map.insert(b[j])) {added++; update_success_count++;}
 #endif
 	} else { // (op_types[k] == Remove)
-	  if (map.remove(HANDLE b[j])) {removed++; update_success_count++;}
+	  if (map.remove(b[j])) {removed++; update_success_count++;}
 	}
 
 
@@ -292,6 +288,36 @@ test_loop(commandLine& C,
       geometric_mean(bench_times)};
 }
 
+template <typename K_, typename Hash, int val_len>
+struct bench_map {
+  using K = K_;
+  using V = std::array<long,val_len>;
+  V default_val;
+  unordered_map<K,V,Hash> m;
+  bench_map(size_t n) : m(n) { default_val[0] = 1;}
+  int find(const K& k) {
+    auto r = m.find(k);
+    return r.has_value() ? (*r)[0] : 0;
+  }
+  bool insert(const K& k) { return m.insert(k, default_val); }
+  bool remove(const K& k) { return m.remove(k); }
+  long size() { return m.size(); }
+};
+
+#ifdef USE_SET
+template <typename K_, typename Hash>
+struct bench_set {
+  using K = K_;
+  unordered_set<K,Hash> m;
+  bench_set(size_t n) : m(n) {}
+  int find(const K& k) { return (m.find(k)) ? 1 : 0; }
+  bool insert(const K& k) { return m.insert(k); }
+  bool remove(const K& k) { return m.remove(k);}
+  long size() { return m.size(); }
+};
+#endif
+
+    
 int main(int argc, char* argv[]) {
   commandLine P(argc,argv,"[-n <size>] [-r <rounds>] [-p <procs>] [-z <zipfian_param>] [-u <update percent>] [-verbose]");
 
@@ -317,26 +343,30 @@ int main(int argc, char* argv[]) {
 
   parlay::sequence<std::tuple<double,double>> results;
 
+  using int_type = unsigned long;
+  using long_map_type = bench_map<unsigned long, IntHash, 1>;
+  //using long_map_type = bench_set<int_type, IntHash>;
   for (auto zipfian_param : zipfians)
     for (auto update_percent : percents) {
       for (auto n : sizes) {
-	auto [a, b] = generate_integer_distribution(n, p, zipfian_param);
+	auto [a, b] = generate_integer_distribution<int_type>(n, p, zipfian_param);
 	std::stringstream str;
 	str << "z=" << zipfian_param;
-	results.push_back(test_loop<IntHash,1>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-					       trial_time, latency_cuttoff, verbose, warmup, grow));
+	results.push_back(test_loop<long_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+						   trial_time, latency_cuttoff, verbose, warmup, grow));
       }
       if (print_means) std::cout << std::endl;
     }
 
 #ifdef STRING
+  using string_map_type = bench_map<std::string, StringHash, 4>;
   for (auto update_percent : percents) {
     long n = 250000000;
     auto [a, b] = generate_string_distribution(n);
     std::stringstream str;
     str << "tristr";
-    results.push_back(test_loop<StringHash,4>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-					    trial_time, latency_cuttoff, verbose, warmup, grow));
+    results.push_back(test_loop<string_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+						  trial_time, latency_cuttoff, verbose, warmup, grow));
   }
 #endif
 

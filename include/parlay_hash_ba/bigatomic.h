@@ -55,11 +55,6 @@ struct alignas(32) big_atomic {
   void store(const V& v) {
     vtype ver = version.load();
     int delay = 100;
-    if (ver & 1) {
-      while (ver == version.load())
-        ;
-      return;
-    }
     while (true) {
       if (get_locks().try_lock((long)this, [&] {
             if (version.load() == ver) {
@@ -113,7 +108,7 @@ struct alignas(32) big_atomic {
   bool sc(tag expected_tag, const V& v) {
     vtype ver = version.load();
     bool result = true;
-    int delay = 100;
+    int delay = 200;
     if (expected_tag != ver) {
       //while (ver == version.load(std::memory_order_acquire))
         ;
@@ -121,7 +116,6 @@ struct alignas(32) big_atomic {
     }
     while (true) {
       if (get_locks().try_lock((long)this, [&] {
-            V current_v = val;
             if (version.load(std::memory_order_acquire) != expected_tag)
               result = false;
             else {
@@ -136,7 +130,7 @@ struct alignas(32) big_atomic {
       if (version.load() != expected_tag) return false;
       for (volatile int i = 0; i < delay; i++)
         ;
-      delay = std::min(2 * delay, 1000);
+      delay = std::min(2 * delay, 5000);
     }
   }
 

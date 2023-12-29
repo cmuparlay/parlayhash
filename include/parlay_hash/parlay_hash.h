@@ -7,6 +7,9 @@
 #include "../utils/epoch.h"
 #include "../utils/lock.h"
 
+#ifndef PARLAY_HASH_H_
+#define PARLAY_HASH_H_
+
 //#define USE_LOCKS 1
 
 #include "buckets.h"
@@ -449,3 +452,4 @@ public:
 };
 
 }
+#endif // PARLAY_HASH_H_

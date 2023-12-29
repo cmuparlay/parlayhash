@@ -25,4 +25,22 @@ struct unordered_map {
     return m.Remove(k).has_value();
   }
 };
+
+#define USE_SET
+
+#include "parlay_hash/unordered_set.h"
+
+template <typename K,
+	  class Hash = std::hash<K>,
+	  class KeyEqual = std::equal_to<K>>
+struct unordered_set {
+
+  using Set = parlay_unordered_set<K,Hash,KeyEqual>;
+  Set m;
+  unordered_set(long n) : m(Set(n)) {}
+  long size() { return m.size();}
+  bool find(const K& k) { return m.Find(k); }
+  bool insert(const K& key) { return m.Insert(key); }
+  bool remove(const K& k) { return m.Remove(k); }
+};
     

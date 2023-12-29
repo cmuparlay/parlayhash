@@ -152,7 +152,7 @@ private:
 	 size(1ul << num_bits),
 	 overflow_size(40), //num_bits < 18 ? 9 : 12),
 	 buckets(parlay::sequence<bucket>::uninitialized(size)) {
-      parlay::parallel_for(0, size, [&] (long i) { bstruct::initialize(buckets[i]);});
+      parlay::parallel_for(0, size, [&] (long i) { bstruct::initialize(buckets[i]); });
     }
 
     // expanded table version copied from smaller version t
