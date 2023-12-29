@@ -65,7 +65,7 @@
 // Requires some extra memory to pad the front and back of a structure.
 #define EpochMemCheck 1
 #endif
-#define EpochMemCheck 1
+//#define EpochMemCheck 1
 
 #define USE_MALLOC 1
 #define USE_STEPPING 1

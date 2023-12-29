@@ -17,7 +17,7 @@ add_benchmark(std_hash other "" "" "")
 add_benchmark(std_sharded other "" "" "")
 add_benchmark(libcuckoo other "" "" "")
 add_benchmark(growt other "" "-mcx16" "")
-add_benchmark(seqhash other "" "" "")
+add_benchmark(seq_hash other "" "" "")
 add_benchmark(parallel_hashmap other "" "" "")
 
 find_package(GTest)

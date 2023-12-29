@@ -121,7 +121,7 @@ For some of these you need to have the relevant library installed
 copyable key and value types when supplied hash and equality functions
 for the keys.
 
-The tables marked with ** are "semi" growable.  In particular they all
+The tables marked with ** are "semi" growable.  In particular they are all
 sharded and to perform well one needs to select the right number of
 shards, which depends on the expected size and number of threads.  For
 the experiments given below we selected 2^14 shards for all, except
@@ -181,14 +181,14 @@ the hash map multiple times).
 
 | Hash Map | 1 thread | 16 threads | 128 threads | 128 insert | 128 grow |
 | - | - | - | - | - | - |
-| parlay_hash lf | 15.9 | 162 | 651 | 301 | 112 |
-| parlay_hash lock | 16.1 | 156 | 692 | 269 | 99 |
-| tbb_hash | 9.3 | 62 | 64 | 23 | 23 |
-| libcuckoo | 11.5 | 51 | 33 | 293 | 6.3 |
-| folly_hash | 11.9 | 82 | failed | 139 | 41 |
+| parlay_hash lf | 17.7 | 168 | 651 | 301 | 112 |
+| parlay_hash lock | 17.0 | 159 | 692 | 269 | 99 |
+| tbb_hash | 11.1 | 62 | 64 | 23 | 23 |
+| libcuckoo | 11.6 | 51 | 33 | 293 | 6.3 |
+| folly_hash | 10.6 | 82 | failed | 139 | 41 |
 | boost_hash | 24.7 | 84 | 57 | 31 | 14 | 
 | parallel_hashmap | 22 | 81 | 110 | 199 | --- |
-| seq_hash | 25.4 | 114 | 104 | 248 | --- |
+| seq_hash | 24.4 | 114 | 104 | 248 | --- |
 | folly_sharded | 17.7 | 79 | 115 | 380 | --- |
 | abseil (sequential) | 40.1 | --- | --- | --- | --- |
 | folly_F14 (sequential) | 28.5 | --- | --- | --- | --- |
