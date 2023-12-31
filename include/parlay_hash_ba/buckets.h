@@ -81,6 +81,7 @@ public:
     state() : list_head(0) {}
 	
     bool is_forwarded() const {return list_head == 1ul ;}
+    bool is_empty() const {return list_head == 0ul ;}
     long length() const {return (list_head >> 48) & 255ul ;}
     void inc_length() {list_head += (1ul << 48);}
     void dec_length() {list_head -= (1ul << 48);}

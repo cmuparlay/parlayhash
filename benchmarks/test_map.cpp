@@ -267,7 +267,7 @@ test_loop(commandLine& C,
 		<< ", removes = " << removed
 		<< std::endl;
     if (qratio < .4 || qratio > .6)
-      std::cout << "warning: query success ratio = " << qratio << std::endl;
+      std::cout << "warning: query success ratio = " << qratio << ", " << queries_success << ", " << queries << std::endl;
     if (uratio < .4 || uratio > .6)
       std::cout << "warning: update success ratio = " << uratio << std::endl;
     if (initial_size + added - removed != final_cnt) {
@@ -288,10 +288,10 @@ test_loop(commandLine& C,
       geometric_mean(bench_times)};
 }
 
-template <typename K_, typename Hash, int val_len>
+template <typename K_, typename V_, typename Hash, int val_len>
 struct bench_map {
   using K = K_;
-  using V = std::array<long,val_len>;
+  using V = std::array<V_,val_len>;
   V default_val;
   unordered_map<K,V,Hash> m;
   bench_map(size_t n) : m(n) { default_val[0] = 1;}
@@ -344,22 +344,22 @@ int main(int argc, char* argv[]) {
   parlay::sequence<std::tuple<double,double>> results;
 
   using int_type = unsigned long;
-  using long_map_type = bench_map<unsigned long, IntHash, 1>;
-  //using long_map_type = bench_set<int_type, IntHash>;
+  using int_map_type = bench_map<int_type, int_type, IntHash, 1>;
+  //using int_map_type = bench_set<int_type, IntHash>;
   for (auto zipfian_param : zipfians)
     for (auto update_percent : percents) {
       for (auto n : sizes) {
 	auto [a, b] = generate_integer_distribution<int_type>(n, p, zipfian_param);
 	std::stringstream str;
 	str << "z=" << zipfian_param;
-	results.push_back(test_loop<long_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+	results.push_back(test_loop<int_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
 						   trial_time, latency_cuttoff, verbose, warmup, grow));
       }
       if (print_means) std::cout << std::endl;
     }
 
 #ifdef STRING
-  using string_map_type = bench_map<std::string, StringHash, 4>;
+  using string_map_type = bench_map<std::string, long, StringHash, 4>;
   for (auto update_percent : percents) {
     long n = 250000000;
     auto [a, b] = generate_string_distribution(n);

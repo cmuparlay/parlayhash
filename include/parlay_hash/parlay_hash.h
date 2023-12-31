@@ -209,7 +209,7 @@ private:
 
   Entry* find_in_bucket(table_version* t, bucket* s, const K& k) {
     state x = bcks.get_state(*s);
-    // if bucket is forwarded, go to next version
+    //if bucket is forwarded, go to next version
     if (x.is_forwarded()) {
       table_version* nxt = t->next.load();
       return find_in_bucket(nxt, nxt->get_bucket(k), k);
@@ -353,7 +353,9 @@ public:
     using rtype = typename std::result_of<F(Entry)>::type;
     table_version* ht = current_table_version.load();
     bucket* s = ht->get_bucket(k);
-    __builtin_prefetch (s);
+    auto l = s->load();
+    if (l.is_empty()) return std::optional<rtype>();
+    //__builtin_prefetch (s);
     return epoch::with_epoch([=] () -> std::optional<rtype> {
 			       Entry* r = find_in_bucket(ht, s, k);
 			       if (r == nullptr) return {};

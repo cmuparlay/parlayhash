@@ -279,7 +279,7 @@ private:
 #ifndef USE_UNDO
     int delay = 1;
 #else
-    int delay = 5;
+    int delay = 2;
 #endif
     if (pid.epoch + delay < get_epoch().get_current()) {
       pid.reserve.splice(pid.reserve.end(), pid.old);
