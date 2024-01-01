@@ -47,7 +47,7 @@ public:
   }
 
       template <typename F>
-  auto try_loop(const F& f, int delay = 200, const int max_multiplier = 10) {
+  auto try_loop(const F& f, int delay = 200, const int max_multiplier = 20) {
     int multiplier = 1;
     int cnt = 0;
     while (true)  {
