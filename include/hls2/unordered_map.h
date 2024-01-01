@@ -1,7 +1,6 @@
-
 #ifndef PARLAY_BIGATOMIC_HASH_LIST
 #define PARLAY_BIGATOMIC_HASH_LIST
-//#define USE_SET
+#define USE_SET
 
 #include <functional>
 #include <optional>
@@ -101,6 +100,7 @@ struct parlay_hash {
     return epoch::New<link>(entry, l); }
 
   explicit parlay_hash(size_t n) : hash_table(Table(n)) {}
+
   ~parlay_hash() {
     auto& table = hash_table.table;
     parlay::parallel_for(0, table.size(), [&](size_t i) {
@@ -147,6 +147,7 @@ struct parlay_hash {
   static void retire_list_all(link* nxt) {
     while (nxt != nullptr) {
       link* tmp = nxt->next;
+      nxt->entry.retire();
       epoch::Retire(nxt);
       nxt = tmp;
     }
@@ -169,14 +170,6 @@ struct parlay_hash {
     return -1;
   }
 
-  bool maybe_find_in_buffer(const state& s, const K& k) {
-    long len = s.length();
-    for (long i = 0; i < std::min(len, block_size); i++)
-      if (s.entries[i].equal(k))
-	return true;
-    return false;
-  }
-
   template <typename F>
   auto find_in_state(const state& s, const K& k, const F& f)
     -> std::optional<typename std::result_of<F(Entry)>::type>
@@ -188,57 +181,73 @@ struct parlay_hash {
     if (len <= block_size) return std::nullopt;
     return find_in_list(s.get_head(), k, f);
   }
-
+  
   template <typename F>
   auto find(const K& k, const F& f)
     -> std::optional<typename std::result_of<F(Entry)>::type>
   {
     auto s = hash_table.get_bucket(k);
-    //if (s->load().is_empty()) return std::nullopt;
-    //if (!maybe_find_in_buffer(s->load(),k)) return std::nullopt;
-    __builtin_prefetch(s);
-    return epoch::with_epoch([&] () -> std::optional<typename std::result_of<F(Entry)>::type> {
-			       return find_in_state(s->load(), k, f);
-    auto [l, tg] = s->ll();
-    for (long i = 0; i < std::min(l.length(), block_size); i++)
-      if (l.entries[i].equal(k)) 
-	return std::optional(f(l.entries[i]));
-    if (l.length() <= block_size) return std::nullopt;
-    //return epoch::with_epoch([&] {
-      if (s->lv(tg)) return find_in_list(l.get_head(), k, f);
+    if (Entry::Direct) {
+      auto [l, tg] = s->ll();
+      for (long i = 0; i < std::min(l.length(), block_size); i++)
+	if (l.entries[i].equal(k))
+	  return std::optional(f(l.entries[i]));
+      if (l.length() <= block_size) return std::nullopt;
+      return epoch::with_epoch([&] {
+	if (s->lv(tg)) return find_in_list(l.get_head(), k, f);
 	return find_in_state(s->load(), k, f);
       });
+    } else {
+      __builtin_prefetch(s);
+      return epoch::with_epoch([&] () -> std::optional<typename std::result_of<F(Entry)>::type> {
+	  return find_in_state(s->load(), k, f);});
+    }
   }
 
-  bool insert(const K& key, const Entry& entry) {
+  template <typename Constr, typename F>
+  auto insert(const K& key, const Constr& constr, const F& f)
+    -> std::optional<typename std::result_of<F(Entry)>::type>
+  {
+    using rtype = std::optional<typename std::result_of<F(Entry)>::type>;
     auto s = hash_table.get_bucket(key);
-    //auto [l, tg] = s->ll();
-    //if (l.length() < block_size && !maybe_find_in_buffer(l, key))
-    //  if (s->sc(tg, state(l, entry))) return true;
-    //__builtin_prefetch(s);
-    return epoch::with_epoch([&] {
+    if (Entry::Direct) {
+      auto [l, tg] = s->ll();
+      for (long i = 0; i < std::min(l.length(), block_size); i++)
+	if (l.entries[i].equal(key)) return f(l.entries[i]);
+      if (l.length() < block_size) {
+	Entry entry = constr();
+	if (s->sc(tg, state(l, entry))) return std::nullopt;
+	entry.retire();
+      }
+    }
+    return epoch::with_epoch([&] () -> rtype {
       int delay = 200;
       while (true) {
 	auto [l, tg] = s->ll();
 	long len = l.length();
 	if (l.is_empty()) {
-	  if (s->sc(tg, state(entry))) return true;
+	  Entry new_e = constr();
+	  if (s->sc(tg, state(new_e))) return std::nullopt;
+	  new_e.retire();
 	} else {
 	  for (long i = 0; i < std::min(len, block_size); i++)
-	    if (l.entries[i].equal(key)) return false;
+	    if (l.entries[i].equal(key)) return f(l.entries[i]);
 	  if (len < block_size) {
-	    if (s->sc(tg, state(l, entry))) return true;
+	    Entry new_e = constr();
+	    if (s->sc(tg, state(l, new_e))) return std::nullopt;
+	    new_e.retire(); 
 	  } else if (len == block_size) {
-	    link* new_head = new_link(entry, nullptr);
+	    link* new_head = new_link(constr(), nullptr);
 	    if (s->sc(tg, state(l, new_head))) 
-	      return true;
+	      return std::nullopt;
+	    new_head->entry.retire();
 	    epoch::Delete(new_head);
 	  } else {
-	    if (find_in_list(l.get_head(), key,
-			     [] (const Entry e) {return true;}).has_value())
-	      return false;
-	    link* new_head = new_link(entry, l.get_head());
-	    if (s->sc(tg, state(l, new_head))) return true;
+	    auto x = find_in_list(l.get_head(), key, f);
+	    if (x.has_value()) return x;
+	    link* new_head = new_link(constr(), l.get_head());
+	    if (s->sc(tg, state(l, new_head))) return std::nullopt;
+	    new_head->entry.retire();
 	    epoch::Delete(new_head);
 	  }
         }
@@ -248,9 +257,25 @@ struct parlay_hash {
     });
   }
 
-  bool remove(const K& k) {
+  template <typename F>
+  auto remove(const K& k, const F& f)
+    -> std::optional<typename std::result_of<F(Entry)>::type>
+  {
+    using rtype = std::optional<typename std::result_of<F(Entry)>::type>;
     auto s = hash_table.get_bucket(k);
-    return epoch::with_epoch([&] {
+    if (Entry::Direct) {
+      auto [l, tg] = s->ll();
+      if (l.length() <= block_size) {
+	int i = find_in_buffer(l, k);
+	if (i == -1) return std::nullopt;
+	if (s->sc(tg, state(l, i))) {
+	  rtype r = f(l.entries[i]);
+	  l.entries[i].retire();
+	  return r;
+	}
+      }
+    }
+    return epoch::with_epoch([&] () -> rtype {
       int delay = 200;
       while (true) {
         auto [l, tg] = s->ll();
@@ -259,24 +284,29 @@ struct parlay_hash {
 	  if (l.length() > block_size) {
 	    link* ll = l.get_head();
 	    if (s->sc(tg, state(l, ll, i))) {
+	      rtype r = f(l.entries[i]);
 	      l.entries[i].retire();
 	      epoch::Retire(ll);
-	      return true;
+	      return r;
 	    }
 	  } else {
 	    if (s->sc(tg, state(l, i))) {
+	      rtype r = f(l.entries[i]);
 	      l.entries[i].retire();
-	      return true;
+	      return r;
 	    }
 	  }
 	} else {
-	  if (l.length() <= block_size) return false;
+	  if (l.length() <= block_size)
+	    return std::nullopt;
 	  auto [cnt, new_head, removed] = remove_from_list(l.get_head(), k);
-          if (cnt == 0) return false;
+          if (cnt == 0)
+	    return std::nullopt;
           if (s->sc(tg, state(l, new_head))) {
+	    rtype r = f(removed->entry);
 	    removed->entry.retire();
             retire_list_n(l.get_head(), cnt);
-            return true;
+            return r;
           }
           retire_list_n(new_head, cnt - 1);
 	}
@@ -291,108 +321,164 @@ struct parlay_hash {
   }
 };
 
-  template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  struct unordered_map {
-
-    struct Data {
-      K key;
-      V value;
-      Data(const K& key, const V& value) : key(key), value(value) {}
-    };
-
+  template <typename K_, typename V_, class Hash = std::hash<K_>, class KeyEqual = std::equal_to<K_>>
+  struct IndirectMapEntry {
+    using K = K_;
+    using V = V_;
+    using Data = std::pair<K, V>;
     using Key = std::pair<K,size_t>;
-    
-    struct Entry {
-      using Key = typename unordered_map::Key;
-      Data* ptr;
-      static Data* tagged_ptr(const Key& k, const V& v) {
-	Data* x = epoch::New<Data>(k.first, v);
-	return (Data*) (((k.second >> 48) << 48) | ((size_t) x));
-      }
-      Data* get_ptr() const {
-	return (Data*) (((size_t) ptr) & ((1ul << 48) - 1)); }
-      static unsigned long hash(const Key& k) {return k.second;}
-      bool equal(const Key& k) const {
-	return (((k.second >> 48) == (((size_t) ptr) >> 48)) &&
-		KeyEqual{}(get_ptr()->key, k.first)); }
-      bool maybe_equal(const Key& k) const {
-	return ((k.second >> 48) == (((size_t) ptr) >> 48));}
-      void retire() { epoch::Retire(get_ptr()); }
-      Entry(const Key& k, const V& v) : ptr(tagged_ptr(k, v)) {}
-      Entry() {}
-    };
+    static constexpr bool Direct = false;
+    Data* ptr;
+    static Data* tagged_ptr(const Key& k, const V& v) {
+      Data* x = epoch::New<Data>(k.first, v);
+      return (Data*) (((k.second >> 48) << 48) | ((size_t) x));
+    }
+    Data* get_ptr() const {
+      return (Data*) (((size_t) ptr) & ((1ul << 48) - 1)); }
+    static unsigned long hash(const Key& k) {return k.second;}
+    bool equal(const Key& k) const {
+      return (((k.second >> 48) == (((size_t) ptr) >> 48)) &&
+	      KeyEqual{}(get_ptr()->first, k.first)); }
+    void retire() { epoch::Retire(get_ptr()); }
+    V get_value() const { return get_ptr()->second;}
+    static Key make_key(const K& key) { return Key(key,Hash{}(key));}
+    IndirectMapEntry(const Key& k, const V& v) : ptr(tagged_ptr(k, v)) {}
+    IndirectMapEntry() {}
+  };
 
+  template <typename K_, typename V_, class Hash = std::hash<K_>, class KeyEqual = std::equal_to<K_>>
+  struct DirectMapEntry {
+    using K = K_;
+    using V = V_;
+    using Key = K;
+    using Data = std::pair<K, V>;
+    static const bool Direct = true;
+    Data data;
+    static unsigned long hash(const Key& k) {return Hash{}(k);}
+    bool equal(const Key& k) const {
+      return KeyEqual{}(data.first, k); }
+    void retire() {}
+    static Key make_key(const K& k) {return k;}
+    V get_value() const {return data.second;}
+    DirectMapEntry(const Key& k, const V& v) : data(Data(k,v)) {}
+    DirectMapEntry() {}
+  };
+
+  template <typename Entry>
+  struct unordered_map_ {
     using map = parlay_hash<Entry>;
     map m;
-    static constexpr auto get_value = [] (const Entry& kv) {return kv.get_ptr()->value;};
+    static constexpr auto true_f = [] (const Entry& kv) {return true;};
+    static constexpr auto get_value = [] (const Entry& kv) {return kv.get_value();};
 
+    using K = typename Entry::K;
+    using V = typename Entry::V;
     using key_type = K;
     using mapped_type = V;
     using value_type = std::pair<K, V>;
-    Key make_key(const K& key) { return Key(key,Hash{}(key));}
 
-    unordered_map(long n) : m(map(n)) {}
+    unordered_map_(long n) : m(map(n)) {}
 
     bool empty() {return size() == 0;}
     bool max_size() {return (1ul << 47)/sizeof(Entry);}
-    void clear() {m.clear();}
+    //void clear() {m.clear();}
     long size() { return m.size();}
-    long count(const K& k) { return (contains(k)) ? 1 : 0; }
-    bool contains(const K& k) { return Find(k).has_value();}
+    //long count(const K& k) { return (contains(k)) ? 1 : 0; }
+    //bool contains(const K& k) { return Find(k).has_value();}
 
     template <typename F = decltype(get_value)>
     auto find(const K& k, const F& f = get_value)
       -> std::optional<typename std::result_of<F(Entry)>::type>
-    { //std::cout << "find" << std::endl;
-      return m.find(make_key(k), f); }
+    { return m.find(Entry::make_key(k), f); }
     
     bool insert(const K& key, const V& value) {
-      //std::cout << "insert" << std::endl;
-      auto x = make_key(key);
-      //std::cout << "insert2" << std::endl;
-      return m.insert(x, Entry(x, value)); }
+      auto x = Entry::make_key(key);
+      return !m.insert(x, [&] {return Entry(x, value);}, true_f).has_value(); }
 
     bool remove(const K& k) { //      std::cout << "remove" << std::endl;
-      return m.remove(make_key(k)); }
+      return m.remove(Entry::make_key(k), true_f).has_value(); }
 
   };
 
-  // template <typename K, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  // struct unordered_set {
+  template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
+  using unordered_map_i = unordered_map_<IndirectMapEntry<K, V, Hash, KeyEqual>>;
 
-  //   struct Entry {
-  //     using Key = K;
-  //     K key;
-  //     static unsigned long hash(const K& k) {return Hash{}(k);}
-  //     bool equal(const K& k) const {return KeyEqual{}(key, k);}
-  //     const K& get_key() const {return key;}
-  //     Entry(const K& k) : key(k) {}
-  //     Entry() {}
-  //   };
+  template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
+  using unordered_map = unordered_map_<DirectMapEntry<K, V, Hash, KeyEqual>>;
 
-  //   using map = parlay_hash<Entry>;
-  //   map m;
-  //   static constexpr auto truef = [] (const Entry& kv) {return true;};
+  template <typename K_, class Hash = std::hash<K_>, class KeyEqual = std::equal_to<K_>>
+  struct IndirectSetEntry {
+    using K = K_;
+    using Data = K;
+    using Key = K;
+    static constexpr bool Direct = false;
+    Data* ptr;
+    static Data* tagged_ptr(const Key& k) {
+      Data* x = epoch::New<Data>(k.first);
+      return (Data*) (((k.second >> 48) << 48) | ((size_t) x));
+    }
+    Data* get_ptr() const {
+      return (Data*) (((size_t) ptr) & ((1ul << 48) - 1)); }
+    static unsigned long hash(const Key& k) {return k.second;}
+    bool equal(const Key& k) const {
+      return (((k.second >> 48) == (((size_t) ptr) >> 48)) &&
+	      KeyEqual{}(*get_ptr(), k.first)); }
+    void retire() { epoch::Retire(get_ptr()); }
+    static Key make_key(const K& key) { return Key(key,Hash{}(key));}
+    IndirectSetEntry(const Key& k) : ptr(tagged_ptr(k)) {}
+    IndirectSetEntry() {}
+  };
 
-  //   using key_type = K;
-  //   using value_type = K;
+  template <typename K_, class Hash = std::hash<K_>, class KeyEqual = std::equal_to<K_>>
+  struct DirectSetEntry {
+    using K = K_;
+    using Key = K;
+    static const bool Direct = true;
+    Key data;
+    static unsigned long hash(const Key& k) {return Hash{}(k);}
+    bool equal(const Key& k) const {return KeyEqual{}(data, k); }
+    void retire() {}
+    static Key make_key(const K& k) {return k;}
+    DirectSetEntry(const Key& k) : data(k) {}
+    DirectSetEntry() {}
+  };
 
-  //   unordered_set(long n) : m(map(n)) {}
+  template <typename Entry>
+  struct unordered_set_ {
+  private:
+    using map = parlay_hash<Entry>;
+    map m;
+    static constexpr auto true_f = [] (const Entry& kv) {return true;};
 
-  //   bool empty() {return size() == 0;}
-  //   bool max_size() {return (1ul << 47)/sizeof(Entry);}
-  //   void clear() {m.clear();}
-  //   long size() { return m.size();}
-  //   long count(const K& k) { return (contains(k)) ? 1 : 0; }
-  //   bool contains(const K& k) { return Find(k).has_value();}
+  public:
+    using key_type = K;
+    using value_type = K;
 
-  //   bool find(const K& k) { return m.find(k, truef).has_value(); }
+    unordered_set_(long n) : m(map(n)) {}
+
+    bool empty() {return size() == 0;}
+    bool max_size() {return (1ul << 47)/sizeof(Entry);}
+    //void clear() {m.clear();}
+    long size() { return m.size();}
+    //long count(const K& k) { return (contains(k)) ? 1 : 0; }
+    //bool contains(const K& k) { return Find(k).has_value();}
+
+    bool find(const K& k) {
+      return m.find(Entry::make_key(k), true_f).has_value(); }
     
-  //   bool insert(const K& key) { return m.insert(Entry{key}); }
+    bool insert(const K& key) {
+      auto x = Entry::make_key(key);
+      return !m.insert(x, [&] {return Entry(x);}, true_f).has_value(); }
 
-  //   bool remove(const K& k) { return m.remove(k); }
+    bool remove(const K& k) {
+      return m.remove(Entry::make_key(k), true_f).has_value(); }
 
-  // };
+  };
 
+  template <typename K, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
+  using unordered_set_i = unordered_set_<IndirectSetEntry<K, Hash, KeyEqual>>;
+
+  template <typename K, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
+  using unordered_set = unordered_set_<DirectSetEntry<K, Hash, KeyEqual>>;
 }  // namespace parlay
 #endif  // PARLAY_BIGATOMIC_HASH_LIST

@@ -83,7 +83,7 @@ generate_integer_distribution(long n,   // num entries in map
 std::pair<parlay::sequence<std::string>,parlay::sequence<std::string>>
 generate_string_distribution(long n) {
   auto b = trigramWords(n);
-  auto a = parlay::remove_duplicates(b);
+  auto a = parlay::random_shuffle(parlay::remove_duplicates(b));
   return std::pair(a,b);
 }
 
@@ -361,7 +361,7 @@ int main(int argc, char* argv[]) {
 #ifdef STRING
   using string_map_type = bench_map<std::string, long, StringHash, 4>;
   for (auto update_percent : percents) {
-    long n = 250000000;
+    long n = 20000000;
     auto [a, b] = generate_string_distribution(n);
     std::stringstream str;
     str << "tristr";

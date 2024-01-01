@@ -208,7 +208,6 @@ struct parlay_hash {
       int delay = 100;
       while (true) {
 	auto [l, tg] = s->ll();
-	for (volatile int i =0; i < delay; i++);
 	long len = l.length();
 	if (l.is_empty()) {
 	  if (s->sc(tg, state(entry))) return true;
@@ -231,9 +230,8 @@ struct parlay_hash {
 	    epoch::Delete(new_head);
 	  }
         }
-	//for (volatile int i=0; i < delay; i++);
-	//delay = std::min(2*delay, 10000);
-	delay = 2000;
+	for (volatile int i=0; i < delay; i++);
+	delay = std::min(2*delay, 2000);
       }
     });
   }
@@ -250,7 +248,6 @@ struct parlay_hash {
       int delay = 200;
       while (true) {
         auto [l, tg] = s->ll();
-	for (volatile int i =0; i < delay; i++);
 	int i = find_in_buffer(l, k);
 	if (i >= 0) {
 	  if (l.length() > block_size) {
@@ -272,9 +269,8 @@ struct parlay_hash {
           }
           retire_list_n(new_head, cnt - 1);
 	}
-	//for (volatile int i=0; i < delay; i++);
-	//delay = std::min(2*delay, 10000);
-	delay = 2000;
+	for (volatile int i=0; i < delay; i++);
+	delay = std::min(2*delay, 2000);
       }
     });
   }
