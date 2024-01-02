@@ -442,7 +442,7 @@ public:
   }
 
   template <typename F = decltype(identity)>
-  parlay::sequence<Entry> entries(const F& f = identity) {
+  auto entries(const F& f = identity) {
     table_version* t = current_table_version.load();
     return epoch::with_epoch([&] {
       auto s = parlay::tabulate(t->size, [&] (size_t i) {
