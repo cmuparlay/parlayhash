@@ -15,102 +15,124 @@ template <typename Entry>
 struct parlay_hash {
   using K = typename Entry::Key;
 
-  static constexpr long block_size = (sizeof(Entry) > 24) ? 1 : 48 / sizeof(Entry);
-  static constexpr long extra_bits = (block_size == 1) ? 0 : ((block_size < 4) ? -1 : ((block_size < 8) ? -2 : -3));
+  // buffer_size is picked so state fits in a cache line (if it can)
+  static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 48 / sizeof(Entry);
 
+  // log_2 of the expected number of entries in a bucket (< buffer_size)
+  static constexpr long log_bucket_size =
+    (buffer_size == 1) ? 0 : ((buffer_size < 4) ? 1 : ((buffer_size < 8) ? 2 : 3));
+
+  // for overflow lists
   struct link {
     Entry entry;
     link* next;
     link(const Entry& entry, link* next) : entry(entry), next(next) {}
   };
 
+  // for delayed reclamation of links
+  static link* new_link(const Entry& entry, link* l) {
+    return epoch::New<link>(entry, l); }
+  static void retire_link(link* l) { epoch::Retire(l);}
+
+  // Each bucket contains a "state", which consists of a fixed size
+  // buffer of entries (buffer_size) and an overflow list.  The first
+  // buffer_size entries in the bucket are kept in the buffer, and any
+  // overflow goes to the list.  The head stores both the pointer to
+  // the overflow list (lower 56 bits) and the number of elements in
+  // the buffer, or buffer_size+1 if overfull (top 8 bits).
   struct state {
   public:
     size_t list_head;
-    Entry entries[block_size];
+    Entry buffer[buffer_size];
     state() : list_head(0) {}
     state(const Entry& e) : list_head(1ul << 48) {
-      entries[0] = e;
+      buffer[0] = e;
     }
 
-    // update list with new ptr (assumes buffer is full)
+    // update overflow list with new ptr (assumes buffer is full)
     state(const state& s, link* ptr) : list_head(((size_t) ptr) |
-						 (block_size + (ptr != nullptr)) << 48) {
-      for (int i=0; i < block_size; i++)
-	entries[i] = s.entries[i];
+						 (buffer_size + (ptr != nullptr)) << 48) {
+      for (int i=0; i < buffer_size; i++)
+	buffer[i] = s.buffer[i];
     }
 
-    // add entry into buffer
-    state(const state& s, Entry e) : list_head((s.length() + 1) << 48) {
-      for (int i=0; i < s.length(); i++)
-	entries[i] = s.entries[i];
-      entries[s.length()] = e;
+    // add entry into the buffer at the end (assumes there is space)
+    state(const state& s, Entry e) : list_head((s.buffer_cnt() + 1) << 48) {
+      for (int i=0; i < s.buffer_cnt(); i++)
+	buffer[i] = s.buffer[i];
+      buffer[s.buffer_cnt()] = e;
     }
 
-    // remove buffer entry j, replace with first from list
+    // remove buffer entry j, replace with first from overflow list (assumes there is overflow)
     state(const state& s, link* ptr, int j) : list_head(((size_t) ptr->next) |
-							(block_size + (ptr->next != nullptr)) << 48) {
-      for (int i=0; i < block_size; i++)
-	entries[i] = s.entries[i];
-      entries[j] = Entry{ptr->entry};
+							(buffer_size + (ptr->next != nullptr)) << 48) {
+      for (int i=0; i < buffer_size; i++)
+	buffer[i] = s.buffer[i];
+      buffer[j] = Entry{ptr->entry};
     }
 
-    // remove buffer entry j, replace with last entry in buffer, assumes no list
-    state(const state& s, int j) : list_head((s.length() - 1) << 48) {
-      for (int i=0; i < s.length(); i++)
-	entries[i] = s.entries[i];
-      entries[j] = entries[s.length() - 1];
+    // remove buffer entry j, replace with last entry in buffer (assumes no overflow)
+    state(const state& s, int j) : list_head((s.buffer_cnt() - 1) << 48) {
+      for (int i=0; i < s.buffer_cnt(); i++)
+	buffer[i] = s.buffer[i];
+      buffer[j] = buffer[s.buffer_cnt() - 1];
     }
 
-    bool is_empty() const {return list_head == 0ul ;}
-    long length() const {return (list_head >> 48) & 255ul ;}
+    // number of entries in buffer, or buffer_size+1 if overflow
+    long buffer_cnt() const {return (list_head >> 48) & 255ul ;}
+
+    // number of entries in bucket (includes those in the overflow list)
     long size() const {
-      if (length() <= block_size) return length();
-      return block_size + list_length(get_head());
+      if (buffer_cnt() <= buffer_size) return buffer_cnt();
+      return buffer_size + list_length(overflow_list());
     }
-    
-    void inc_length() {list_head += (1ul << 48);}
-    void dec_length() {list_head -= (1ul << 48);}
-    link* get_head() const {return (link*) (list_head & ((1ul << 48) - 1));}
-    void set_head(link* ptr, size_t n) {
-      list_head = ((size_t) ptr) | (n << 48);}
+
+    // get the overflow list
+    link* overflow_list() const {
+      return (link*) (list_head & ((1ul << 48) - 1));}
   };
 
-  struct alignas(64) bucket {
+  struct alignas(64) bucket { // wrapper to ensure alignment
     big_atomic<state> v;
   };
 
   struct Table {
+    // just an array of buckets
     parlay::sequence<bucket> table;
     size_t size;
+
+    // use hash function to get bucket
     big_atomic<state>* get_bucket(const K& k) {
       size_t idx = Entry::hash(k) & (size - 1u);
       return &table[idx].v;
     }
+    
     explicit Table(size_t n) {
-      unsigned bits = parlay::log2_up(n) + extra_bits ;
-      size = 1ul << bits;
+      unsigned log_num_buckets = parlay::log2_up(n) - log_bucket_size ;
+      size = 1ul << log_num_buckets;  // size is a power of 2
       table = parlay::sequence<bucket>(size);
     }
   };
 
   Table hash_table;
 
-  static link* new_link(const Entry& entry, link* l) {
-    return epoch::New<link>(entry, l); }
-
   explicit parlay_hash(size_t n) : hash_table(Table(n)) {}
 
+  // clear all entries and reclaim memory
   void clear() {
     auto& table = hash_table.table;
     parlay::parallel_for(0, table.size(), [&](size_t i) {
-      retire_list_all(table[i].v.load().get_head()); });
+      state l = table[i].v.load();
+      for (int i=0; i < l.buffer_cnt(); i++)
+	l.buffer[i].retire();
+      retire_list_all(l.overflow_list()); });
   }
   
   ~parlay_hash() {
     clear();
   }
 
+  // returns std::optional(f(entry)) for entry with given key
   template <typename F>
   static auto find_in_list(const link* nxt, const K& k, const F& f) {
     using rtype = typename std::result_of<F(Entry)>::type;
@@ -125,7 +147,8 @@ struct parlay_hash {
 
   // If k is found copies list elements up to k, and keeps the old
   // tail past k.  Returns the number of new nodes that will need to
-  // be reclaimed.  If not found, does nothing, and returns 0.
+  // be reclaimed, the head of the new list, and the link that is removed.
+  // Returns [0, nullptr, nullptr] if k is not found
   static std::tuple<int, link*, link*> remove_from_list(link* nxt, const K& k) {
     if (nxt == nullptr)
       return std::tuple(0, nullptr, nullptr);
@@ -133,26 +156,27 @@ struct parlay_hash {
       return std::tuple(1, nxt->next, nxt);
     else {
       auto [len, ptr, removed] = remove_from_list(nxt->next, k);
-      if (len == 0) return std::tuple(len, nullptr, nullptr);
+      if (len == 0) return std::tuple(0, nullptr, nullptr);
       return std::tuple(len + 1, new_link(nxt->entry, ptr), removed);
     }
   }
 
-  // retires first n elements of a list
+  // retires first n elements of a list, but not the entries
   static void retire_list_n(link* nxt, int n) {
     while (n > 0) {
       n--;
       link* tmp = nxt->next;
-      epoch::Retire(nxt);
+      retire_link(nxt);
       nxt = tmp;
     }
   }
 
+  // retires full list and their entries
   static void retire_list_all(link* nxt) {
     while (nxt != nullptr) {
       link* tmp = nxt->next;
       nxt->entry.retire();
-      epoch::Retire(nxt);
+      retire_link(nxt);
       nxt = tmp;
     }
   }
@@ -166,61 +190,75 @@ struct parlay_hash {
     return len;
   }
 
+  // find key if it is in the buffer
   int find_in_buffer(const state& s, const K& k) {
-    long len = s.length();
-    for (long i = 0; i < std::min(len, block_size); i++)
-      if (s.entries[i].equal(k))
+    long len = s.buffer_cnt();
+    for (long i = 0; i < std::min(len, buffer_size); i++)
+      if (s.buffer[i].equal(k))
 	return i;
     return -1;
   }
 
+  // find key if in the bucket (state)
   template <typename F>
-  auto find_in_state(const state& s, const K& k, const F& f)
+  auto find_in_bucket(const state& s, const K& k, const F& f)
     -> std::optional<typename std::result_of<F(Entry)>::type>
   {
-    long len = s.length();
-    for (long i = 0; i < std::min(len, block_size); i++)
-      if (s.entries[i].equal(k))
-	return std::optional(f(s.entries[i]));
-    if (len <= block_size) return std::nullopt;
-    return find_in_list(s.get_head(), k, f);
+    long len = s.buffer_cnt();
+    for (long i = 0; i < std::min(len, buffer_size); i++)
+      if (s.buffer[i].equal(k))
+	return std::optional(f(s.buffer[i]));
+    if (len <= buffer_size) return std::nullopt;
+    return find_in_list(s.overflow_list(), k, f);
   }
-  
+
+  // Finds the entry with the key
+  // Returns an optional which is empty if the key is not in the table,
+  // and contains f(e) otherwise, where e is the entry matching the key
   template <typename F>
   auto find(const K& k, const F& f)
     -> std::optional<typename std::result_of<F(Entry)>::type>
   {
     auto s = hash_table.get_bucket(k);
+    // if entries are direct, then safe to scan the buffer without epoch protection
     if (Entry::Direct) {
       auto [l, tg] = s->ll();
-      for (long i = 0; i < std::min(l.length(), block_size); i++)
-	if (l.entries[i].equal(k))
-	  return std::optional(f(l.entries[i]));
-      if (l.length() <= block_size) return std::nullopt;
+      // search in buffer
+      for (long i = 0; i < std::min(l.buffer_cnt(), buffer_size); i++)
+	if (l.buffer[i].equal(k))
+	  return std::optional(f(l.buffer[i]));
+      // if not found and not overfull, then done
+      if (l.buffer_cnt() <= buffer_size) return std::nullopt;
+      // otherwise need to search overflow, which requires protection
       return epoch::with_epoch([&] {
-	if (s->lv(tg)) return find_in_list(l.get_head(), k, f);
-	return find_in_state(s->load(), k, f);
+        // if state has not changed, then just search list
+	if (s->lv(tg)) return find_in_list(l.overflow_list(), k, f);
+	return find_in_bucket(s->load(), k, f); // otherwise do full search
       });
-    } else {
+    } else { // if using indirection always use protection
       __builtin_prefetch(s);
       return epoch::with_epoch([&] () -> std::optional<typename std::result_of<F(Entry)>::type> {
-	  return find_in_state(s->load(), k, f);});
+	  return find_in_bucket(s->load(), k, f);});
     }
   }
 
+  // Inserts at key, and does nothing if key already in the table.
+  // The constr function construct the entry to be inserted if needed.
+  // Returns an optional, which is empty if sucessfully inserted or
+  // contains f(e) if not, where e is the entry matching the key.
   template <typename Constr, typename F>
   auto insert(const K& key, const Constr& constr, const F& f)
     -> std::optional<typename std::result_of<F(Entry)>::type>
   {
     using rtype = std::optional<typename std::result_of<F(Entry)>::type>;
     auto s = hash_table.get_bucket(key);
-    // if entries are direct safe to scan the buffer without epoch protection
+    // if entries are direct, then safe to scan the buffer without epoch protection
     if (Entry::Direct) {
       auto [l, tg] = s->ll();
       // if found in buffer then done
-      for (long i = 0; i < std::min(l.length(), block_size); i++)
-	if (l.entries[i].equal(key)) return f(l.entries[i]);
-      if (l.length() < block_size) { // buffer has space, insert to end of buffer
+      for (long i = 0; i < std::min(l.buffer_cnt(), buffer_size); i++)
+	if (l.buffer[i].equal(key)) return f(l.buffer[i]);
+      if (l.buffer_cnt() < buffer_size) { // buffer has space, insert to end of buffer
 	Entry entry = constr();
 	if (s->sc(tg, state(l, entry))) return std::nullopt;
 	entry.retire();
@@ -231,28 +269,28 @@ struct parlay_hash {
       int delay = 200;
       while (true) {
 	auto [l, tg] = s->ll();
-	long len = l.length();
+	long len = l.buffer_cnt();
 	// if found in buffer then done
-	for (long i = 0; i < std::min(len, block_size); i++)
-	  if (l.entries[i].equal(key)) return f(l.entries[i]);
-	if (len < block_size) { // buffer has space, insert to end of buffer
+	for (long i = 0; i < std::min(len, buffer_size); i++)
+	  if (l.buffer[i].equal(key)) return f(l.buffer[i]);
+	if (len < buffer_size) { // buffer has space, insert to end of buffer
 	  Entry new_e = constr();
 	  if (s->sc(tg, state(l, new_e))) return std::nullopt;
 	  new_e.retire(); // if failed need to ty again
-	} else if (len == block_size) { // buffer full, insert new link
+	} else if (len == buffer_size) { // buffer full, insert new link
 	  link* new_head = new_link(constr(), nullptr);
 	  if (s->sc(tg, state(l, new_head))) 
 	    return std::nullopt;
 	  new_head->entry.retire(); // if failed need to ty again
-	  epoch::Delete(new_head);
+	  retire_link(new_head);
 	} else { // buffer overfull, need to check if in list
-	  auto x = find_in_list(l.get_head(), key, f);
+	  auto x = find_in_list(l.overflow_list(), key, f);
 	  if (x.has_value()) return x; // if in list, then done
-	  link* new_head = new_link(constr(), l.get_head());
+	  link* new_head = new_link(constr(), l.overflow_list());
 	  if (s->sc(tg, state(l, new_head))) // try to add to head of list
 	    return std::nullopt;
 	  new_head->entry.retire(); // if failed need to ty again
-	  epoch::Delete(new_head);
+	  retire_link(new_head);
 	}
 	for (volatile int i=0; i < delay; i++);
 	delay = std::min(2*delay, 5000);
@@ -260,6 +298,9 @@ struct parlay_hash {
     });
   }
 
+  // Removes entry with given key
+  // Returns an optional which is empty if the key is not in the table,
+  // and contains f(e) otherwise, where e is the entry that is removed.
   template <typename F>
   auto remove(const K& k, const F& f)
     -> std::optional<typename std::result_of<F(Entry)>::type>
@@ -269,12 +310,12 @@ struct parlay_hash {
     // if entries are direct safe to scan the buffer without epoch protection
     if (Entry::Direct) {
       auto [l, tg] = s->ll();
-      if (l.length() <= block_size) {
+      if (l.buffer_cnt() <= buffer_size) {
 	int i = find_in_buffer(l, k);
 	if (i == -1) return std::nullopt;
 	if (s->sc(tg, state(l, i))) {
-	  rtype r = f(l.entries[i]);
-	  l.entries[i].retire();
+	  rtype r = f(l.buffer[i]);
+	  l.buffer[i].retire();
 	  return r;
 	} // if sc failed, will need to try again
       }
@@ -286,32 +327,32 @@ struct parlay_hash {
         auto [l, tg] = s->ll();
 	int i = find_in_buffer(l, k);
 	if (i >= 0) { // found in buffer
-	  if (l.length() > block_size) { // need to backfill from list
-	    link* ll = l.get_head();
+	  if (l.buffer_cnt() > buffer_size) { // need to backfill from list
+	    link* ll = l.overflow_list();
 	    if (s->sc(tg, state(l, ll, i))) {
-	      rtype r = f(l.entries[i]);
-	      l.entries[i].retire();
-	      epoch::Retire(ll);
+	      rtype r = f(l.buffer[i]);
+	      l.buffer[i].retire();
+	      retire_link(ll);
 	      return r;
 	    } // if sc failed, will need to try again
 	  } else { // buffer not overfull, can backfill within buffer
 	    if (s->sc(tg, state(l, i))) {
-	      rtype r = f(l.entries[i]);
-	      l.entries[i].retire();
+	      rtype r = f(l.buffer[i]);
+	      l.buffer[i].retire();
 	      return r;
 	    } // if sc failed, will need to try again
 	  }
 	} else { // not found in buffer
-	  if (l.length() <= block_size) // if not overful, then done
+	  if (l.buffer_cnt() <= buffer_size) // if not overful, then done
 	    return std::nullopt;
-	  auto [cnt, new_head, removed] = remove_from_list(l.get_head(), k);
+	  auto [cnt, new_head, removed] = remove_from_list(l.overflow_list(), k);
           if (cnt == 0) // not found in list
 	    return std::nullopt;
 	  // found and removed from list
           if (s->sc(tg, state(l, new_head))) { 
 	    rtype r = f(removed->entry);
 	    removed->entry.retire();
-            retire_list_n(l.get_head(), cnt); // retire old list
+            retire_list_n(l.overflow_list(), cnt); // retire old list
             return r;
           } // if sc failed, will need to try again
           retire_list_n(new_head, cnt - 1); // failed, retire new list
@@ -322,14 +363,13 @@ struct parlay_hash {
     });
   }
 
-  // Add all entries in bucket i of table version t to result.
-  // Needs to follow through to forwarded buckets accumuate entries.
+  // Add all entries in bucket i of table to result.
   template <typename Seq, typename F>
   static void bucket_entries(Table* t, long i, Seq& result, const F& f) {
     state l = t->table[i].v.load();
-    for (int i=0; i < std::min(l.length(), block_size); i++)
-      result.push_back(f(l.entries[i]));
-    link* lnk = l.get_head();
+    for (int i=0; i < std::min(l.buffer_cnt(), buffer_size); i++)
+      result.push_back(f(l.buffer[i]));
+    link* lnk = l.overflow_list();
     while (lnk != nullptr) {
       result.push_back(f(lnk->entry));
       lnk = lnk->next;
@@ -356,25 +396,34 @@ struct parlay_hash {
   }
 
   struct Iterator {
-    using E = typename Entry::Data;
-    std::vector<E> entries;
-    E entry;
+  public:
+    using value_type        = typename Entry::Data;
+    using iterator_category = std::forward_iterator_tag;
+    using pointer           = value_type*;
+    using reference         = value_type&;
+    using difference_type   = long;
+
+  private:
+    std::vector<value_type> entries;
+    value_type entry;
     Table* t;
     int i;
     long bucket_num;
     bool single;
     bool end;
-    Iterator(bool end) : i(0), bucket_num(-2l), single(false), end(true) {}
-    Iterator(Table* t) : t(t),
-      i(0), bucket_num(-1l), single(false), end(false) {
-      get_next_bucket();
-    }
-    Iterator(E entry) : entry(entry), single(true), end(false) {}
     void get_next_bucket() {
       while (entries.size() == 0 && ++bucket_num < t->size)
 	bucket_entries(t, bucket_num, entries, [] (const Entry& e) {return e.get_entry();});
       if (bucket_num == t->size) end = true;
     }
+
+  public:
+    Iterator(bool end) : i(0), bucket_num(-2l), single(false), end(true) {}
+    Iterator(Table* t) : t(t),
+      i(0), bucket_num(-1l), single(false), end(false) {
+      get_next_bucket();
+    }
+    Iterator(value_type entry) : entry(entry), single(true), end(false) {}
     Iterator& operator++() {
       if (single) end = true;
       else if (++i == entries.size()) {
@@ -384,14 +433,27 @@ struct parlay_hash {
       }
       return *this;
     }
-    E& operator*() {
+    Iterator& operator++(int) {
+      Iterator tmp = *this;
+      if (single) end = true;
+      else if (++i == entries.size()) {
+	i = 0;
+	entries.clear();
+	get_next_bucket();
+      }
+      return tmp;
+    }
+    value_type& operator*() {
       if (single) return entry;
       return entries[i];}
     bool operator!=(const Iterator& iterator) {
       return !(end ? iterator.end : (bucket_num == iterator.bucket_num &&
 				     i == iterator.i));
     }
+    bool operator==(const Iterator& iterator) {
+      return !(*this != iterator);}
   };
+
   Iterator begin() { return Iterator(&hash_table);}
   Iterator end() { return Iterator(true);}
 
@@ -404,6 +466,7 @@ struct parlay_hash {
     using Data = std::pair<K, V>;
     using Key = std::pair<K,size_t>;
     static constexpr bool Direct = false;
+  private:
     Data* ptr;
     static Data* tagged_ptr(const Key& k, const V& v) {
       Data* x = epoch::New<Data>(k.first, v);
@@ -411,6 +474,7 @@ struct parlay_hash {
     }
     Data* get_ptr() const {
       return (Data*) (((size_t) ptr) & ((1ul << 48) - 1)); }
+  public:
     static unsigned long hash(const Key& k) {return k.second;}
     bool equal(const Key& k) const {
       return (((k.second >> 48) == (((size_t) ptr) >> 48)) &&
@@ -497,6 +561,7 @@ struct parlay_hash {
     using Data = K;
     using Key = K;
     static constexpr bool Direct = false;
+  private:
     Data* ptr;
     static Data* tagged_ptr(const Key& k) {
       Data* x = epoch::New<Data>(k.first);
@@ -504,6 +569,7 @@ struct parlay_hash {
     }
     Data* get_ptr() const {
       return (Data*) (((size_t) ptr) & ((1ul << 48) - 1)); }
+  public:
     static unsigned long hash(const Key& k) {return k.second;}
     bool equal(const Key& k) const {
       return (((k.second >> 48) == (((size_t) ptr) >> 48)) &&
