@@ -26,8 +26,8 @@ private:
   static constexpr int grow_factor = 1 << log_grow_factor;
 
   // groups of block_size buckets are copied over by a single thread
-  static constexpr int block_size = 64;
-
+  static constexpr long min_block_size = 16;
+  
   static constexpr bool default_clear_at_end = false;
 
   // *********************************************
@@ -44,7 +44,7 @@ private:
   // *********************************************
 
   // status of a block of buckets
-  enum status : char {Empty, Working, Done};
+  enum status : char {Empty, Initializing, Forwarding, Done};
 
   // A single version of the table.
   // A version includes a sequence of "size" "buckets".
@@ -55,6 +55,7 @@ private:
     std::atomic<long> finished_block_count; //number of blocks finished copying
     long num_bits;  // log_2 of size
     size_t size; // number of buckets
+    long block_size;
     int overflow_size; // size of bucket to trigger next expansion
     sequence<bucket> buckets; // sequence of buckets
     sequence<std::atomic<status>> block_status; // status of each block while copying
@@ -70,8 +71,10 @@ private:
     table_version(long n) 
        : next(nullptr),
 	 finished_block_count(0),
-	 num_bits(1 + parlay::log2_up(std::max<long>(block_size, n))),
+	 num_bits(std::max<long>(parlay::log2_up(min_block_size),
+				 parlay::log2_up(n) + 1)),
 	 size(1ul << num_bits),
+	 block_size(num_bits < 10 ? min_block_size : (num_bits < 16 ? 64 : 256)),
 	 overflow_size(num_bits < 18 ? 9 : 12),
 	 buckets(parlay::sequence<bucket>::uninitialized(size)) {
       parlay::parallel_for(0, size, [&] (long i) { bstruct::initialize(buckets[i]);});
@@ -83,9 +86,13 @@ private:
 	finished_block_count(0),
 	num_bits(t->num_bits + log_grow_factor),
 	size(t->size * grow_factor),
+	block_size(num_bits < 16 ? 32 : 256),
 	overflow_size(num_bits < 18 ? 9 : 12),
 	buckets(parlay::sequence<bucket>::uninitialized(size)),
-	block_status(parlay::sequence<std::atomic<status>>(t->size/block_size)) {
+	block_status(parlay::sequence<std::atomic<status>>(t->size/t->block_size))
+    {
+      //parlay::parallel_for(0, size, [&] (long i) { bstruct::initialize(buckets[i]);});
+      //for (int i=0; i < size; i++) bstruct::initialize(buckets[i]);
       std::fill(block_status.begin(), block_status.end(), Empty);
     }
   };
@@ -110,60 +117,45 @@ private:
       get_locks().try_lock((long) ht, [&] {
 	 if (ht->next == nullptr) {
 	   ht->next = new table_version(ht);
-	   //std::cout << "expand to: " << n * grow_factor << std::endl;
+	   std::cout << "expand to: " << n * grow_factor << std::endl;
 	 }
 	 return true;});
     }
   }
 
-  // Copies a key_value pair into a new table version.
-  // Note this is not thread safe...i.e. only this thread should be
-  // updating the bucket corresponding to the key.
-  void copy_element(table_version* t, Entry& key_value) {
-    size_t idx = t->get_index(key_value.get_key());
-    bcks.push_entry(t->buckets[idx], key_value);
-  }
-
   // Copies a bucket into grow_factor new buckets.
   // This is the version if USE_LOCKS is not set.
-  void copy_bucket_cas(table_version* t, table_version* next, long i) {
+  bool copy_bucket(table_version* t, table_version* next, long i) {
     long exp_start = i * grow_factor;
-    // Clear grow_factor buckets in the next table version to put them in.
-    for (int j = exp_start; j < exp_start + grow_factor; j++)
-      bcks.initialize(next->buckets[j]);
-    // copy bucket to grow_factor new buckets in next table version
-    while (true) {
-      state bck = bcks.get_state(t->buckets[i]);
-      for (auto& e : bck)
-	copy_element(next, e);
-
-      // try to replace original bucket with forwarded marker
-      // succeeded = t->buckets[i].compare_exchange_strong(bucket, head_ptr::forwarded_link());
-      if (bcks.try_mark_as_forwarded(t->buckets[i], bck)) break;
-	  
-      // If the attempt failed then someone updated bucket in the meantime so need to retry.
-      // Before retrying need to clear out already added buckets.
-      for (int j = exp_start; j < exp_start + grow_factor; j++)
-	bcks.clear(next->buckets[j]);
+    state bck = bcks.get_state(t->buckets[i]);
+    if (bck.is_forwarded()) return false;
+    while (bck.is_stable()) {
+      if (bcks.try_mark_as_initializing(t->buckets[i], bck)) { 
+	for (int j = exp_start; j < exp_start + grow_factor; j++)
+	  bcks.initialize(next->buckets[j]); 
+	bcks.mark_as_initialized(t->buckets[i], bck);
+      }
+      bck = bcks.get_state(t->buckets[i]);
     }
-  }
-
-  // Copies a bucket into grow_factor new buckets.
-  // This is the version if USE_LOCKS is set.
-  void copy_bucket_lock(table_version* t, table_version* next, long i) {
-    long exp_start = i * grow_factor;
-    bucket* bck = &(t->buckets[i]);
-    while (!get_locks().try_lock((long) bck, [=] {
-      // Initialize grow_factor buckets in the next table version to put them in.
-      for (int j = exp_start; j < exp_start + grow_factor; j++)
-        bcks.initialize(next->buckets[j]);
-      // copy to new buckets
-      for (auto& e : bcks.get_state(t->buckets[i]))
-	copy_element(next, e);
-      // mark as forwarded
-      bcks.mark_as_forwarded(t->buckets[i]);
-      return true;}))
-      for (volatile int i=0; i < 200; i++);
+    while (bck.is_initializing())
+      bck = bcks.get_state(t->buckets[i]);
+    state tmp_buckets[grow_factor];
+    for (auto& e : bck) {
+      size_t idx = next->get_index(e.get_key()) & (grow_factor - 1);
+      tmp_buckets[idx] = bcks.push_state(tmp_buckets[idx], e);
+    }
+    for (int j = 0; j < grow_factor; j++) {
+      bcks.try_copy(next->buckets[exp_start + j], tmp_buckets[j]);
+    }
+    //if (bcks.get_state(t->buckets[i]).is_forwarded()) return true;
+    // if (bcks.try_mark_as_forwarded(t->buckets[i], bck))
+    //   if (++next->finished_bucket_count == t->size) {
+    // 	//current_table_version = next;
+    // 	std::cout << "expand bucket done: " << i << ", " << parlay::worker_id() << std::endl;
+    // 	return true;
+    //   }
+    // return false;
+    return bcks.try_mark_as_forwarded(t->buckets[i], bck);
   }
 
   // If copying is ongoing (i.e., next is not null), and if the the
@@ -173,33 +165,20 @@ private:
   void copy_if_needed(table_version* t, long hashid) {
     table_version* next = t->next.load();
     if (next != nullptr) {
-      long block_num = hashid & (next->block_status.size() -1);
-      status st = next->block_status[block_num];
-      status old = Empty;
-      if (st == Done) return;
-      else if (st == Empty &&
-	       next->block_status[block_num].compare_exchange_strong(old, Working)) {
-	long start = block_num * block_size;
-	// copy block_size buckets
-	for (int i = start; i < start + block_size; i++) {
-#ifndef USE_LOCKS
-	  copy_bucket_cas(t, next, i);
-#else
-	  copy_bucket_lock(t, next, i);
-#endif
-	}
-	assert(next->block_status[block_num] == Working);
-	next->block_status[block_num] = Done;
+      long block_num = hashid / t->block_size; // CONVERT TO A SHIFT
+      long start = block_num * t->block_size;
+      status e = Empty;
+      if (next->block_status[block_num].load() == Empty &&
+	  next->block_status[block_num].compare_exchange_strong(e, Done)) {
+	for (int i = start; i < start + t->block_size; i++)
+	  copy_bucket(t, next, i);
+
 	// if all blocks have been copied then can set current table to next
-	if (++next->finished_block_count == next->block_status.size()) {
+	if (++next->finished_block_count == t->size/t->block_size) {
 	  current_table_version = next;
+	  std::cout << "expand done" << std::endl;
 	}
-      } else {
-	// If working then wait until Done
-	while (next->block_status[block_num] == Working) {
-	  for (volatile int i=0; i < 100; i++);
-	}
-      }
+      } else copy_bucket(t, next, hashid);
     }
   }
 
@@ -354,6 +333,7 @@ public:
     table_version* ht = current_table_version.load();
     bucket* s = ht->get_bucket(k);
     auto l = s->load();
+    //if (l.is_stable()) abort();
     if (l.is_empty()) return std::optional<rtype>();
     //__builtin_prefetch (s);
     return epoch::with_epoch([=] () -> std::optional<rtype> {

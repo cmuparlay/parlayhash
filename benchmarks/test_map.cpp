@@ -135,8 +135,9 @@ test_loop(commandLine& C,
       for (int j = s; j < e; j++)
 	map.insert(HANDLE a[j]); }, 1, true);
 #else
-    parlay::parallel_for(0, n, [&] (size_t i) {
-	map.insert(a[i]); });
+    auto x = parlay::tabulate(n, [&] (size_t i) { return (long) map.insert(a[i]); });
+    if (parlay::reduce(x) != n) 
+      std::cout << "insertions not counted" << std::endl;
 #endif
     if (map.size() != n)
       std::cout << "bad initial size = " << map.size() << std::endl;

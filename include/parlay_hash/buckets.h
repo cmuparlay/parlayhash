@@ -94,10 +94,16 @@ struct buckets_struct {
     struct head_ptr {
       size_t ptr;
       static head_ptr forwarded_link() {return head_ptr((link*) 1ul);}
+      static head_ptr initializing_link(head_ptr x) { x.ptr |= 2ul; return x;}
+      static head_ptr copying_link(head_ptr x) { x.ptr |= 3ul; return x;}
       bool is_forwarded() {return ptr == 1ul ;}
+      bool is_forwarding() {return (ptr & 3ul) != 0 ;}
+      bool is_initializing() {return (ptr & 3ul) == 2ul ;}
+      bool is_stable() {return (ptr & 3ul) == 0ul ;}
       bool is_empty() {return ptr == 0 ;}
       head_ptr(link* ptr) : ptr((size_t) ptr) {}
-      operator link*() {return (link*) ptr;}
+      head_ptr() : ptr(0ul) {}
+      operator link*() {return (link*) (ptr & ~3ul);}
       bool operator ==(const head_ptr h) {return ptr == h.ptr;}
       struct Iterator {
 	link* cur;
@@ -106,7 +112,7 @@ struct buckets_struct {
 	Entry& operator*() {return cur->element;}
 	bool operator!=(Iterator& iterator) {return cur != iterator.cur;}
       };
-      Iterator begin() { return Iterator((link*) ptr);}
+      Iterator begin() { return Iterator((link*) (ptr & ~3ul));}
       Iterator end() { return Iterator(nullptr);}
     };
 
@@ -150,9 +156,24 @@ struct buckets_struct {
       return false;
     }
 
-    void mark_as_forwarded(bucket& bck) {
-      bck = head_ptr::forwarded_link();
-    }
+  bool try_mark_as_initializing(bucket& bck, state old_s) {
+    return bck.compare_exchange_strong(old_s, head_ptr::initializing_link(old_s));}
+
+  void mark_as_initialized(bucket& bck, state old_s) {
+    if (!bck.load().is_initializing()) abort();
+    bck = head_ptr::copying_link(old_s);
+  }
+
+  void try_copy(bucket& bck, state new_s) {
+    state empty;
+    if (!new_s.is_empty() &&
+	!bck.compare_exchange_strong(empty, new_s))
+	retire_list((link*) new_s);
+  }
+
+  state push_state(const state& s, Entry key_value) {
+    return link_pool->New(key_value, s);
+  }
 
     void push_entry(bucket& bck, Entry key_value) {
       link* ptr = bck.load();
@@ -188,7 +209,7 @@ struct buckets_struct {
     std::pair<std::optional<Entry*>, long>
     try_insert(bucket* s, const Entry& entry) {
       head_ptr old_head = s->load();    
-      if (old_head.is_forwarded()) return std::pair(std::nullopt, 0);
+      if (!old_head.is_stable()) return std::pair(std::nullopt, 0);
       link* old_ptr = old_head;
       auto [x, len] = find_in_list(old_ptr, entry.get_key());
       // if (len > t->overflow_size) expand_table(t);
@@ -207,7 +228,7 @@ struct buckets_struct {
 
     std::optional<Entry*> try_remove(bucket* s, const K& k) {
       head_ptr old_head = s->load();    
-      if (old_head.is_forwarded()) return std::nullopt;
+      if (!old_head.is_stable()) return std::nullopt;
       link* old_ptr = old_head;
       // if list is empty, then return that no remove needs to be done
       if (old_ptr == nullptr) return std::optional(nullptr);
@@ -228,7 +249,7 @@ struct buckets_struct {
   std::pair<std::optional<bool>, long>
   try_upsert(bucket* s, const K& k, F& f) {
     head_ptr old_head = s->load();
-    if (old_head.is_forwarded()) return std::pair(std::nullopt, 0);
+    if (!old_head.is_stable()) return std::pair(std::nullopt, 0);
     link* old_ptr = old_head;
 #ifndef USE_LOCKS
     auto [cnt, new_ptr] = update_list(old_ptr, k, f);

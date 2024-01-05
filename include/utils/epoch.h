@@ -67,7 +67,7 @@
 #endif
 //#define EpochMemCheck 1
 
-#define USE_MALLOC 1
+//#define USE_MALLOC 1
 #define USE_STEPPING 1
 //#define USE_UNDO 1
 
