@@ -19,7 +19,7 @@ struct parlay_hash {
   static constexpr int grow_factor = 1 << log_grow_factor;
 
   // groups of block_size buckets are copied over by a single thread
-  static constexpr long min_block_size = 16;
+  static constexpr long min_block_size = 4;
 
   // buffer_size is picked so state fits in a cache line (if it can)
   static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 48 / sizeof(Entry);
@@ -28,15 +28,25 @@ struct parlay_hash {
   static constexpr long log_bucket_size =
     (buffer_size == 1) ? 0 : ((buffer_size < 4) ? 1 : ((buffer_size < 8) ? 2 : 3));
 
+  static void check_pointer(void* ptr, const std::string& name) {
+    if (ptr != nullptr && ((size_t) ptr) >> 40 != 0x7f) {
+      std::cout << "bad ptr at: " << name << std::endl;
+      abort();
+    }
+  }
+    
   // for overflow lists
   struct link {
     Entry entry;
     link* next;
-    link(const Entry& entry, link* next) : entry(entry), next(next) {}
+    link(const Entry& entry, link* next) : entry(entry), next(next) {
+      //check_pointer(next,"make link");
+    }
   };
 
   // for delayed reclamation of links
   static link* new_link(const Entry& entry, link* l) {
+    //check_pointer(l, "new link");
     return epoch::New<link>(entry, l); }
   static void retire_link(link* l) { epoch::Retire(l);}
 
@@ -62,29 +72,34 @@ struct parlay_hash {
     // update overflow list with new ptr (assumes buffer is full)
     state(const state& s, link* ptr)
       : list_head(make_head(ptr, buffer_size + (ptr != nullptr))) {
+      //check_pointer(ptr, "s11");
       for (int i=0; i < buffer_size; i++)
 	buffer[i] = s.buffer[i];
+      //if (overflow_list() != nullptr) check_pointer(overflow_list()->next, "s1");
     }
 
     // add entry to the bucket state (in buffer if fits, otherwise at head of overflow list)
     state(const state& s, Entry e) {
-      for (int i=0; i < s.buffer_cnt(); i++)
+      for (int i=0; i < s.buffer_cnt(); i++) 
 	buffer[i] = s.buffer[i];
       if (s.buffer_cnt() < buffer_size) {
 	buffer[s.buffer_cnt()] = e;
 	list_head = make_head(nullptr, s.buffer_cnt() + 1);
       } else {
-	link* l = new_link(e, overflow_list());
+	link* l = new_link(e, s.overflow_list());
 	list_head = make_head(l, buffer_size + 1);
       }
+      //if (overflow_list() != nullptr) check_pointer(overflow_list()->next, "s2");
     }
 
     // remove buffer entry j, replace with first from overflow list (assumes there is overflow)
     state(const state& s, link* ptr, int j)
       : list_head(make_head(ptr->next, buffer_size + (ptr->next != nullptr))) {
+      //check_pointer(ptr->next, "s31");
       for (int i=0; i < buffer_size; i++)
 	buffer[i] = s.buffer[i];
       buffer[j] = Entry{ptr->entry};
+      // if (overflow_list() != nullptr) check_pointer(overflow_list()->next, "s3");
     }
 
     // remove buffer entry j, replace with last entry in buffer (assumes no overflow)
@@ -92,6 +107,7 @@ struct parlay_hash {
       for (int i=0; i < s.buffer_cnt(); i++)
 	buffer[i] = s.buffer[i];
       buffer[j] = buffer[s.buffer_cnt() - 1];
+      // if (overflow_list() != nullptr) check_pointer(overflow_list()->next, "s4");
     }
 
     state(bool x) : list_head(forwarded_val) {}
@@ -118,13 +134,15 @@ struct parlay_hash {
   template <typename F>
   static auto find_in_list(const link* nxt, const K& k, const F& f) {
     using rtype = typename std::result_of<F(Entry)>::type;
+    long cnt = 0;
     while (nxt != nullptr && !nxt->entry.equal(k)) {
       nxt = nxt->next;
+      cnt++;
     }
     if (nxt == nullptr)
-      return std::optional<rtype>();
+      return std::pair(std::optional<rtype>(), cnt);
     else
-      return std::optional<rtype>(f(nxt->entry));
+      return std::pair(std::optional<rtype>(f(nxt->entry)), 0l);
   }
 
   // If k is found copies list elements up to k, and keeps the old
@@ -166,6 +184,7 @@ struct parlay_hash {
   // retires full list
   static void retire_list(link* nxt) {
     while (nxt != nullptr) {
+      //if (print) std::cout << "nxt: " << nxt << std::endl;
       link* tmp = nxt->next;
       retire_link(nxt);
       nxt = tmp;
@@ -196,6 +215,7 @@ struct parlay_hash {
       f(s.buffer[i]);
     link* l = s.overflow_list();
     while (l != nullptr) {
+      //std::cout << "foreach: " << l << std::endl;
       f(l->entry);
       l = l->next;
     }
@@ -211,7 +231,7 @@ struct parlay_hash {
       if (s.buffer[i].equal(k))
 	return std::optional(f(s.buffer[i]));
     if (len <= buffer_size) return std::nullopt;
-    return find_in_list(s.overflow_list(), k, f);
+    return find_in_list(s.overflow_list(), k, f).first;
   }
 
   using bckt = big_atomic<state>;
@@ -221,7 +241,7 @@ struct parlay_hash {
   };
 
   static void initialize(bucket& bck) {
-    new (&bck.v) big_atomic<state>();
+    new (&bck.v) big_atomic<state>(state());
   }
 
   // status of a block of buckets
@@ -253,11 +273,12 @@ struct parlay_hash {
        : next(nullptr),
 	 finished_block_count(0),
 	 num_bits(std::max<long>(parlay::log2_up(min_block_size),
-				 parlay::log2_up(n) + 1)),
+				 parlay::log2_up(n) - log_bucket_size)),
 	 size(1ul << num_bits),
 	 block_size(num_bits < 10 ? min_block_size : (num_bits < 16 ? 16 : 256)),
-	 overflow_size(num_bits < 18 ? 9 : 12),
+	 overflow_size(num_bits < 18 ? 14 : 18), //? 9 : 12),
 	 buckets(parlay::sequence<bucket>::uninitialized(size)) {
+      std::cout << "initial size: " << size << std::endl;
       parlay::parallel_for(0, size, [&] (long i) { initialize(buckets[i]);});
     }
 
@@ -268,7 +289,7 @@ struct parlay_hash {
 	num_bits(t->num_bits + log_grow_factor),
 	size(t->size * grow_factor),
 	block_size(num_bits < 16 ? 16 : 256),
-	overflow_size(num_bits < 18 ? 9 : 12),
+	overflow_size(num_bits < 18 ? 14 : 18), //? 9 : 12),
 	buckets(parlay::sequence<bucket>::uninitialized(size)),
 	block_status(parlay::sequence<std::atomic<status>>(t->size/t->block_size)) {
       std::fill(block_status.begin(), block_status.end(), Empty);
@@ -308,7 +329,8 @@ struct parlay_hash {
     size_t idx = t->get_index(entry.get_key());
     auto b = &(t->buckets[idx].v);
     auto [s, tag] = b->ll();
-    b->sc(tag, state(s, entry));
+    auto sn = state(s, entry);
+    b->sc(tag, sn);
   }
 
   // Copies a bucket into grow_factor new buckets.
@@ -321,11 +343,29 @@ struct parlay_hash {
     // copy bucket to grow_factor new buckets in next table version
     while (true) {
       auto [s, tag] = t->buckets[i].v.ll();
-      for_each_in_state(s, [&] (const Entry& e) { copy_element(next, e);});
+      //std::cout << "in copy cas: " << s.overflow_list() << std::endl;
+      for (long i = 0; i < std::min(s.buffer_cnt(), buffer_size); i++)
+	copy_element(next, s.buffer[i]);
+      link* l = s.overflow_list();
+      while (l != nullptr) {
+	copy_element(next, l->entry);
+	l = l->next;
+      }
 
+      //for_each_in_state(s, [&] (const Entry& e) {
+      //  copy_element(next, e);
+      //});
+      // long sum = 0;
+      // for (int j = exp_start; j < exp_start + grow_factor; j++)
+      // 	sum += next->buckets[j].v.load().size();
+      // if (sum != t->buckets[i].v.load().size()) {
+      // 	std::cout << "ouch: expected " << t->buckets[i].v.load().size() << ", got: " << sum << std::endl;
+      // 	abort();
+      // }
+      
       // try to replace original bucket with forwarded marker
       if (t->buckets[i].v.sc(tag, state(true))) {
-	retire_list(s.overflow_list());
+	retire_list(s.overflow_list()); 
 	break;
       }
       
@@ -350,16 +390,19 @@ struct parlay_hash {
       else if (st == Empty &&
 	       next->block_status[block_num].compare_exchange_strong(old, Working)) {
 	long start = block_num * t->block_size;
+	//std::cout << "copying block: " << block_num << std::endl;
 	// copy block_size buckets
 	for (int i = start; i < start + t->block_size; i++) {
 	  copy_bucket_cas(t, next, i);
-	  assert(next->block_status[block_num] == Working);
-	  next->block_status[block_num] = Done;
-	  // if all blocks have been copied then can set current table to next
-	  if (++next->finished_block_count == next->block_status.size()) {
-	    current_table_version = next;
-	    std::cout << "expand done" << std::endl;
-	  }
+	}
+	next->block_status[block_num] = Done;
+	
+	// std::cout << "copying block done" << std::endl;
+	// if all blocks have been copied then can set current table to next
+	if (++next->finished_block_count == next->block_status.size()) {
+	  std::cout << "expand done" << std::endl;
+	  current_table_version = next;
+	  //std::cout << "expand done after: " << size() << std::endl;
 	}
       } else {
 	// If working then wait until Done
@@ -380,15 +423,37 @@ struct parlay_hash {
     }
   }
 
-  void clear_bucket_rec(table_version* ht, long i, bool x) {
-    clear_bucket(&ht->buckets[i].v);
+  void clear_bucket_rec(table_version* t, long i) {
+    bckt* b = &(t->buckets[i].v);
+    state head = b->load();
+    if (!head.is_forwarded())
+      clear_bucket(b);
+    else {
+      table_version* next = t->next.load();
+      for (int j = 0; j < grow_factor; j++)
+	clear_bucket_rec(next, grow_factor * i + j);
+    }
   }
   
   // clear all entries and reclaim memory
-  void clear() {
+  void clear(bool reinitialize = true) {
     table_version* ht = current_table_version.load();
+    // clear buckets from current version and future versions
     parlay::parallel_for (0, ht->size, [&] (size_t i) {
-	clear_bucket_rec(ht, i, i >= 118200);});
+	clear_bucket_rec(ht, i);});
+
+    // now reclaim the arrays
+    table_version* tv = initial_table_version;
+    while (tv != nullptr) {
+      table_version* tv_next = tv->next;
+      delete tv;
+      tv = tv_next;
+    }
+    // reinitialize
+    if (reinitialize) {
+      current_table_version = new table_version(1);
+      initial_table_version = current_table_version;
+    }
   }
 
   parlay_hash(long n) 
@@ -397,7 +462,10 @@ struct parlay_hash {
   {}
 
   ~parlay_hash() {
-    clear();
+    clear(false);
+    //if (clear_memory_and_scheduler_at_end) {
+    //  delete sched_ref;
+    //}
   }
 
   void check_bucket_and_state(table_version* t, const K& k, big_atomic<state>*& b, state& s, tag_type& tag) {
@@ -446,7 +514,7 @@ struct parlay_hash {
       // otherwise need to search overflow, which requires protection
       return epoch::with_epoch([&] {
         // if state has not changed, then just search list
-	if (b->lv(tag)) return find_in_list(s.overflow_list(), k, f);
+	if (b->lv(tag)) return find_in_list(s.overflow_list(), k, f).first;
 	state x = b->load();
 	//if bucket is forwarded, go to next version
 	if (x.is_forwarded()) {
@@ -494,6 +562,8 @@ struct parlay_hash {
       int delay = 200;
       while (true) {
 	auto [s, tag] = b->ll();
+	copy_if_needed(ht, idx);
+	check_bucket_and_state(ht, key, b, s, tag);
 	long len = s.buffer_cnt();
 	// if found in buffer then done
 	for (long i = 0; i < std::min(len, buffer_size); i++)
@@ -509,7 +579,8 @@ struct parlay_hash {
 	  new_head->entry.retire(); // if failed need to ty again
 	  retire_link(new_head);
 	} else { // buffer overfull, need to check if in list
-	  auto x = find_in_list(s.overflow_list(), key, f);
+	  auto [x, list_len] = find_in_list(s.overflow_list(), key, f);
+	  if (list_len + buffer_size > ht->overflow_size) expand_table(ht);
 	  if (x.has_value()) return x; // if in list, then done
 	  link* new_head = new_link(constr(), s.overflow_list());
 	  if (b->sc(tag, state(s, new_head))) // try to add to head of list
@@ -527,18 +598,20 @@ struct parlay_hash {
   // Returns an optional which is empty if the key is not in the table,
   // and contains f(e) otherwise, where e is the entry that is removed.
   template <typename F>
-  auto remove(const K& k, const F& f)
+  auto remove(const K& key, const F& f)
     -> std::optional<typename std::result_of<F(Entry)>::type>
   {
     using rtype = std::optional<typename std::result_of<F(Entry)>::type>;
     table_version* ht = current_table_version.load();
-    long idx = ht->get_index(k);
+    long idx = ht->get_index(key);
     auto b = &(ht->buckets[idx].v);
     // if entries are direct safe to scan the buffer without epoch protection
     if constexpr (Entry::Direct) {
       auto [s, tag] = b->ll();
+      copy_if_needed(ht, idx);
+      check_bucket_and_state(ht, key, b, s, tag);
       if (s.buffer_cnt() <= buffer_size) {
-	int i = find_in_buffer(s, k);
+	int i = find_in_buffer(s, key);
 	if (i == -1) return std::nullopt;
 	if (b->sc(tag, state(s, i))) {
 	  rtype r = f(s.buffer[i]);
@@ -552,7 +625,9 @@ struct parlay_hash {
       int delay = 200;
       while (true) {
         auto [s, tag] = b->ll();
-	int i = find_in_buffer(s, k);
+	copy_if_needed(ht, idx);
+	check_bucket_and_state(ht, key, b, s, tag);
+	int i = find_in_buffer(s, key);
 	if (i >= 0) { // found in buffer
 	  if (s.buffer_cnt() > buffer_size) { // need to backfill from list
 	    link* l = s.overflow_list();
@@ -572,7 +647,7 @@ struct parlay_hash {
 	} else { // not found in buffer
 	  if (s.buffer_cnt() <= buffer_size) // if not overful, then done
 	    return std::nullopt;
-	  auto [cnt, new_head, removed] = remove_from_list(s.overflow_list(), k);
+	  auto [cnt, new_head, removed] = remove_from_list(s.overflow_list(), key);
           if (cnt == 0) // not found in list
 	    return std::nullopt;
 	  // found and removed from list
@@ -590,10 +665,30 @@ struct parlay_hash {
     });
   }
 
+  long bucket_size_rec(table_version* t, long i) {
+    state head = t->buckets[i].v.load();
+    if (!head.is_forwarded())
+      return  head.size();
+    else {
+      long sum = 0;
+      table_version* next = t->next.load();
+      for (int j = 0; j < grow_factor; j++)
+	sum += bucket_size_rec(next, grow_factor * i + j);
+      return sum;
+    }
+  }
+
+  long size() {
+    table_version* ht = current_table_version.load();
+    //std::cout << std::endl;
+    return epoch::with_epoch([&] {
+      return parlay::reduce(parlay::tabulate(ht->size, [&] (size_t i) {
+	    return bucket_size_rec(ht, i);}));});
+  }
+
   // Add all entries in bucket i of table to result.
   template <typename Seq, typename F>
-  static void bucket_entries(table_version* t, long i, Seq& result, const F& f) {
-    state s = t->buckets[i].v.load();
+  static void bucket_entries(state s, Seq& result, const F& f) {
     for (int i=0; i < std::min(s.buffer_cnt(), buffer_size); i++)
       result.push_back(f(s.buffer[i]));
     link* lnk = s.overflow_list();
@@ -603,20 +698,26 @@ struct parlay_hash {
     }
   }
 
-  long size() {
-    table_version* ht = current_table_version.load();
-    return epoch::with_epoch([&] {
-      return parlay::reduce(parlay::tabulate(ht->size, [&] (size_t i) {
-	    return ht->buckets[i].v.load().size();}));});
+  // Add all entries in bucket i of table to result.
+  template <typename Seq, typename F>
+  static void bucket_entries_rec(table_version* t, long i, Seq& result, const F& f) {
+    state s = t->buckets[i].v.load();
+    if (!s.is_forwarded())
+      bucket_entries(s, result, f);
+    else {
+      table_version* next = t->next.load();
+      for (int j = 0; j < grow_factor; j++)
+	bucket_entries_rec(next, grow_factor * i + j, result, f);
+    }
   }
-
+  
   template <typename F>
   parlay::sequence<Entry> entries(const F& f) {
     table_version* ht = current_table_version.load();
     return epoch::with_epoch([&] {
       auto s = parlay::tabulate(ht->size, [&] (size_t i) {
         parlay::sequence<Entry> r;
-	bucket_entries(ht, i, r, f);
+	bucket_entries_rec(ht, i, r, f);
 	return r;});
       return flatten(s);});
   }
@@ -690,13 +791,12 @@ struct parlay_hash {
     using K = K_;
     using V = V_;
     using Data = std::pair<K, V>;
-    using Key = std::pair<K,size_t>;
+    using Key = std::pair<const K*,size_t>;
     static constexpr bool Direct = false;
-    //  private:
-  public:
+  private:
     Data* ptr;
     static Data* tagged_ptr(const Key& k, const V& v) {
-      Data* x = epoch::New<Data>(k.first, v);
+      Data* x = epoch::New<Data>(*k.first, v);
       return (Data*) (((k.second >> 48) << 48) | ((size_t) x));
     }
     Data* get_ptr() const {
@@ -705,12 +805,12 @@ struct parlay_hash {
     static unsigned long hash(const Key& k) {return k.second;}
     bool equal(const Key& k) const {
       return (((k.second >> 48) == (((size_t) ptr) >> 48)) &&
-	      KeyEqual{}(get_ptr()->first, k.first)); }
+	      KeyEqual{}(get_ptr()->first, *k.first)); }
     void retire() { epoch::Retire(get_ptr()); }
     V& get_value() const { return get_ptr()->second;}
-    K& get_key() const { return get_ptr()->first;}
+    Key get_key() const { return make_key(get_ptr()->first);}
     Data get_entry() const { return *get_ptr();}
-    static Key make_key(const K& key) { return Key(key,Hash{}(key));}
+    static Key make_key(const K& key) { return Key(&key, Hash{}(key));}
     IndirectMapEntry(const Key& k, const V& v) : ptr(tagged_ptr(k, v)) {}
     IndirectMapEntry() {}
   };
@@ -779,10 +879,10 @@ struct parlay_hash {
   };
 
   template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_map = unordered_map_<IndirectMapEntry<K, V, Hash, KeyEqual>>;
+  using unordered_map_i = unordered_map_<IndirectMapEntry<K, V, Hash, KeyEqual>>;
 
   template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_map_d = unordered_map_<DirectMapEntry<K, V, Hash, KeyEqual>>;
+  using unordered_map = unordered_map_<DirectMapEntry<K, V, Hash, KeyEqual>>;
 
   template <typename K_, class Hash = std::hash<K_>, class KeyEqual = std::equal_to<K_>>
   struct IndirectSetEntry {
