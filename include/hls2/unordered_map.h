@@ -39,14 +39,11 @@ struct parlay_hash {
   struct link {
     Entry entry;
     link* next;
-    link(const Entry& entry, link* next) : entry(entry), next(next) {
-      //check_pointer(next,"make link");
-    }
+    link(const Entry& entry, link* next) : entry(entry), next(next) { }
   };
 
   // for delayed reclamation of links
   static link* new_link(const Entry& entry, link* l) {
-    //check_pointer(l, "new link");
     return epoch::New<link>(entry, l); }
   static void retire_link(link* l) { epoch::Retire(l);}
 
@@ -72,10 +69,8 @@ struct parlay_hash {
     // update overflow list with new ptr (assumes buffer is full)
     state(const state& s, link* ptr)
       : list_head(make_head(ptr, buffer_size + (ptr != nullptr))) {
-      //check_pointer(ptr, "s11");
       for (int i=0; i < buffer_size; i++)
 	buffer[i] = s.buffer[i];
-      //if (overflow_list() != nullptr) check_pointer(overflow_list()->next, "s1");
     }
 
     // add entry to the bucket state (in buffer if fits, otherwise at head of overflow list)
@@ -89,17 +84,14 @@ struct parlay_hash {
 	link* l = new_link(e, s.overflow_list());
 	list_head = make_head(l, buffer_size + 1);
       }
-      //if (overflow_list() != nullptr) check_pointer(overflow_list()->next, "s2");
     }
 
     // remove buffer entry j, replace with first from overflow list (assumes there is overflow)
     state(const state& s, link* ptr, int j)
       : list_head(make_head(ptr->next, buffer_size + (ptr->next != nullptr))) {
-      //check_pointer(ptr->next, "s31");
       for (int i=0; i < buffer_size; i++)
 	buffer[i] = s.buffer[i];
       buffer[j] = Entry{ptr->entry};
-      // if (overflow_list() != nullptr) check_pointer(overflow_list()->next, "s3");
     }
 
     // remove buffer entry j, replace with last entry in buffer (assumes no overflow)
@@ -107,7 +99,6 @@ struct parlay_hash {
       for (int i=0; i < s.buffer_cnt(); i++)
 	buffer[i] = s.buffer[i];
       buffer[j] = buffer[s.buffer_cnt() - 1];
-      // if (overflow_list() != nullptr) check_pointer(overflow_list()->next, "s4");
     }
 
     state(bool x) : list_head(forwarded_val) {}
@@ -209,17 +200,16 @@ struct parlay_hash {
     return -1;
   }
 
-  template <typename F>
-  void for_each_in_state(const state& s, const F& f) {
-    for (long i = 0; i < std::min(s.buffer_cnt(), buffer_size); i++)
-      f(s.buffer[i]);
-    link* l = s.overflow_list();
-    while (l != nullptr) {
-      //std::cout << "foreach: " << l << std::endl;
-      f(l->entry);
-      l = l->next;
-    }
-  }
+  // template <typename F>
+  // void for_each_in_state(const state& s, const F& f) {
+  //   for (long i = 0; i < std::min(s.buffer_cnt(), buffer_size); i++)
+  //     f(s.buffer[i]);
+  //   link* l = s.overflow_list();
+  //   while (l != nullptr) {
+  //     f(l->entry);
+  //     l = l->next;
+  //   }
+  // }
     
   // find key if in the bucket (state)
   template <typename F>
@@ -343,7 +333,6 @@ struct parlay_hash {
     // copy bucket to grow_factor new buckets in next table version
     while (true) {
       auto [s, tag] = t->buckets[i].v.ll();
-      //std::cout << "in copy cas: " << s.overflow_list() << std::endl;
       for (long i = 0; i < std::min(s.buffer_cnt(), buffer_size); i++)
 	copy_element(next, s.buffer[i]);
       link* l = s.overflow_list();
@@ -390,19 +379,17 @@ struct parlay_hash {
       else if (st == Empty &&
 	       next->block_status[block_num].compare_exchange_strong(old, Working)) {
 	long start = block_num * t->block_size;
-	//std::cout << "copying block: " << block_num << std::endl;
+
 	// copy block_size buckets
 	for (int i = start; i < start + t->block_size; i++) {
 	  copy_bucket_cas(t, next, i);
 	}
 	next->block_status[block_num] = Done;
 	
-	// std::cout << "copying block done" << std::endl;
 	// if all blocks have been copied then can set current table to next
 	if (++next->finished_block_count == next->block_status.size()) {
 	  std::cout << "expand done" << std::endl;
 	  current_table_version = next;
-	  //std::cout << "expand done after: " << size() << std::endl;
 	}
       } else {
 	// If working then wait until Done
@@ -504,7 +491,13 @@ struct parlay_hash {
     // if entries are direct, then safe to scan the buffer without epoch protection
     if constexpr (Entry::Direct) {
       auto [s, tag] = b->ll();
-      check_bucket_and_state(ht, k, b, s, tag);
+      if (s.is_forwarded()) {
+	table_version* nxt = ht->next.load();
+	b = &(nxt->buckets[nxt->get_index(k)].v);
+	std::tie(s, tag) = b->ll();
+	check_bucket_and_state(nxt, k, b, s, tag);
+      }
+      //check_bucket_and_state(ht, k, b, s, tag);
       // search in buffer
       for (long i = 0; i < std::min(s.buffer_cnt(), buffer_size); i++)
 	if (s.buffer[i].equal(k))
@@ -515,14 +508,7 @@ struct parlay_hash {
       return epoch::with_epoch([&] {
         // if state has not changed, then just search list
 	if (b->lv(tag)) return find_in_list(s.overflow_list(), k, f).first;
-	state x = b->load();
-	//if bucket is forwarded, go to next version
-	if (x.is_forwarded()) {
-	  table_version* nxt = ht->next.load();
-	  return find_in_bucket(nxt, nxt->get_bucket(k), k, f);
-	}
-	return find_in_state(x, k, f);
-	//return find_in_state(b->load(), k, f); // find_in_bucket(ht, b, k, f); // otherwise do full search
+	return find_in_bucket(ht, b, k, f);
       });
     } else { // if using indirection always use protection
       __builtin_prefetch(b);
@@ -879,10 +865,10 @@ struct parlay_hash {
   };
 
   template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_map_i = unordered_map_<IndirectMapEntry<K, V, Hash, KeyEqual>>;
+  using unordered_map = unordered_map_<IndirectMapEntry<K, V, Hash, KeyEqual>>;
 
   template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_map = unordered_map_<DirectMapEntry<K, V, Hash, KeyEqual>>;
+  using unordered_map_d = unordered_map_<DirectMapEntry<K, V, Hash, KeyEqual>>;
 
   template <typename K_, class Hash = std::hash<K_>, class KeyEqual = std::equal_to<K_>>
   struct IndirectSetEntry {
