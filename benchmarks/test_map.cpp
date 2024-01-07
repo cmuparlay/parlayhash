@@ -136,18 +136,19 @@ test_loop(commandLine& C,
       long e = std::min(s + block_size, n);
       for (int j = s; j < e; j++)
 	map.insert(HANDLE a[j]); }, 1, true);
+    std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
 #else
     auto x = parlay::tabulate(n, [&] (size_t i) {
       //std::cout << parlay::worker_id() << std::endl;
       return (long) map.insert(a[i]); });
-    if (parlay::reduce(x) != n) 
+    std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
+    if (parlay::reduce(x) != n)
       std::cout << "insertions not counted" << std::endl;
 #endif
     if (map.size() != n)
       std::cout << "bad initial size = " << map.size() << std::endl;
 
 
-    std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
     double imops = n / insert_time.count() / 1e6;
     if (!warmup || i>0)
       insert_times.push_back(imops);
@@ -339,6 +340,7 @@ int main(int argc, char* argv[]) {
   bool grow = P.getOption("-grow");
   bool print_means = !P.getOption("-nomeans");
   bool string_only = P.getOption("-string");
+  bool no_string = P.getOption("-nostring");
   bool full = P.getOption("-full");
 
   std::vector<long> sizes;
@@ -378,7 +380,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef STRING
   using string_map_type = bench_map<std::string, long, StringHash, 4>;
-  if (n == 0 && update_percent == -1 && zipfian_param == -1.0) {
+  if (!no_string && n == 0 && update_percent == -1 && zipfian_param == -1.0) {
     for (auto update_percent : percents) {
       long n = 20000000;
       auto [a, b] = generate_string_distribution(n);
