@@ -5,6 +5,7 @@
 
 #define PARLAY_USE_STD_ALLOC 1
 
+#include <jemalloc/jemalloc.h>
 #include <parlay/primitives.h>
 #include <parlay/random.h>
 #include "zipfian.h"
@@ -85,8 +86,19 @@ generate_integer_distribution(long n,   // num entries in map
 std::pair<parlay::sequence<std::string>,parlay::sequence<std::string>>
 generate_string_distribution(long n) {
   auto b = trigramWords(n);
-  auto a = parlay::random_shuffle(parlay::remove_duplicates(b));
+  //auto a = parlay::random_shuffle(parlay::remove_duplicates(b));
+  auto a = parlay::remove_duplicates(b);
   return std::pair(a,b);
+}
+
+size_t get_allocated() {
+    size_t epoch = 1;
+    size_t sz, allocated;
+    sz = sizeof(size_t);
+    mallctl("thread.tcache.flush", NULL, NULL, NULL, 0);
+    mallctl("epoch", NULL, NULL, &epoch, sizeof(epoch));
+    mallctl("stats.allocated", &allocated, &sz, NULL, 0);
+    return allocated;
 }
 
 template <typename Map>
@@ -122,9 +134,13 @@ test_loop(commandLine& C,
   parlay::sequence<double> bench_times;
 
   for (int i = 0; i < rounds + warmup; i++) { {
+      long mem_before = get_allocated();
     Map map = grow ? Map(1) : Map(n);
     size_t np = n/p;
     size_t mp = m/p;
+
+    long mem_after = get_allocated();
+    std::cout << "allocated by map: " << mem_after - mem_before << std::endl;
 
     // initialize the map with n distinct elements
     auto start_insert = std::chrono::system_clock::now();
@@ -138,12 +154,13 @@ test_loop(commandLine& C,
 	map.insert(HANDLE a[j]); }, 1, true);
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
 #else
-    auto x = parlay::tabulate(n, [&] (size_t i) {
-      //std::cout << parlay::worker_id() << std::endl;
-      return (long) map.insert(a[i]); });
+    parlay::parallel_for(0, n, [&] (size_t i) {
+      map.insert(a[i]); });
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
-    if (parlay::reduce(x) != n)
-      std::cout << "insertions not counted" << std::endl;
+    long mem_insert = get_allocated();
+    std::cout << "inserted to map: " << mem_insert - mem_after << std::endl;
+    //if (parlay::reduce(x) != n)
+    //  std::cout << "insertions not counted" << std::endl;
 #endif
     if (map.size() != n)
       std::cout << "bad initial size = " << map.size() << std::endl;
@@ -380,7 +397,7 @@ int main(int argc, char* argv[]) {
 
 #ifdef STRING
   using string_map_type = bench_map<std::string, long, StringHash, 4>;
-  if (!no_string && n == 0 && update_percent == -1 && zipfian_param == -1.0) {
+  if (!no_string) { // && n == 0 && update_percent == -1 && zipfian_param == -1.0) {
     for (auto update_percent : percents) {
       long n = 20000000;
       auto [a, b] = generate_string_distribution(n);

@@ -21,7 +21,7 @@ struct parlay_hash {
   // *********************************************
   
   // set to grow by factor of 8 (2^3)
-  static constexpr int log_grow_factor = 3;
+  static constexpr int log_grow_factor = 2;
   static constexpr int grow_factor = 1 << log_grow_factor;
 
   // groups of block_size buckets are copied over by a single thread
@@ -32,7 +32,7 @@ struct parlay_hash {
 
   // log_2 of the expected number of entries in a bucket (< buffer_size)
   static constexpr long log_bucket_size =
-    (buffer_size == 1) ? 0 : ((buffer_size < 4) ? 1 : ((buffer_size < 8) ? 2 : 3));
+    (buffer_size == 1) ? 0 : ((buffer_size == 2) ? 1 : ((buffer_size <= 4) ? 2 : 3));
 
   static long get_block_size(int num_bits) {
     return num_bits < 16 ? 16 : 256; }
@@ -40,7 +40,7 @@ struct parlay_hash {
   static long get_overflow_size(int num_bits) {
     if constexpr (log_bucket_size == 0) return num_bits < 18 ? 12 : 16;
     else if constexpr (log_bucket_size == 1) return num_bits < 18 ? 16 : 20;
-    else if constexpr (log_bucket_size == 2) return num_bits < 18 ? 20 : 26;
+    else if constexpr (log_bucket_size == 2) return num_bits < 18 ? 18 : 26;
     else return num_bits < 18 ? 22 : 30;
   }
 			
@@ -274,7 +274,8 @@ struct parlay_hash {
     size_t size; // number of buckets
     long block_size;
     int overflow_size; // size of bucket to trigger next expansion
-    sequence<bucket> buckets; // sequence of buckets
+    bucket* buckets; // sequence of buckets
+    //sequence<bucket> buckets; // sequence of buckets
     sequence<std::atomic<status>> block_status; // status of each block while copying
 
     // the index is the highest num_bits of the 40-bit hash
@@ -286,17 +287,19 @@ struct parlay_hash {
 
     // initial table version, n indicating initial size
     table_version(long n) 
-       : next(nullptr),
-	 finished_block_count(0),
-	 num_bits(std::max<long>(parlay::log2_up(min_block_size),
-				 parlay::log2_up(n) - log_bucket_size)),
-	 size(1ul << num_bits),
-	 block_size(num_bits < 10 ? min_block_size : get_block_size(num_bits)),
-	 overflow_size(get_overflow_size(num_bits)),
-	 buckets(parlay::sequence<bucket>::uninitialized(size)),
-	 block_status(parlay::sequence<std::atomic<status>>(size/block_size)) 
+      : next(nullptr),
+	finished_block_count(0),
+	num_bits(std::max<long>(parlay::log2_up(min_block_size),
+				(long) std::ceil(std::log2(1.5*n)) - log_bucket_size)),
+	size(1ul << num_bits),
+	block_size(num_bits < 10 ? min_block_size : get_block_size(num_bits)),
+	overflow_size(get_overflow_size(num_bits)),
+	//buckets(parlay::sequence<bucket>::uninitialized(size)),
+	block_status(parlay::sequence<std::atomic<status>>(size/block_size)) 
     {
-      std::cout << "initial size: " << size << std::endl;
+      buckets = (bucket*) malloc(sizeof(bucket)*size);
+      std::cout << "initial size: " << size << ", " << sizeof(bucket) << std::endl;
+      //buckets = (bucket*) malloc(sizeof(bucket)*size);
       parlay::parallel_for(0, size, [&] (long i) { initialize(buckets[i]);});
       parlay::parallel_for(0, size/block_size, [&] (long i) { block_status[i] = Empty;});
     }
@@ -309,9 +312,13 @@ struct parlay_hash {
 	size(t->size * grow_factor),
 	block_size(get_block_size(num_bits)),
 	overflow_size(get_overflow_size(num_bits)),
-	buckets(parlay::sequence<bucket>::uninitialized(size)),
-	block_status(parlay::sequence<std::atomic<status>>::uninitialized(size/block_size)) {
+	//buckets(parlay::sequence<bucket>::uninitialized(size)),
+	block_status(parlay::sequence<std::atomic<status>>::uninitialized(size/block_size))
+    {
+      buckets = (bucket*) malloc(sizeof(bucket)*size);
     }
+
+    ~table_version() { free(buckets);}
   };
 
   // the current table version
@@ -329,7 +336,7 @@ struct parlay_hash {
   void expand_table(table_version* ht) {
     table_version* htt = current_table_version.load();
     if (htt->next == nullptr) {
-      long n = ht->buckets.size();
+      long n = ht->size;
       // if fail on lock, someone else is working on it, so skip
       get_locks().try_lock((long) ht, [&] {
 	 if (ht->next == nullptr) {
