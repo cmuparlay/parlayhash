@@ -15,7 +15,7 @@ template <typename Entry>
 struct parlay_hash {
   using K = typename Entry::Key;
   // set to grow by factor of 8 (2^3)
-  static constexpr int log_grow_factor = 2;
+  static constexpr int log_grow_factor = 3;
   static constexpr int grow_factor = 1 << log_grow_factor;
 
   // groups of block_size buckets are copied over by a single thread
@@ -201,16 +201,16 @@ struct parlay_hash {
     return -1;
   }
 
-  // template <typename F>
-  // void for_each_in_state(const state& s, const F& f) {
-  //   for (long i = 0; i < std::min(s.buffer_cnt(), buffer_size); i++)
-  //     f(s.buffer[i]);
-  //   link* l = s.overflow_list();
-  //   while (l != nullptr) {
-  //     f(l->entry);
-  //     l = l->next;
-  //   }
-  // }
+  template <typename F>
+  void for_each_in_state(const state& s, const F& f) {
+    for (long i = 0; i < std::min(s.buffer_cnt(), buffer_size); i++)
+      f(s.buffer[i]);
+    link* l = s.overflow_list();
+    while (l != nullptr) {
+      f(l->entry);
+      l = l->next;
+    }
+  }
     
   // find key if in the bucket (state)
   template <typename F>
@@ -267,7 +267,7 @@ struct parlay_hash {
 				 parlay::log2_up(n) - log_bucket_size)),
 	 size(1ul << num_bits),
 	 block_size(num_bits < 10 ? min_block_size : (num_bits < 16 ? 16 : 256)),
-	 overflow_size(num_bits < 18 ? 14 : 18), //? 9 : 12),
+	 overflow_size(num_bits < 18 ? 14 : 19), //? 9 : 12),
 	 buckets(parlay::sequence<bucket>::uninitialized(size)) {
       std::cout << "initial size: " << size << std::endl;
       parlay::parallel_for(0, size, [&] (long i) { initialize(buckets[i]);});
@@ -280,7 +280,7 @@ struct parlay_hash {
 	num_bits(t->num_bits + log_grow_factor),
 	size(t->size * grow_factor),
 	block_size(num_bits < 16 ? 16 : 256),
-	overflow_size(num_bits < 18 ? 14 : 18), //? 9 : 12),
+	overflow_size(num_bits < 18 ? 14 : 19), //? 9 : 12),
 	buckets(parlay::sequence<bucket>::uninitialized(size)),
 	block_status(parlay::sequence<std::atomic<status>>(t->size/t->block_size)) {
       std::fill(block_status.begin(), block_status.end(), Empty);
@@ -333,18 +333,16 @@ struct parlay_hash {
       initialize(next->buckets[j]); 
     // copy bucket to grow_factor new buckets in next table version
     while (true) {
+      state hold[grow_factor];
+      size_t mask = grow_factor-1;
       auto [s, tag] = t->buckets[i].v.ll();
-      for (long i = 0; i < std::min(s.buffer_cnt(), buffer_size); i++)
-	copy_element(next, s.buffer[i]);
-      link* l = s.overflow_list();
-      while (l != nullptr) {
-	copy_element(next, l->entry);
-	l = l->next;
-      }
+      for_each_in_state(s, [&] (const Entry& entry) {
+	size_t idx = next->get_index(entry.get_key()) & mask;
+       	hold[idx] = state(hold[idx], entry);
+      });
+      for (int j = 0; j < grow_factor; j++)
+	next->buckets[grow_factor * i + j].v.store_sequential(hold[j]);
 
-      //for_each_in_state(s, [&] (const Entry& e) {
-      //  copy_element(next, e);
-      //});
       // long sum = 0;
       // for (int j = exp_start; j < exp_start + grow_factor; j++)
       // 	sum += next->buckets[j].v.load().size();
@@ -393,7 +391,7 @@ struct parlay_hash {
 	
 	// if all blocks have been copied then can set current table to next
 	if (++next->finished_block_count == next->block_status.size()) {
-	  std::cout << "expand done" << std::endl;
+	  //std::cout << "expand done" << std::endl;
 	  current_table_version = next;
 	}
       } else {
@@ -680,13 +678,8 @@ struct parlay_hash {
   // Add all entries in bucket i of table to result.
   template <typename Seq, typename F>
   static void bucket_entries(state s, Seq& result, const F& f) {
-    for (int i=0; i < std::min(s.buffer_cnt(), buffer_size); i++)
-      result.push_back(f(s.buffer[i]));
-    link* lnk = s.overflow_list();
-    while (lnk != nullptr) {
-      result.push_back(f(lnk->entry));
-      lnk = lnk->next;
-    }
+    for_each_in_state(s, [&] (const Entry& entry) {
+      result.push_back(f(entry));});
   }
 
   // Add all entries in bucket i of table to result.
@@ -870,10 +863,10 @@ struct parlay_hash {
   };
 
   template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_map = unordered_map_<IndirectMapEntry<K, V, Hash, KeyEqual>>;
+  using unordered_map_i = unordered_map_<IndirectMapEntry<K, V, Hash, KeyEqual>>;
 
   template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_map_d = unordered_map_<DirectMapEntry<K, V, Hash, KeyEqual>>;
+  using unordered_map = unordered_map_<DirectMapEntry<K, V, Hash, KeyEqual>>;
 
   template <typename K_, class Hash = std::hash<K_>, class KeyEqual = std::equal_to<K_>>
   struct IndirectSetEntry {
