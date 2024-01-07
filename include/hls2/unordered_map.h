@@ -19,7 +19,7 @@ struct parlay_hash {
   static constexpr int grow_factor = 1 << log_grow_factor;
 
   // groups of block_size buckets are copied over by a single thread
-  static constexpr long min_block_size = 16;
+  static constexpr long min_block_size = 4;
 
   // buffer_size is picked so state fits in a cache line (if it can)
   static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 48 / sizeof(Entry);
@@ -268,9 +268,12 @@ struct parlay_hash {
 	 size(1ul << num_bits),
 	 block_size(num_bits < 10 ? min_block_size : (num_bits < 16 ? 16 : 256)),
 	 overflow_size(num_bits < 18 ? 14 : 19), //? 9 : 12),
-	 buckets(parlay::sequence<bucket>::uninitialized(size)) {
+	 buckets(parlay::sequence<bucket>::uninitialized(size)),
+	 block_status(parlay::sequence<std::atomic<status>>(size/block_size)) 
+    {
       std::cout << "initial size: " << size << std::endl;
       parlay::parallel_for(0, size, [&] (long i) { initialize(buckets[i]);});
+      parlay::parallel_for(0, size/block_size, [&] (long i) { block_status[i] = Empty;});
     }
 
     // expanded table version copied from smaller version t
@@ -282,8 +285,7 @@ struct parlay_hash {
 	block_size(num_bits < 16 ? 16 : 256),
 	overflow_size(num_bits < 18 ? 14 : 19), //? 9 : 12),
 	buckets(parlay::sequence<bucket>::uninitialized(size)),
-	block_status(parlay::sequence<std::atomic<status>>(t->size/t->block_size)) {
-      std::fill(block_status.begin(), block_status.end(), Empty);
+	block_status(parlay::sequence<std::atomic<status>>::uninitialized(size/block_size)) {
     }
   };
 
@@ -375,28 +377,33 @@ struct parlay_hash {
   void copy_if_needed(table_version* t, long hashid) {
     table_version* next = t->next.load();
     if (next != nullptr) {
-      long block_num = hashid & (next->block_status.size() -1);
-      status st = next->block_status[block_num];
+      long block_num = hashid & (t->block_status.size() -1);
+      status st = t->block_status[block_num];
       status old = Empty;
       if (st == Done) return;
       else if (st == Empty &&
-	       next->block_status[block_num].compare_exchange_strong(old, Working)) {
+	       t->block_status[block_num].compare_exchange_strong(old, Working)) {
+
+	// initialize block_status for next grow round
+	for (int i = 0; i < grow_factor; i++)
+	  next->block_status[grow_factor*block_num + i] = Empty;
+	
 	long start = block_num * t->block_size;
 
 	// copy block_size buckets
 	for (int i = start; i < start + t->block_size; i++) {
 	  copy_bucket_cas(t, next, i);
 	}
-	next->block_status[block_num] = Done;
+	t->block_status[block_num] = Done;
 	
 	// if all blocks have been copied then can set current table to next
-	if (++next->finished_block_count == next->block_status.size()) {
+	if (++next->finished_block_count == t->block_status.size()) {
 	  //std::cout << "expand done" << std::endl;
 	  current_table_version = next;
 	}
       } else {
 	// If working then wait until Done
-	while (next->block_status[block_num] == Working) {
+	while (t->block_status[block_num] == Working) {
 	  for (volatile int i=0; i < 100; i++);
 	}
       }
