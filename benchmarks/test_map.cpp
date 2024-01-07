@@ -3,13 +3,15 @@
 #include <chrono>
 #include <tuple>
 
+#define PARLAY_USE_STD_ALLOC 1
+
 #include <parlay/primitives.h>
 #include <parlay/random.h>
 #include "zipfian.h"
 #include "parse_command_line.h"
 #include "trigrams.h"
 
-//#define STRING 1
+#define STRING 1
 
 using K = unsigned long;
 using V = unsigned long;
@@ -336,10 +338,21 @@ int main(int argc, char* argv[]) {
   bool warmup = !P.getOption("-nowarmup");
   bool grow = P.getOption("-grow");
   bool print_means = !P.getOption("-nomeans");
+  bool string_only = P.getOption("-string");
+  bool full = P.getOption("-full");
 
-  std::vector<long> sizes {100000, 10000000};
-  std::vector<int> percents{5, 50};
-  std::vector<double> zipfians{0, .99};
+  std::vector<long> sizes;
+  std::vector<int> percents;
+  std::vector<double> zipfians;
+  if (full) {
+    sizes = std::vector<long>({10000, 1000000, 100000000});
+    percents = std::vector<int>({0, 5, 50});
+    zipfians = std::vector<double>({0, .8, .99});
+  } else {
+    sizes = std::vector<long>({100000, 10000000});
+    percents = std::vector<int>({5, 50});
+    zipfians = std::vector<double>({0, .99});
+  }
   if (n != 0) sizes = std::vector<long>{n};
   if (update_percent != -1) percents = std::vector<int>{update_percent};
   if (zipfian_param != -1.0) zipfians = std::vector<double>{zipfian_param};
@@ -349,27 +362,31 @@ int main(int argc, char* argv[]) {
   using int_type = unsigned long;
   using int_map_type = bench_map<int_type, int_type, IntHash, 1>;
   //using int_map_type = bench_set<int_type, IntHash>;
-  for (auto zipfian_param : zipfians)
-    for (auto update_percent : percents) {
-      for (auto n : sizes) {
-	auto [a, b] = generate_integer_distribution<int_type>(n, p, zipfian_param);
-	std::stringstream str;
-	str << "z=" << zipfian_param;
-	results.push_back(test_loop<int_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-						   trial_time, latency_cuttoff, verbose, warmup, grow));
+  if (!string_only) {
+    for (auto zipfian_param : zipfians)
+      for (auto update_percent : percents) {
+	for (auto n : sizes) {
+	  auto [a, b] = generate_integer_distribution<int_type>(n, p, zipfian_param);
+	  std::stringstream str;
+	  str << "z=" << zipfian_param;
+	  results.push_back(test_loop<int_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+						    trial_time, latency_cuttoff, verbose, warmup, grow));
+	}
+	if (print_means) std::cout << std::endl;
       }
-      if (print_means) std::cout << std::endl;
-    }
+  }
 
 #ifdef STRING
   using string_map_type = bench_map<std::string, long, StringHash, 4>;
-  for (auto update_percent : percents) {
-    long n = 20000000;
-    auto [a, b] = generate_string_distribution(n);
-    std::stringstream str;
-    str << "tristr";
-    results.push_back(test_loop<string_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-						  trial_time, latency_cuttoff, verbose, warmup, grow));
+  if (n == 0 && update_percent == -1 && zipfian_param == -1.0) {
+    for (auto update_percent : percents) {
+      long n = 20000000;
+      auto [a, b] = generate_string_distribution(n);
+      std::stringstream str;
+      str << "tristr";
+      results.push_back(test_loop<string_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+						   trial_time, latency_cuttoff, verbose, warmup, grow));
+    }
   }
 #endif
 

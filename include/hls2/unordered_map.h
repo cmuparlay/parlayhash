@@ -4,6 +4,7 @@
 
 #include <functional>
 #include <optional>
+#define PARLAY_USE_STD_ALLOC 1
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
 #include <utils/epoch.h>
@@ -14,6 +15,11 @@ namespace parlay {
 template <typename Entry>
 struct parlay_hash {
   using K = typename Entry::Key;
+
+  // *********************************************
+  // Various parameters
+  // *********************************************
+  
   // set to grow by factor of 8 (2^3)
   static constexpr int log_grow_factor = 3;
   static constexpr int grow_factor = 1 << log_grow_factor;
@@ -28,14 +34,29 @@ struct parlay_hash {
   static constexpr long log_bucket_size =
     (buffer_size == 1) ? 0 : ((buffer_size < 4) ? 1 : ((buffer_size < 8) ? 2 : 3));
 
+  static long get_block_size(int num_bits) {
+    return num_bits < 16 ? 16 : 256; }
+
+  static long get_overflow_size(int num_bits) {
+    if constexpr (log_bucket_size == 0) return num_bits < 18 ? 12 : 16;
+    else if constexpr (log_bucket_size == 1) return num_bits < 18 ? 16 : 20;
+    else if constexpr (log_bucket_size == 2) return num_bits < 18 ? 20 : 26;
+    else return num_bits < 18 ? 22 : 30;
+  }
+			
+
   static void check_pointer(void* ptr, const std::string& name) {
     if (ptr != nullptr && ((size_t) ptr) >> 40 != 0x7f) {
       std::cout << "bad ptr at: " << name << std::endl;
       abort();
     }
   }
-    
-  // for overflow lists
+
+  // *********************************************
+  // The state structure for each bucket
+  // *********************************************
+  
+  // for overflow lists for each bucket
   struct link {
     Entry entry;
     link* next;
@@ -235,6 +256,10 @@ struct parlay_hash {
     new (&bck.v) big_atomic<state>(state());
   }
 
+  // *********************************************
+  // The table structures
+  // *********************************************
+
   // status of a block of buckets
   enum status : char {Empty, Working, Done};
 
@@ -266,8 +291,8 @@ struct parlay_hash {
 	 num_bits(std::max<long>(parlay::log2_up(min_block_size),
 				 parlay::log2_up(n) - log_bucket_size)),
 	 size(1ul << num_bits),
-	 block_size(num_bits < 10 ? min_block_size : (num_bits < 16 ? 16 : 256)),
-	 overflow_size(num_bits < 18 ? 14 : 19), //? 9 : 12),
+	 block_size(num_bits < 10 ? min_block_size : get_block_size(num_bits)),
+	 overflow_size(get_overflow_size(num_bits)),
 	 buckets(parlay::sequence<bucket>::uninitialized(size)),
 	 block_status(parlay::sequence<std::atomic<status>>(size/block_size)) 
     {
@@ -282,8 +307,8 @@ struct parlay_hash {
 	finished_block_count(0),
 	num_bits(t->num_bits + log_grow_factor),
 	size(t->size * grow_factor),
-	block_size(num_bits < 16 ? 16 : 256),
-	overflow_size(num_bits < 18 ? 14 : 19), //? 9 : 12),
+	block_size(get_block_size(num_bits)),
+	overflow_size(get_overflow_size(num_bits)),
 	buckets(parlay::sequence<bucket>::uninitialized(size)),
 	block_status(parlay::sequence<std::atomic<status>>::uninitialized(size/block_size)) {
     }
@@ -313,17 +338,6 @@ struct parlay_hash {
 	 }
 	 return true;});
     }
-  }
-
-  // Copies a key_value pair into a new table version.
-  // Note this is not thread safe...i.e. only this thread should be
-  // updating the bucket corresponding to the key.
-  void copy_element(table_version* t, const Entry& entry) {
-    size_t idx = t->get_index(entry.get_key());
-    auto b = &(t->buckets[idx].v);
-    state s = b->load();
-    auto sn = state(s, entry);
-    b->store_sequential(sn);
   }
 
   // Copies a bucket into grow_factor new buckets.
@@ -410,6 +424,10 @@ struct parlay_hash {
     }
   }
     
+  // *********************************************
+  // Construction and Destruction
+  // *********************************************
+
   void clear_bucket(bckt* b) {
     auto [s, tag] = b->ll();
     if (!s.is_forwarded() && b->sc(tag, state())) {
@@ -464,6 +482,10 @@ struct parlay_hash {
     //  delete sched_ref;
     //}
   }
+
+  // *********************************************
+  // Operations
+  // *********************************************
 
   void check_bucket_and_state(table_version* t, const K& k, big_atomic<state>*& b, state& s, tag_type& tag) {
     if (s.is_forwarded()) {
@@ -713,6 +735,10 @@ struct parlay_hash {
       return flatten(s);});
   }
 
+  // *********************************************
+  // Iterator
+  // *********************************************
+
   struct Iterator {
   public:
     using value_type        = typename Entry::Data;
@@ -807,6 +833,36 @@ struct parlay_hash {
   };
 
   template <typename K_, typename V_, class Hash = std::hash<K_>, class KeyEqual = std::equal_to<K_>>
+  struct DirectMapEntry_ {
+    using K = K_;
+    using V = V_;
+    using Key = K;
+    using Data = std::pair<K, V>;
+    static const bool Direct = true;
+  private:
+    using Bytes = std::array<char,sizeof(Data)>;
+    Bytes data;
+    Data* get_data() const {return (Data*) &data;}
+  public:
+    static unsigned long hash(const Key& k) {return Hash{}(k);}
+    bool equal(const Key& k) const {
+      return KeyEqual{}(get_data()->first, k); }
+    void retire() {
+      if constexpr (std::is_trivially_destructible_v<Data>);
+      else epoch::Retire(epoch::New<Data>(*get_data()));
+    }
+    static Key make_key(const K& k) {return k;}
+    const V& get_value() const {return get_data()->second;}
+    const K& get_key() const {return get_data()->first;}
+    Data get_entry() const { return *get_data();} 
+    DirectMapEntry_(const Key& k, const V& v) {
+      Data x(k,v);
+      data = *((Bytes*) &x);
+    }
+    DirectMapEntry_() {}
+  };
+
+  template <typename K_, typename V_, class Hash = std::hash<K_>, class KeyEqual = std::equal_to<K_>>
   struct DirectMapEntry {
     using K = K_;
     using V = V_;
@@ -868,12 +924,11 @@ struct parlay_hash {
       return m.remove(Entry::make_key(k), true_f).has_value(); }
 
   };
-
+  
   template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_map_i = unordered_map_<IndirectMapEntry<K, V, Hash, KeyEqual>>;
-
-  template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_map = unordered_map_<DirectMapEntry<K, V, Hash, KeyEqual>>;
+  using unordered_map = std::conditional_t<std::is_trivially_copyable_v<K> && std::is_trivially_copyable_v<V>,
+					   unordered_map_<DirectMapEntry<K, V, Hash, KeyEqual>>,
+					   unordered_map_<IndirectMapEntry<K, V, Hash, KeyEqual>>>;
 
   template <typename K_, class Hash = std::hash<K_>, class KeyEqual = std::equal_to<K_>>
   struct IndirectSetEntry {
@@ -897,6 +952,7 @@ struct parlay_hash {
     void retire() { epoch::Retire(get_ptr()); }
     static Key make_key(const K& key) { return Key(key,Hash{}(key));}
     Data get_entry() const { return *get_ptr();}
+    Key get_key() const { return make_key(*get_ptr());}
     IndirectSetEntry(const Key& k) : ptr(tagged_ptr(k)) {}
     IndirectSetEntry() {}
   };
@@ -912,6 +968,7 @@ struct parlay_hash {
     void retire() {}
     static Key make_key(const K& k) {return k;}
     Key get_entry() const { return data;}
+    Key get_key() const { return data;}
     DirectSetEntry(const Key& k) : data(k) {}
     DirectSetEntry() {}
   };
@@ -956,9 +1013,8 @@ struct parlay_hash {
   };
 
   template <typename K, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_set_i = unordered_set_<IndirectSetEntry<K, Hash, KeyEqual>>;
-
-  template <typename K, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_set = unordered_set_<DirectSetEntry<K, Hash, KeyEqual>>;
+  using unordered_set = std::conditional_t<std::is_trivially_copyable_v<K>,
+					   unordered_set_<DirectSetEntry<K, Hash, KeyEqual>>,
+					   unordered_set_<IndirectSetEntry<K, Hash, KeyEqual>>>;
 }  // namespace parlay
 #endif  // PARLAY_BIGATOMIC_HASH_LIST
