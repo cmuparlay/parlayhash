@@ -31,6 +31,8 @@ struct alignas(32) big_atomic {
   big_atomic(const V& v) : version(0), val(v) {}
   big_atomic() : version(0) {}
 
+  void store_sequential(const V& v) { val = v; }
+  
   V load() {
     while (true) {
       vtype ver = version.load(std::memory_order_acquire);

@@ -136,7 +136,7 @@ test_loop(commandLine& C,
 	map.insert(HANDLE a[j]); }, 1, true);
 #else
     auto x = parlay::tabulate(n, [&] (size_t i) {
-      //std::cout << i << ", " << map.size() << std::endl;
+      //std::cout << parlay::worker_id() << std::endl;
       return (long) map.insert(a[i]); });
     if (parlay::reduce(x) != n) 
       std::cout << "insertions not counted" << std::endl;

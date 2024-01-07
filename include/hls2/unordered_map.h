@@ -15,11 +15,11 @@ template <typename Entry>
 struct parlay_hash {
   using K = typename Entry::Key;
   // set to grow by factor of 8 (2^3)
-  static constexpr int log_grow_factor = 3;
+  static constexpr int log_grow_factor = 2;
   static constexpr int grow_factor = 1 << log_grow_factor;
 
   // groups of block_size buckets are copied over by a single thread
-  static constexpr long min_block_size = 4;
+  static constexpr long min_block_size = 16;
 
   // buffer_size is picked so state fits in a cache line (if it can)
   static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 48 / sizeof(Entry);
@@ -75,7 +75,7 @@ struct parlay_hash {
 
     // add entry to the bucket state (in buffer if fits, otherwise at head of overflow list)
     state(const state& s, Entry e) {
-      for (int i=0; i < s.buffer_cnt(); i++) 
+      for (int i=0; i < std::min(s.buffer_cnt(), buffer_size); i++) 
 	buffer[i] = s.buffer[i];
       if (s.buffer_cnt() < buffer_size) {
 	buffer[s.buffer_cnt()] = e;
@@ -96,6 +96,7 @@ struct parlay_hash {
 
     // remove buffer entry j, replace with last entry in buffer (assumes no overflow)
     state(const state& s, int j) : list_head(make_head(nullptr, s.buffer_cnt() - 1)) {
+      if (s.overflow_list() != nullptr) abort();
       for (int i=0; i < s.buffer_cnt(); i++)
 	buffer[i] = s.buffer[i];
       buffer[j] = buffer[s.buffer_cnt() - 1];
@@ -318,9 +319,9 @@ struct parlay_hash {
   void copy_element(table_version* t, const Entry& entry) {
     size_t idx = t->get_index(entry.get_key());
     auto b = &(t->buckets[idx].v);
-    auto [s, tag] = b->ll();
+    state s = b->load();
     auto sn = state(s, entry);
-    b->sc(tag, sn);
+    b->store_sequential(sn);
   }
 
   // Copies a bucket into grow_factor new buckets.
@@ -349,7 +350,8 @@ struct parlay_hash {
       // 	sum += next->buckets[j].v.load().size();
       // if (sum != t->buckets[i].v.load().size()) {
       // 	std::cout << "ouch: expected " << t->buckets[i].v.load().size() << ", got: " << sum << std::endl;
-      // 	abort();
+      // 	for (int j = exp_start; j < exp_start + grow_factor; j++)
+      // 	  std::cout << j << " : " << next->buckets[j].v.load().size() << std::endl;
       // }
       
       // try to replace original bucket with forwarded marker
@@ -360,8 +362,11 @@ struct parlay_hash {
       
       // If the attempt failed then someone updated bucket in the meantime so need to retry.
       // Before retrying need to clear out already added buckets.
-      for (int j = exp_start; j < exp_start + grow_factor; j++)
-	clear_bucket(&next->buckets[j].v);
+      for (int j = exp_start; j < exp_start + grow_factor; j++) {
+	state ss = next->buckets[j].v.load();
+	retire_list(ss.overflow_list());
+	next->buckets[j].v.store_sequential(state());
+      }
     }
   }
 
