@@ -3,9 +3,13 @@
 #include <chrono>
 #include <tuple>
 
+#define JEMALLOC 
 #define PARLAY_USE_STD_ALLOC 1
 
+#ifdef JEMALLOC
 #include <jemalloc/jemalloc.h>
+#endif
+
 #include <parlay/primitives.h>
 #include <parlay/random.h>
 #include "zipfian.h"
@@ -91,7 +95,8 @@ generate_string_distribution(long n) {
   return std::pair(a,b);
 }
 
-size_t get_allocated() {
+#ifdef JEMALLOC
+size_t jemalloc_get_allocated() {
     size_t epoch = 1;
     size_t sz, allocated;
     sz = sizeof(size_t);
@@ -100,9 +105,12 @@ size_t get_allocated() {
     mallctl("stats.allocated", &allocated, &sz, NULL, 0);
     return allocated;
 }
+#else
+size_t jemalloc_get_allocated() { return 1;}
+#endif
 
 template <typename Map>
-std::tuple<double,double>
+std::tuple<double,double,double>
 test_loop(commandLine& C,
 	  std::string info,
 	  const parlay::sequence<typename Map::K>& a,
@@ -132,15 +140,13 @@ test_loop(commandLine& C,
 
   parlay::sequence<double> insert_times;
   parlay::sequence<double> bench_times;
+  parlay::sequence<double> bytes_pes;
 
   for (int i = 0; i < rounds + warmup; i++) { {
-      long mem_before = get_allocated();
+      long mem_at_start = jemalloc_get_allocated();
     Map map = grow ? Map(1) : Map(n);
     size_t np = n/p;
     size_t mp = m/p;
-
-    long mem_after = get_allocated();
-    std::cout << "allocated by map: " << mem_after - mem_before << std::endl;
 
     // initialize the map with n distinct elements
     auto start_insert = std::chrono::system_clock::now();
@@ -157,8 +163,7 @@ test_loop(commandLine& C,
     parlay::parallel_for(0, n, [&] (size_t i) {
       map.insert(a[i]); });
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
-    long mem_insert = get_allocated();
-    std::cout << "inserted to map: " << mem_insert - mem_after << std::endl;
+    long mem_after_insert = jemalloc_get_allocated();
     //if (parlay::reduce(x) != n)
     //  std::cout << "insertions not counted" << std::endl;
 #endif
@@ -255,6 +260,9 @@ test_loop(commandLine& C,
       }
     }, 1, true);
     auto current = std::chrono::system_clock::now();
+
+    //long mem_at_end = jemalloc_get_allocated();
+    
     std::chrono::duration<double> duration = current - start;
     if (warmup && i==0) continue;
 
@@ -263,6 +271,8 @@ test_loop(commandLine& C,
     double latency_count = (double) parlay::reduce(latency_counts);
     double mops = num_ops / (duration.count() * 1e6);
     bench_times.push_back(mops);
+    double bytes_pe = ((double) (mem_after_insert - mem_at_start))/n;
+    bytes_pes.push_back(bytes_pe);
     std::cout << C.commandName() << ","
               << update_percent << "%update,"
               << "n=" << n << ","
@@ -272,6 +282,7 @@ test_loop(commandLine& C,
       	      << latency_count / queries * 100.0 << "%@" << latency_cutoff << "usec,"
 #endif
       	      << "grow=" << grow << ","
+	      << "mem_pe=" << (int) bytes_pe << ","
 	      << "insert_mops=" << (int) imops << ","
               << "mops=" << (int) mops << std::endl;
 
@@ -308,7 +319,7 @@ test_loop(commandLine& C,
 #endif
   }
   return std::tuple{ geometric_mean(insert_times),
-      geometric_mean(bench_times)};
+      geometric_mean(bench_times), geometric_mean(bytes_pes)};
 }
 
 template <typename K_, typename V_, typename Hash, int val_len>
@@ -376,7 +387,7 @@ int main(int argc, char* argv[]) {
   if (update_percent != -1) percents = std::vector<int>{update_percent};
   if (zipfian_param != -1.0) zipfians = std::vector<double>{zipfian_param};
 
-  parlay::sequence<std::tuple<double,double>> results;
+  parlay::sequence<std::tuple<double,double,double>> results;
 
   using int_type = unsigned long;
   using int_map_type = bench_map<int_type, int_type, IntHash, 1>;
@@ -409,11 +420,15 @@ int main(int argc, char* argv[]) {
   }
 #endif
 
-  auto insert_times = parlay::map(results, [] (auto x) {return std::get<0>(x);});
-  auto bench_times = parlay::map(results, [] (auto x) {return std::get<1>(x);});
   if (print_means) {
-    std::cout << "benchmark geometric mean of mops = " << geometric_mean(bench_times) << std::endl;
+    auto insert_times = parlay::map(results, [] (auto x) {return std::get<0>(x);});
     std::cout << "initial insert geometric mean of mops = " << geometric_mean(insert_times) << std::endl;
+    auto bench_times = parlay::map(results, [] (auto x) {return std::get<1>(x);});
+    std::cout << "benchmark geometric mean of mops = " << geometric_mean(bench_times) << std::endl;
+#ifdef JEMALLOC
+    auto bytes = parlay::map(results, [] (auto x) {return std::get<2>(x);});
+    std::cout << "bytes/element geometric mean = " << geometric_mean(bytes) << std::endl;
+#endif
   }
   return 0;
 }
