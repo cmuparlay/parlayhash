@@ -121,23 +121,37 @@ namespace parlay {
     bool contains(const K& k) { return find(k, true_f).has_value();}
 
     template <typename F = decltype(get_value)>
-    auto find(const K& k, const F& f = get_value)
+    auto Find(const K& k, const F& f = get_value)
       -> std::optional<typename std::result_of<F(Entry)>::type>
-    { return m.find(Entry::make_key(k), f); }
-    
-    bool insert(const K& key, const V& value) {
-      auto x = Entry::make_key(key);
-      return !m.insert(x, [&] {return Entry(x, value);}, true_f).has_value(); }
+    { return m.Find(Entry::make_key(k), f); }
 
-    bool remove(const K& k) { //      std::cout << "remove" << std::endl;
-      return m.remove(Entry::make_key(k), true_f).has_value(); }
+    template <typename F = decltype(get_value)>
+    auto Insert(const K& key, const V& value, const F& f = get_value)
+      -> std::optional<typename std::result_of<F(Entry)>::type> 
+    {
+      auto x = Entry::make_key(key);
+      return m.Insert(x, [&] {return Entry(x, value);}, f);
+    }
+
+    template <typename F = decltype(get_value)>
+    auto Remove(const K& k, const F& f = get_value) 
+      -> std::optional<typename std::result_of<F(Entry)>::type>
+    { return m.Remove(Entry::make_key(k), f); }
+
+    iterator find(const K& k) { return m.find(k); }
+
+    std::pair<iterator,bool> insert(const value_type& entry) {
+      return m.insert(Entry(entry.first, entry.second)); }
+
+    iterator erase(iterator pos) { return m.erase(pos); }
+    size_t erase(const K& k) { return m.erase(k); }
 
   };
   
   template <typename K, typename V, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_map = std::conditional_t<std::is_trivially_copyable_v<K> && std::is_trivially_copyable_v<V>,
-					   unordered_map_<DirectMapEntry<K, V, Hash, KeyEqual>>,
-					   unordered_map_<IndirectMapEntry<K, V, Hash, KeyEqual>>>;
+  using parlay_unordered_map = std::conditional_t<std::is_trivially_copyable_v<K> && std::is_trivially_copyable_v<V>,
+						  unordered_map_<DirectMapEntry<K, V, Hash, KeyEqual>>,
+						  unordered_map_<IndirectMapEntry<K, V, Hash, KeyEqual>>>;
 
   template <typename K_, class Hash = std::hash<K_>, class KeyEqual = std::equal_to<K_>>
   struct IndirectSetEntry {
@@ -209,20 +223,28 @@ namespace parlay {
     long count(const K& k) { return (contains(k)) ? 1 : 0; }
     bool contains(const K& k) { return find(k, true_f).has_value();}
 
-    bool find(const K& k) {
+    bool Find(const K& k) {
       return m.find(Entry::make_key(k), true_f).has_value(); }
     
-    bool insert(const K& key) {
+    bool Insert(const K& key) {
       auto x = Entry::make_key(key);
       return !m.insert(x, [&] {return Entry(x);}, true_f).has_value(); }
 
-    bool remove(const K& k) {
+    bool Remove(const K& k) {
       return m.remove(Entry::make_key(k), true_f).has_value(); }
+
+    iterator erase(iterator pos) { return m.erase(pos); }
+
+    std::pair<iterator,bool> insert(const value_type& entry) {
+      return m.insert(Entry(entry));
+    }
+
+    iterator find(const K& k) { return m.find(k); }
 
   };
 
   template <typename K, class Hash = std::hash<K>, class KeyEqual = std::equal_to<K>>
-  using unordered_set = std::conditional_t<std::is_trivially_copyable_v<K>,
+  using parlay_unordered_set = std::conditional_t<std::is_trivially_copyable_v<K>,
 					   unordered_set_<DirectSetEntry<K, Hash, KeyEqual>>,
 					   unordered_set_<IndirectSetEntry<K, Hash, KeyEqual>>>;
 }  // namespace parlay
