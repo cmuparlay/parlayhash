@@ -42,6 +42,13 @@ struct alignas(32) big_atomic {
     }
   }
 
+  std::pair<V,tag> ll_speculative() {
+    vtype ver = version.load(std::memory_order_acquire);
+    V v = val;
+    std::atomic_thread_fence(std::memory_order_acquire);
+    return std::pair(v, ver);
+  }
+
   std::pair<V,tag> ll() {
     while (true) {
       int delay = 100;
