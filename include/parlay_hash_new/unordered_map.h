@@ -224,14 +224,14 @@ namespace parlay {
     bool contains(const K& k) { return find(k, true_f).has_value();}
 
     bool Find(const K& k) {
-      return m.find(Entry::make_key(k), true_f).has_value(); }
+      return m.Find(Entry::make_key(k), true_f).has_value(); }
     
     bool Insert(const K& key) {
       auto x = Entry::make_key(key);
-      return !m.insert(x, [&] {return Entry(x);}, true_f).has_value(); }
+      return !m.Insert(x, [&] {return Entry(x);}, true_f).has_value(); }
 
     bool Remove(const K& k) {
-      return m.remove(Entry::make_key(k), true_f).has_value(); }
+      return m.Remove(Entry::make_key(k), true_f).has_value(); }
 
     iterator erase(iterator pos) { return m.erase(pos); }
 
