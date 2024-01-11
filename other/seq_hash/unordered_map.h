@@ -14,7 +14,7 @@ struct unordered_map {
   Table table;
   std::optional<V> find(const K& k) {
     std::optional<V> result;
-    table.visit(k, [&](auto&& x) { result = x.second; });
+    table.cvisit(k, [&](const auto& x) { result = x.second; });
     return result;
   }
   bool insert(const K& k, const V& v) { return table.emplace(k, v); }
@@ -27,7 +27,7 @@ template <typename K,
 	  class Hash = std::hash<K>,
 	  class KeyEqual = std::equal_to<K>>
 struct unordered_set {
-  using Set = seq::concurrent_set<K, Hash, KeyEqual, std::allocator<K>, seq::high_concurrency>;
+  using Set = seq::concurrent_set<K, Hash, KeyEqual, std::allocator<K>, 10>;
   Set set;
   bool find(const K& k) { return set.count(k) > 0;}
   bool insert(const K& k) { return set.emplace(k); }
