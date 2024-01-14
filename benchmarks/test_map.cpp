@@ -387,47 +387,56 @@ int main(int argc, char* argv[]) {
   if (update_percent != -1) percents = std::vector<int>{update_percent};
   if (zipfian_param != -1.0) zipfians = std::vector<double>{zipfian_param};
 
-  parlay::sequence<std::tuple<double,double,double>> results;
-
+  parlay::sequence<double> insert_times;
+  parlay::sequence<double> bench_times;
+  parlay::sequence<double> byte_sizes;
+  
   using int_type = unsigned long;
   using int_map_type = bench_map<int_type, int_type, IntHash, 1>;
   //using int_map_type = bench_set<int_type, IntHash>;
   if (!string_only) {
     for (auto zipfian_param : zipfians)
       for (auto update_percent : percents) {
+	byte_sizes.clear();
 	for (auto n : sizes) {
 	  auto [a, b] = generate_integer_distribution<int_type>(n, p, zipfian_param);
 	  std::stringstream str;
 	  str << "z=" << zipfian_param;
-	  results.push_back(test_loop<int_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-						    trial_time, latency_cuttoff, verbose, warmup, grow));
+	  auto [itime, btime, size] =
+	    test_loop<int_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+				    trial_time, latency_cuttoff, verbose, warmup, grow);
+	  insert_times.push_back(itime);
+	  bench_times.push_back(btime);
+	  byte_sizes.push_back(size);
 	}
 	if (print_means) std::cout << std::endl;
       }
   }
-
+  
 #ifdef STRING
   using string_map_type = bench_map<std::string, long, StringHash, 4>;
   if (!no_string) { // && n == 0 && update_percent == -1 && zipfian_param == -1.0) {
+    int cnt = 0;
     for (auto update_percent : percents) {
       long n = 20000000;
       auto [a, b] = generate_string_distribution(n);
       std::stringstream str;
       str << "tristr";
-      results.push_back(test_loop<string_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-						   trial_time, latency_cuttoff, verbose, warmup, grow));
+      auto [itime, btime, size] =
+	test_loop<string_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+				   trial_time, latency_cuttoff, verbose, warmup, grow);
+      insert_times.push_back(itime);
+      bench_times.push_back(btime);
+      if (cnt++ == 0) byte_sizes.push_back(size);
     }
   }
 #endif
 
   if (print_means) {
-    auto insert_times = parlay::map(results, [] (auto x) {return std::get<0>(x);});
     std::cout << "initial insert geometric mean of mops = " << geometric_mean(insert_times) << std::endl;
-    auto bench_times = parlay::map(results, [] (auto x) {return std::get<1>(x);});
     std::cout << "benchmark geometric mean of mops = " << geometric_mean(bench_times) << std::endl;
 #ifdef JEMALLOC
-    auto bytes = parlay::map(results, [] (auto x) {return std::get<2>(x);});
-    std::cout << "bytes/element geometric mean = " << geometric_mean(bytes) << std::endl;
+    std::cout << "bytes/element geometric mean = " << geometric_mean(byte_sizes) << std::endl;
 #endif
   }
   return 0;
