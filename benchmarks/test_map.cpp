@@ -143,13 +143,13 @@ test_loop(commandLine& C,
   parlay::sequence<double> bytes_pes;
 
   for (int i = 0; i < rounds + warmup; i++) { {
-      long mem_at_start = jemalloc_get_allocated();
+    long mem_at_start = jemalloc_get_allocated();
     Map map = grow ? Map(1) : Map(n);
     size_t np = n/p;
     size_t mp = m/p;
+    auto start_insert = std::chrono::system_clock::now();
 
     // initialize the map with n distinct elements
-    auto start_insert = std::chrono::system_clock::now();
 #ifdef USE_HANDLE
     long block_size = 1 + (n-1) / p;
     parlay::parallel_for(0, p, [&] (size_t i) {
