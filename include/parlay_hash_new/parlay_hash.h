@@ -33,8 +33,8 @@ struct parlay_hash {
   static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 48 / sizeof(Entry);
 
   // log_2 of the expected number of entries in a bucket (<= buffer_size)
-  static constexpr long log_bucket_size =
-    (buffer_size == 1) ? 0 : ((buffer_size == 2) ? 1 : ((buffer_size <= 4) ? 2 : 3));
+  static constexpr long log_bucket_size = 
+    (buffer_size == 1) ? 0 : ((buffer_size == 2) ? 1 : ((buffer_size <= 4) ? 2 : ((buffer_size <= 8) ? 3 : 4)));
 
   static long get_block_size(int num_bits) {
     return num_bits < 16 ? 16 : 256; }
@@ -46,10 +46,11 @@ struct parlay_hash {
   // for a small constant c if each bucket is expected to hold 1
   // element, but.... each bucket can be expected to hold more than one.
   static long get_overflow_size(int num_bits) {
-    if constexpr (log_bucket_size == 0) return num_bits < 18 ? 12 : 16;
-    else if constexpr (log_bucket_size == 1) return num_bits < 18 ? 16 : 20;
-    else if constexpr (log_bucket_size == 2) return num_bits < 18 ? 18 : 26;
-    else return num_bits < 18 ? 22 : 30;
+    if constexpr (log_bucket_size == 0) return num_bits < 18 ? 10 : 16;
+    else if constexpr (log_bucket_size == 1) return num_bits < 18 ? 11 : 18;
+    else if constexpr (log_bucket_size == 2) return num_bits < 18 ? 12 : 20;
+    else if constexpr (log_bucket_size == 3) return num_bits < 18 ? 14 : 22;
+    else return num_bits < 18 ? 16 : 24;
   }
 
   // clear_at_end will cause the scheduler and epoch-based collector
