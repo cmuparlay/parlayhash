@@ -1,3 +1,32 @@
+// Initial Author: Guy Blelloch
+// Developed as part of the flock library
+// 
+// A growable unordered_map using a hash table designed for scalability to large number of threads, and
+// for high contention.  On a key type K and value type V it supports:
+//
+//   unordered_map<K, V, Hash=std::hash<K>, Equal=std::equal_to<K>>(n) :
+//   constructor for table of initial size n
+//
+//   Find(const K&) -> std::optional<V> :
+//   returns value if key is found, and otherwise returns nullopt
+//
+//   Insert(const K&, const V&) -> std::optional<V> :
+//   if key not in the table it inserts the key with the given value
+//   and returns nullopt, otherwise it does not modify the table and
+//   returns the old value.
+//
+//   Remove(const K&) -> std::optional<V> :
+//   if key is in the table it removes the entry and returns its value.
+//   otherwise it does nothing and returns nullopt.
+//
+//   size() -> long : returns the size of the table.  Not linearizable with
+//   the other functions, and takes time proportional to the table size.
+//  
+//   clear() -> void : clears the table so its size is 0.
+//
+//   for_each(F f) : applies functor f to each entry of the table.
+//   f should be of type (const std::pair<K,V>&) -> void
+
 #ifndef PARLAY_UNORDERED_MAP_
 #define PARLAY_UNORDERED_MAP_
 
@@ -140,8 +169,7 @@ namespace parlay {
 
     static constexpr auto true_f = [] (const Entry& kv) {return true;};
     static constexpr auto identity = [] (const Entry& kv) {return kv;};
-    static constexpr auto get_value = [] (const Entry& kv) {
-					return kv.get_entry().second;};
+    static constexpr auto get_value = [] (const value_type& kv) {return kv.second;};
 
     unordered_map_(long n, bool clear_at_end = default_clear_at_end)
       : entries_(Entries(clear_at_end)),
@@ -151,7 +179,7 @@ namespace parlay {
     iterator end() { return m.end();}
     bool empty() { return size() == 0;}
     bool max_size() { return (1ul << 47)/sizeof(Entry);}
-    void clear() { m.clear();}
+    void clear() { m.clear_buckets();}
     long size() { return m.size();}
 
     template <typename F = decltype(identity)>
@@ -161,26 +189,60 @@ namespace parlay {
 
     template <typename F = decltype(get_value)>
     auto Find(const K& k, const F& f = get_value)
-      -> std::optional<typename std::result_of<F(Entry)>::type>
-    { return m.Find(Entry::make_key(k), f); }
-
-    template <typename F = decltype(get_value)>
-    auto Insert(const K& key, const V& value, const F& f = get_value)
-      -> std::optional<typename std::result_of<F(Entry)>::type> 
+      -> std::optional<typename std::result_of<F(value_type)>::type>
     {
-      auto k = Entry::make_key(key);
-      return m.Insert(k, [&] {return entries_.make_entry(k, value_type(key, value));}, f);
+      auto g = [&] (const Entry& e) {return f(e.get_entry());};
+      return m.Find(Entry::make_key(k), g);
     }
 
-    template <typename F = decltype(get_value)>
-    auto Remove(const K& k, const F& f = get_value) 
-      -> std::optional<typename std::result_of<F(Entry)>::type>
-    { return m.Remove(Entry::make_key(k), f); }
+    auto Findx(const K& k) -> std::optional<mapped_type>
+    { auto x = m.find(Entry::make_key(k));
+      if (x == end()) return {};
+      else return (*x).second;
+    }
+
+    auto Insert(const K& key, const V& value) -> std::optional<mapped_type>
+    {
+      auto k = Entry::make_key(key);
+      auto g = [&] (const Entry& e) {return get_value(e.get_entry());};
+      return m.Insert(k, [&] {return entries_.make_entry(k, value_type(key, value));}, g);
+    }
+
+    auto Insertx(const K& key, const V& value) -> std::optional<mapped_type>
+    {
+      auto [x,ok] = insert(value_type(key, value));
+      if (ok) return std::nullopt;
+      else return (*x).second;
+    }
+
+    template <typename F>
+    auto Insert(const K& key, const V& value, const F& f)
+      -> std::optional<typename std::result_of<F(value_type)>::type>
+    {
+      auto k = Entry::make_key(key);
+      auto g = [&] (const Entry& e) {return f(e.get_entry());};
+      return m.Insert(k, [&] {return entries_.make_entry(k, value_type(key, value));}, g);
+    }
+
+    auto Remove(const K& k) -> std::optional<mapped_type>
+    {
+      auto g = [&] (const Entry& e) {return get_value(e.get_entry());};
+      return m.Remove(Entry::make_key(k), g);
+    }
+
+    template <typename F>
+    auto Remove(const K& k, const F& f)
+      -> std::optional<typename std::result_of<F(value_type)>::type>
+    {
+      auto g = [&] (const Entry& e) {return f(e.get_entry());};
+      return m.Remove(Entry::make_key(k), g);
+    }
 
     iterator find(const K& k) { return m.find(k); }
 
     std::pair<iterator,bool> insert(const value_type& entry) {
-      return m.insert(entries_.make_entry(make_key(entry.first), entry)); }
+      auto k = Entry::make_key(entry.first);
+      return m.insert(k, [&] {return entries_.make_entry(k, entry);});}
 
     iterator erase(iterator pos) { return m.erase(pos); }
     size_t erase(const K& k) { return m.erase(k); }
@@ -221,7 +283,7 @@ namespace parlay {
     iterator end() { return m.end();}
     bool empty() { return size() == 0;}
     bool max_size() { return (1ul << 47)/sizeof(Entry);}
-    void clear() { m.clear();}
+    void clear() { m.clear_buckets();}
     long size() { return m.size();}
 
     template <typename F = decltype(identity)>

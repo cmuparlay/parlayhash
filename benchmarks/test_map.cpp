@@ -90,8 +90,8 @@ generate_integer_distribution(long n,   // num entries in map
 std::pair<parlay::sequence<std::string>,parlay::sequence<std::string>>
 generate_string_distribution(long n) {
   auto b = trigramWords(n);
-  //auto a = parlay::random_shuffle(parlay::remove_duplicates(b));
-  auto a = parlay::remove_duplicates(b);
+  auto a = parlay::random_shuffle(parlay::remove_duplicates(b));
+  //auto a = parlay::remove_duplicates(b);
   return std::pair(a,b);
 }
 
@@ -301,7 +301,7 @@ test_loop(commandLine& C,
 		<< ", removes = " << removed
 		<< std::endl;
     if (qratio < .4 || qratio > .6)
-      std::cout << "warning: query success ratio = " << qratio << ", " << queries_success << ", " << queries << std::endl;
+      std::cout << "warning: query success ratio = " << qratio << std::endl;
     if (uratio < .4 || uratio > .6)
       std::cout << "warning: update success ratio = " << uratio << std::endl;
     if (initial_size + added - removed != final_cnt) {
@@ -394,7 +394,9 @@ int main(int argc, char* argv[]) {
   using int_type = unsigned long;
   using int_map_type = bench_map<int_type, int_type, IntHash, 1>;
   //using int_map_type = bench_set<int_type, IntHash>;
+
   if (!string_only) {
+    double byte_size, insert_time;
     for (auto zipfian_param : zipfians)
       for (auto update_percent : percents) {
 	byte_sizes.clear();
@@ -405,13 +407,16 @@ int main(int argc, char* argv[]) {
 	  auto [itime, btime, size] =
 	    test_loop<int_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
 				    trial_time, latency_cuttoff, verbose, warmup, grow);
-	  insert_times.push_back(itime);
 	  bench_times.push_back(btime);
-	  byte_sizes.push_back(size);
+	  insert_time = itime;
+	  byte_size = size;
 	}
 	if (print_means) std::cout << std::endl;
       }
+    byte_sizes.push_back(byte_size);
+    insert_times.push_back(insert_time);
   }
+  
   
 #ifdef STRING
   using string_map_type = bench_map<std::string, long, StringHash, 4>;

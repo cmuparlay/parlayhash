@@ -9,7 +9,7 @@
 #include <utils/epoch.h>
 #include "bigatomic.h"
 
-constexpr bool PrintGrow = true;
+constexpr bool PrintGrow = false;
 #define USE_PARLAY 1
 
 namespace parlay {
@@ -529,14 +529,18 @@ struct parlay_hash {
 	clear_bucket_rec(next, grow_factor * i + j);
     }
   }
-  
-  // Clear all memory.
-  // Reinitialize to table of size 1 if specified, and by default.
-  void clear(bool reinitialize = true) {
+
+  void clear_buckets() {
     table_version* ht = current_table_version.load();
     // clear buckets from current and future versions
     parallel_for(ht->size, [&] (size_t i) {
 	clear_bucket_rec(ht, i);});
+  }
+  
+  // Clear all memory.
+  // Reinitialize to table of size 1 if specified, and by default.
+  void clear(bool reinitialize = true) {
+    clear_buckets();
 
     // now reclaim the arrays
     table_version* tv = initial_table_version;
@@ -628,14 +632,8 @@ struct parlay_hash {
     // if entries are direct, then safe to scan the buffer without epoch protection
     if constexpr (Entry::Direct) {
       auto [s, tag] = b->ll();
-      if (s.is_forwarded()) { // check_bucket_and_state inlined one level by hand
-	table_version* nxt = ht->next.load();
-	long idx = nxt->get_index(k);
-	b = &(nxt->buckets[idx].v);
-	std::tie(s, tag) = b->ll();
-	check_bucket_and_state(nxt, k, b, s, tag, idx);
-      }
-      // search in buffer
+      if (s.is_forwarded()) 
+	check_bucket_and_state(ht, k, b, s, tag, idx);
       for (long i = 0; i < std::min(s.buffer_cnt(), buffer_size); i++)
 	if (s.buffer[i].equal(k))
 	  return std::optional(f(s.buffer[i]));
@@ -867,15 +865,15 @@ struct parlay_hash {
 
   struct Iterator {
   public:
-    using value_type        = typename Entry::Data;
+    using value_type        = typename Entries::Data;
     using iterator_category = std::forward_iterator_tag;
     using pointer           = value_type*;
     using reference         = value_type&;
     using difference_type   = long;
 
   private:
-    std::vector<value_type> entries;
-    value_type entry;
+    std::vector<Entry> entries;
+    Entry entry;
     table_version* t;
     int i;
     long bucket_num;
@@ -883,7 +881,7 @@ struct parlay_hash {
     bool end;
     void get_next_bucket() {
       while (entries.size() == 0 && ++bucket_num < t->size)
-	bucket_entries(t, bucket_num, entries, [] (const Entry& e) {return e.get_entry();});
+	bucket_entries(t, bucket_num, entries, [] (const Entry& e) {return e;});
       if (bucket_num == t->size) end = true;
     }
 
@@ -893,7 +891,7 @@ struct parlay_hash {
       i(0), bucket_num(-1l), single(false), end(false) {
       get_next_bucket();
     }
-    Iterator(value_type entry) : entry(entry), single(true), end(false) {}
+    Iterator(Entry entry) : entry(entry), single(true), end(false) {}
     Iterator& operator++() {
       if (single) end = true;
       else if (++i == entries.size()) {
@@ -913,9 +911,16 @@ struct parlay_hash {
       }
       return tmp;
     }
-    value_type& operator*() {
-      if (single) return entry;
-      return entries[i];}
+    template<bool D = Entry::Direct, std::enable_if_t<D, int> = 0>
+    const value_type operator*() {
+      if (single) return entry.get_entry();
+      return entries[i].get_entry();}
+
+    template<bool D = Entry::Direct, std::enable_if_t<!D, int> = 0>
+    const value_type& operator*() { 
+      if (single) return entry.get_entry();
+      return entries[i].get_entry();}
+
     bool operator!=(const Iterator& iterator) {
       return !(end ? iterator.end : (bucket_num == iterator.bucket_num &&
 				     i == iterator.i));
@@ -930,11 +935,13 @@ struct parlay_hash {
   static constexpr auto identity = [] (const Entry& entry) {return entry;};
   static constexpr auto true_f = [] (const Entry& entry) {return true;};
 
-  std::pair<Iterator,bool> insert(const Entry& entry) {
-    auto r = Insert(entry, identity);
-    if (!r.has_value())
-      return std::pair(Iterator(entry),true);
-    return std::pair(Iterator(*r),false);
+  template <typename Constr>
+  std::pair<Iterator,bool> insert(const K& key, const Constr& constr) {
+    auto r = Insert(key, constr, true_f);
+    if (r.has_value())
+      return std::pair(Iterator(*r), false);
+    // not correct
+    return std::pair(Iterator(true), true);
   }
 
   Iterator erase(Iterator pos) {
@@ -949,7 +956,8 @@ struct parlay_hash {
   Iterator find(const K& k) {
     auto r = Find(k, identity);
     if (!r.has_value()) return Iterator(true);
-    return Iterator(*r);
+    auto x = Iterator(*r);
+    return x;
   }
 
 };
