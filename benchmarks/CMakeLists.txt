@@ -53,7 +53,7 @@ if (BOOST_DIR)
   target_include_directories(boost_hash PRIVATE ${BOOST_DIR})
 endif()
 
-set(BENCH_FILES "runtests.py" "run_graphs")
+set(BENCH_FILES "runtests.py" "run_graphs" "runall")
 
 function(copy_bench_file NAME)
   file(COPY ${CMAKE_CURRENT_SOURCE_DIR}/${NAME}
