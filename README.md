@@ -71,7 +71,7 @@ is given on construction, no growing will be needed.  The number of
 buckets increase by a constant factor when any bucket gets too large.
 The copying is done incrementally by each update.
 
-[//] # ", allowing for a
+[//]: # ", allowing for a
 mostly lock-free implementation.  Queries (finds) are still wait-free,
 but updates can take a fine-grained lock (on a block of buckets) when
 the hash map is growing.  Also allocation of a new **uninitialized
@@ -79,7 +79,7 @@ array** for the buckets at the start of a grow cycle takes a lock to
 avoid multiple allocations, and since the allocator will most likely
 take a lock anyway for large arrays."
 
-[\\] # "
+[//] # "lkjk
 By default the implementations are lock free (or mostly lock free when
 growing).  However, we also support locked-based versions by defining
 `USE_LOCKS`.  In the locked-based version, queries (finds) will still
