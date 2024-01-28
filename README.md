@@ -58,11 +58,9 @@ for `size`.
 
 - `clear() -> void` : Clears all entries of the map.   It does not resize.
 
-<!---
 The type for keys (K) and values (V) must be copyable, and might be
 copied by the hash map even when not being updated (e.g. when
 another key in the same bucket is being updated).
---->
 
 A simple example can be found in [examples/example.cpp](examples/example.cpp)
 
@@ -79,7 +77,7 @@ array** for the buckets at the start of a grow cycle takes a lock to
 avoid multiple allocations, and since the allocator will most likely
 take a lock anyway for large arrays."
 
-[//] # "lkjk
+[//]: # "
 By default the implementations are lock free (or mostly lock free when
 growing).  However, we also support locked-based versions by defining
 `USE_LOCKS`.  In the locked-based version, queries (finds) will still
