@@ -1,9 +1,9 @@
 # ParlayHash :
 A Header-Only Scalable Concurrent Hash Map.
 
-A growable concurrent hash map supporting **wait-free finds** and mostly **lock-free
-updates** (some locks are taken when growing, but when not growing all updates are lock free).
-It is designed to scale well to  hundreds of threads and work reasonably well under high contention.
+A growable concurrent hash map supporting which is designed to scale
+well to hundreds of threads and work reasonably well under high
+contention.
 
 The simplest way to use the library is to copy the [include](include) directory into your code directory
 and then include the following in your code:
@@ -20,14 +20,15 @@ The library supports the following interface for any copyable key type `K` and v
 constructor for map of initial size n.  If `cleanup` is set, all memory pools and scheduler threads will
 be cleaned up on destruction, otherwise they can be shared among hash maps.
 
-- `find(const K&) -> std::optional<V>` : If the key is in the map, returns the value associated
+- `Find(const K&) -> std::optional<V>` : If the key is in the map, returns the value associated
   with it, otherwise returns std::nullopt.
 
-- `insert(const K&, const V&) -> bool` : If the key is in the map, returns false, otherwise inserts the key
-with the given value and returns true.
+- `Insert(const K&, const V&) -> std::optional<V>` : If the key is in
+the map, returns the old value, otherwise inserts the key with the
+given value and returns std::nullopt.
 
 - `remove(const K&) -> bool` : If the key is in the map, removes the
-  key-value and returns true, otherwise it returns false.
+  key-value and returns the value, otherwise it returns std::nullopt.
 
 - `upsert(const K&, (const std::optional<V>&) -> V)) -> bool` : If the
 key is in the map with an associated value v then it applies the function (second argument)
@@ -55,6 +56,8 @@ the hash map.  Safe to run with other operations, but is not
 linearizable with updates.  Its concurrency semantics are the same as
 for `size`.
 
+- `clear() -> void` : Clears all entries of the map.   It does not resize.
+
 <!---
 The type for keys (K) and values (V) must be copyable, and might be
 copied by the hash map even when not being updated (e.g. when
@@ -66,14 +69,17 @@ A simple example can be found in [examples/example.cpp](examples/example.cpp)
 The library supports growable hash maps, although if the proper size
 is given on construction, no growing will be needed.  The number of
 buckets increase by a constant factor when any bucket gets too large.
-The copying is done incrementally by each update, allowing for a
+The copying is done incrementally by each update.
+
+[//] # ", allowing for a
 mostly lock-free implementation.  Queries (finds) are still wait-free,
 but updates can take a fine-grained lock (on a block of buckets) when
 the hash map is growing.  Also allocation of a new **uninitialized
 array** for the buckets at the start of a grow cycle takes a lock to
 avoid multiple allocations, and since the allocator will most likely
-take a lock anyway for large arrays.
+take a lock anyway for large arrays."
 
+[\\] # "
 By default the implementations are lock free (or mostly lock free when
 growing).  However, we also support locked-based versions by defining
 `USE_LOCKS`.  In the locked-based version, queries (finds) will still
@@ -83,7 +89,7 @@ isolation (i.e., mutually exclusive of any other invocation of the
 function by an upsert on the same key) and just once.  With the
 lock-free version the function could be run multiple times
 concurrently, although the value of only one will be used.
-
+"
 
 ## Benchmarks
 
