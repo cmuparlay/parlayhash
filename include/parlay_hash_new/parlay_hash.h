@@ -193,6 +193,24 @@ struct parlay_hash {
     }
   }
 
+  // update element with a given key in a list.  Uses path copying.
+  // Returns a triple consisting of the position of the key in the list (1 based),
+  // the head of the new list with the key updated, and the old link that is replaced.
+  // If the key is not found, nothing is done, the last two results are nullptr, and
+  // the first result is the length of the list.
+  template <typename Constr>
+  std::tuple<int, link*, link*> update_list(link* nxt, const K& k, const Constr& constr) {
+    if (nxt == nullptr) 
+      return std::tuple(0, nullptr, nullptr);
+    else if (nxt->entry.equal(k))
+      return std::tuple(1, link_pool->New(constr(std::optional(nxt->entry)), nxt->next), nxt);
+    else {
+      auto [len, ptr, updated] = update_list(nxt->next, k, constr);
+      if (ptr == nullptr) return std::tuple(len + 1, nullptr, nullptr);
+      return std::tuple(len + 1, link_pool->New(nxt->entry, ptr), updated);
+    }
+  }
+
   // retires first n elements of a list, but not the entries
   void retire_list_n(link* nxt, int n) {
     while (n > 0) {
@@ -324,7 +342,8 @@ struct parlay_hash {
     // that when growing, a bucket will go to grow_factor contiguous
     // buckets in the next table.
     long get_index(const K& k) {
-      return (Entry::hash(k) >> (48 - num_bits))  & (size-1u);}
+      size_t h = Entry::hash(k);
+      return (h >> (48 - num_bits))  & (size-1u);}
 
     bckt* get_bucket(const K& k) {
       return &buckets[get_index(k)].v; }
@@ -711,6 +730,75 @@ struct parlay_hash {
 	    return std::nullopt;
 	  entries_->retire_entry(new_head->entry); // if failed need to ty again
 	  retire_link(new_head);
+	}
+	// delay before trying again, only marginally helps
+	for (volatile int i=0; i < delay; i++);
+	delay = std::min(2*delay, 5000); // 1000-10000 are about equally good
+      }
+    });
+  }
+
+    // Inserts at key, and does nothing if key already in the table.
+  // The constr function construct the entry to be inserted if needed.
+  // Returns an optional, which is empty if sucessfully inserted or
+  // contains f(e) if not, where e is the entry matching the key.
+  template <typename Constr, typename G>
+  auto Upsert(const K& key, const Constr& constr, G& g)
+    -> std::optional<typename std::result_of<G(Entry)>::type>
+  {
+    using rtype = std::optional<typename std::result_of<G(Entry)>::type>;
+    table_version* ht = current_table_version.load();
+    long idx = ht->get_index(key);
+    auto b = &(ht->buckets[idx].v);
+    return epoch::with_epoch([&] () -> rtype {
+      int delay = 200;
+      while (true) {
+	auto [s, tag] = b->ll();
+	state out_s = s;
+	copy_if_needed(ht, idx);
+	check_bucket_and_state(ht, key, b, s, tag, idx);
+	long len = s.buffer_cnt();
+	bool cont = false;
+	for (long i = 0; i < std::min(len, buffer_size); i++) {
+	  if (s.buffer[i].equal(key)) {
+	    Entry new_e = constr(std::optional(s.buffer[i]));
+	    out_s.buffer[i] = new_e;
+	    if (b->sc(tag, out_s)) return g(s.buffer[i]);
+	    else {
+	      entries_->retire_entry(new_e);
+	      cont = true;
+	      break;
+	    }
+	  }
+	}
+	if (cont) continue;
+	if (len < buffer_size) { // buffer has space, insert to end of buffer
+	  Entry new_e = constr(std::optional<Entry>());
+	  if (b->sc(tag, state(s, new_e))) return std::nullopt;
+	  entries_->retire_entry(new_e); // if failed need to ty again
+	} else if (len == buffer_size) { // buffer just full, insert new link
+	  link* new_head = new_link(constr(std::optional<Entry>()), nullptr);
+	  if (b->sc(tag, state(s, new_head))) 
+	    return std::nullopt;
+	  entries_->retire_entry(new_head->entry); // if failed need to try again
+	  retire_link(new_head);
+	} else { // buffer overfull, need to check if in list
+	  link* old_head = s.overflow_list();
+	  auto [list_len, new_head, updated] = update_list(old_head, key, constr);
+	  if (new_head != nullptr) {
+	    if (b->sc(tag, state(s, new_head))) {// try to add to head of list
+	      rtype r = std::optional(g(updated->entry));
+	      retire_list_n(old_head, list_len); // retire old list
+	      return r;
+	    } else retire_list_n(new_head, list_len);
+	  } else {
+	    if (list_len + buffer_size > ht->overflow_size) expand_table(ht);
+	    new_head = new_link(constr(std::optional<Entry>()), old_head);
+	    if (b->sc(tag, state(s, new_head))) // try to add to head of list
+	      return std::nullopt;
+	    entries_->retire_entry(new_head->entry); // if failed need to ty again
+	    retire_link(new_head);
+	  }	    
 	}
 	// delay before trying again, only marginally helps
 	for (volatile int i=0; i < delay; i++);

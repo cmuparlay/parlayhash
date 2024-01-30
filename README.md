@@ -27,7 +27,7 @@ be cleaned up on destruction, otherwise they can be shared among hash maps.
 the map, returns the old value, otherwise inserts the key with the
 given value and returns std::nullopt.
 
-- `remove(const K&) -> bool` : If the key is in the map, removes the
+- `Remove(const K&) -> bool` : If the key is in the map, removes the
   key-value and returns the value, otherwise it returns std::nullopt.
 
 - `upsert(const K&, (const std::optional<V>&) -> V)) -> bool` : If the

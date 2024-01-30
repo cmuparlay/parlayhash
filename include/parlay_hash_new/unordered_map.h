@@ -39,6 +39,18 @@
 namespace parlay {
   static constexpr bool default_clear_at_end = false;
 
+  // conditionally rehash if typy Hash::avalanching is not defined
+  template<typename Hash, typename ignore = void>
+  struct rehash {
+    size_t operator()(size_t h) {
+      size_t x = h * UINT64_C(0xbf58476d1ce4e5b9); // linear transform
+      return (x ^ (x >> 31));  // non-linear transform
+    }};
+
+  template<typename Hash>
+  struct rehash<Hash, typename Hash::is_avalanching> {
+    size_t operator()(size_t i) {return i;}};
+
   template <typename K_, typename V_, class Hash_ = std::hash<K_>, class KeyEqual_ = std::equal_to<K_>>
   struct MapData {
     using K = K_;
@@ -81,13 +93,15 @@ namespace parlay {
       }
       Data* get_ptr() const {
 	return (Data*) (((size_t) ptr) & ((1ul << 48) - 1)); }
-      static unsigned long hash(const Key& k) {return k.second;}
+      static unsigned long hash(const Key& k) {
+	return k.second;}
       bool equal(const Key& k) const {
 	return (((k.second >> 48) == (((size_t) ptr) >> 48)) &&
 		KeyEqual{}(DataS::get_key(*get_ptr()), *k.first)); }
       Key get_key() const { return make_key(DataS::get_key(*get_ptr()));}
       Data& get_entry() const { return *get_ptr();}
-      static Key make_key(const K& key) { return Key(&key, Hash{}(key));}
+      static Key make_key(const K& key) {
+	return Key(&key, rehash<Hash>{}(Hash{}(key)));}
       Entry(Key k, Data* data) : ptr(tag_ptr(hash(k), data)) {}
       Entry() {}
     };
@@ -133,7 +147,8 @@ namespace parlay {
       using Key = K;
       static const bool Direct = true;
       Data data;
-      static unsigned long hash(const Key& k) {return Hash{}(k);}
+      static unsigned long hash(const Key& k) {
+	return rehash<Hash>{}(Hash{}(k));}
       bool equal(const Key& k) const { return KeyEqual{}(get_key(), k); }
       static Key make_key(const K& k) {return k;}
       const K& get_key() const {return DataS::get_key(data);}
@@ -208,11 +223,17 @@ namespace parlay {
       return m.Insert(k, [&] {return entries_.make_entry(k, value_type(key, value));}, g);
     }
 
-    auto Insertx(const K& key, const V& value) -> std::optional<mapped_type>
+    template <typename F>
+    auto Upsert(const K& key, const F& f) -> std::optional<mapped_type>
     {
-      auto [x,ok] = insert(value_type(key, value));
-      if (ok) return std::nullopt;
-      else return (*x).second;
+      auto k = Entry::make_key(key);
+      auto g = [&] (const Entry& e) {return get_value(e.get_entry());};
+      auto constr = [&] (const std::optional<Entry>& e) -> Entry {
+		      if (e.has_value())
+			return entries_.make_entry(k, value_type(key, f(std::optional(get_value((*e).get_entry())))));
+		      return entries_.make_entry(k, value_type(key, f(std::optional<V>())));
+		    };
+      return m.Upsert(k, constr, g);
     }
 
     template <typename F>
