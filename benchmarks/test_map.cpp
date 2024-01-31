@@ -386,9 +386,9 @@ int main(int argc, char* argv[]) {
   std::vector<int> percents;
   std::vector<double> zipfians;
   if (full) {
-    sizes = std::vector<long>({10000, 1000000, 100000000});
-    percents = std::vector<int>({0, 5, 50});
-    zipfians = std::vector<double>({0, .8, .99});
+    sizes = std::vector<long>({10000, 10000000});
+    percents = std::vector<int>({0, 10, 50});
+    zipfians = std::vector<double>({0, .99});
   } else {
     sizes = std::vector<long>({10000, 10000000});
     percents = std::vector<int>({5, 50});
@@ -430,7 +430,7 @@ int main(int argc, char* argv[]) {
 
     {
       double zipfian_param = zipfians[0];
-      long update_percent = percents[0];
+      long update_percent = 10;
       for (auto n : sizes) {
 	auto [a, b] = generate_integer_distribution<small_int_type>(n, p, zipfian_param);
 	std::stringstream str;

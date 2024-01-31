@@ -7,7 +7,7 @@ tables = ["parlay_hash", "tbb_hash", "libcuckoo", "folly_sharded", "folly_hash",
 
 for x in tables :
     filename = "../../timings/" + x
-    command = "numactl -i all ./" + x
+    command = "numactl -i all ./" + x + " -full"
     if os.path.exists(filename) :
         os.remove(filename)
     runstring(command, filename)
