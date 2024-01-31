@@ -1,4 +1,5 @@
 #include "phmap.h"
+#define USE_SET
 
 template <typename K,
           typename V,
@@ -16,7 +17,7 @@ struct unordered_map {
   }
 
   bool insert(const K& k, const V& v) {
-    return table.try_emplace_l(k, [](auto&&) {}, v);
+    return table.try_emplace(k, v).second;
   }
 
   bool remove(const K& k) {
@@ -28,6 +29,21 @@ struct unordered_map {
   }
 
   long size() {return table.size();}
+};
+
+
+template <typename K,
+          class Hash = std::hash<K>,
+          class KeyEqual = std::equal_to<K>>
+struct unordered_set {
+  using Set = phmap::parallel_flat_hash_set<K, Hash, KeyEqual, std::allocator<K>, 12, std::mutex>;
+
+  Set set;
+  bool find(const K& k) {return set.count(k) == 1;}
+  bool insert(const K& k) { return set.emplace(k).second; }
+  bool remove(const K& k) { return set.erase(k); }
+  unordered_set(size_t n) {  set.reserve(n); }
+  long size() {return set.size();}
 };
 
 

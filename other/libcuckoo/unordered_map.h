@@ -1,5 +1,3 @@
-#include <parlay/primitives.h>
-
 #include "cuckoohash_map.hh"
 
 template <typename K,
@@ -25,9 +23,7 @@ struct unordered_map {
     return table.erase(k);
   }
 
-  unordered_map(size_t n) {
-    table = Table(n); //.reserve(n);
-  }
+  unordered_map(size_t n) : table(Table(n)) {}
 
   long size() {return table.size();}
 };

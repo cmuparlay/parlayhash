@@ -3,11 +3,11 @@ import sys
 sys.path.insert(1, '.')
 from runtests import *
 
-tables = ["parlay_hash_new", "tbb_hash", "libcuckoo", "folly_sharded", "folly_hash", "boost_hash", "parallel_hashmap", "seq_hash"]
+tables = ["parlay_hash", "tbb_hash", "libcuckoo", "folly_sharded", "folly_hash", "boost_hash", "parallel_hashmap", "seq_hash"]
 
 for x in tables :
     filename = "../../timings/" + x
-    command = "numactl -i all ./" + x + " -full"
+    command = "numactl -i all ./" + x
     if os.path.exists(filename) :
         os.remove(filename)
     runstring(command, filename)

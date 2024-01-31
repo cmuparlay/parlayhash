@@ -1,5 +1,5 @@
 
-#include "parlay_hash_new/unordered_map.h"
+#include "old_parlay_hash/unordered_map.h"
 
 template <typename K,
 	  typename V,
@@ -27,6 +27,8 @@ struct unordered_map {
 };
 
 #define USE_SET
+
+#include "old_parlay_hash/unordered_set.h"
 
 template <typename K,
 	  class Hash = std::hash<K>,

@@ -16,7 +16,7 @@ add_benchmark(hash_list include "" "" "UPSERT")
 add_benchmark(hash_list_seqlock include "" "" "")
 add_benchmark(hls include "" "" "")
 
-add_benchmark(parlay_hash_new other "" "" "")
+add_benchmark(old_parlay_hash other "" "" "")
 add_benchmark(parlay_hash other "" "" "")
 add_benchmark(std_hash other "" "" "")
 add_benchmark(std_sharded other "" "" "")

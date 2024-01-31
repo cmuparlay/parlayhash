@@ -349,6 +349,17 @@ struct bench_set {
   bool remove(const K& k) { return m.remove(k);}
   long size() { return m.size(); }
 };
+#else
+template <typename K_, typename Hash>
+struct bench_set {
+  using K = K_;
+  unordered_map<K,bool,Hash> m;
+  bench_set(size_t n) : m(n) {}
+  int find(const K& k) { return (m.find(k).has_value()) ? 1 : 0; }
+  bool insert(const K& k) { return m.insert(k, true); }
+  bool remove(const K& k) { return m.remove(k);}
+  long size() { return m.size(); }
+};
 #endif
 
     
@@ -379,7 +390,7 @@ int main(int argc, char* argv[]) {
     percents = std::vector<int>({0, 5, 50});
     zipfians = std::vector<double>({0, .8, .99});
   } else {
-    sizes = std::vector<long>({100000, 10000000});
+    sizes = std::vector<long>({10000, 10000000});
     percents = std::vector<int>({5, 50});
     zipfians = std::vector<double>({0, .99});
   }
@@ -393,17 +404,15 @@ int main(int argc, char* argv[]) {
   
   using int_type = unsigned long;
   using int_map_type = bench_map<int_type, int_type, IntHash, 1>;
-  //using int_map_type = bench_set<int_type, IntHash>;
 
   if (!string_only) {
     double byte_size, insert_time;
     for (auto zipfian_param : zipfians)
       for (auto update_percent : percents) {
-	byte_sizes.clear();
 	for (auto n : sizes) {
 	  auto [a, b] = generate_integer_distribution<int_type>(n, p, zipfian_param);
 	  std::stringstream str;
-	  str << "z=" << zipfian_param;
+	  str << "long_long,z=" << zipfian_param;
 	  auto [itime, btime, size] =
 	    test_loop<int_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
 				    trial_time, latency_cuttoff, verbose, warmup, grow);
@@ -415,8 +424,29 @@ int main(int argc, char* argv[]) {
       }
     byte_sizes.push_back(byte_size);
     insert_times.push_back(insert_time);
+
+    using small_int_type = int;
+    using int_set_type = bench_set<small_int_type, IntHash>;
+
+    {
+      double zipfian_param = zipfians[0];
+      long update_percent = percents[0];
+      for (auto n : sizes) {
+	auto [a, b] = generate_integer_distribution<small_int_type>(n, p, zipfian_param);
+	std::stringstream str;
+	str << "int,z=" << zipfian_param;
+	auto [itime, btime, size] =
+	  test_loop<int_set_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
+				  trial_time, latency_cuttoff, verbose, warmup, grow);
+	bench_times.push_back(btime);
+	insert_time = itime;
+	byte_size = size;
+      }
+    }
+    if (print_means) std::cout << std::endl;
+    byte_sizes.push_back(byte_size);
+    insert_times.push_back(insert_time);
   }
-  
   
 #ifdef STRING
   using string_map_type = bench_map<std::string, long, StringHash, 4>;
@@ -426,7 +456,7 @@ int main(int argc, char* argv[]) {
       long n = 20000000;
       auto [a, b] = generate_string_distribution(n);
       std::stringstream str;
-      str << "tristr";
+      str << "string_4xlong,trigram";
       auto [itime, btime, size] =
 	test_loop<string_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
 				   trial_time, latency_cuttoff, verbose, warmup, grow);

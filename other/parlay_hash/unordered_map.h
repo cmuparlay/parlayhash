@@ -28,8 +28,6 @@ struct unordered_map {
 
 #define USE_SET
 
-#include "parlay_hash/unordered_set.h"
-
 template <typename K,
 	  class Hash = std::hash<K>,
 	  class KeyEqual = std::equal_to<K>>
