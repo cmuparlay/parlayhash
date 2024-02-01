@@ -146,8 +146,9 @@ and adding a line of the form:
 to [CMakeFile.txt](benchmarks/CMakeFiles.txt).
 
 The benchmarks will run by default on the number of hardware threads
-you have on your machine.  It runs a few experiments on different workloads
-and reports a geometric mean across the experiments in operation per second.
+you have on your machine.  It runs a several experiments on different
+workloads and reports a geometric mean across the experiments in terms
+of operation per second.
 
 - Table of long keys and long values : will run over two data sizes
 (10K and 10M), three update percents (0%, 10% and 50%), and two
@@ -156,6 +157,9 @@ workloads since all combinations are tried.  The updates are 50%
 insertions (without replacement if already there) and 50% removes, the
 rest of the operations are finds.  For example, the 50% update
 workload will have 25% insertions, 25% removes, and 50% finds.
+We note that zipfian .99 is what is suggested by the YCSB [Yahoo Cloud
+Serving Benchmark](https://research.yahoo.com/news/yahoo-cloud-serving-benchmark) as a good model for the skew of real-world
+data used in key value stores.
 
 - Set of ints: will run over over 2 sizes (10K and 10M) with update
 percent set 10% and zipfian set to zero.  This is to test how it does
@@ -173,11 +177,14 @@ It reports the geometric mean for the largest experiment across the
 three types (i.e 10M for long-long and int, and 1.2M for strings).
 
 Finally it reports the geometric mean of the number of bytes used per
-elemement for each of the three types (long-long, int, string-4xlong).
+elemement for the hash tables that use each of the three types
+(long-long, int, string-4xlong).  This is total memory as measured by
+jemalloc (i.e. difference in allocated memory from before the table is
+created until after it is created and all n elements are inserted).
 Note the perfect number (i.e. no wasted memory) would be
 (16*4*56)^(1/3) = 15.3 (long-long = 16 bytes, int = 4 bytes
-string-4xlong = 24 + 4*8 = 56 bytes).  This is total memory as
-measured by jemalloc.
+string-4xlong = 24 + 4*8 = 56 bytes).  Hence, for example, 30 would
+indicate approximately a factor of 2x overhead.
 
 Options include:
 
@@ -227,40 +234,6 @@ that it is due to a bug in their hazard-pointer implementation (a
 16-bit counter is overflowing).
 
 Many of the hash maps do badly on many threads under high contention.
-For example, here are the full results for `libcuckoo` on 128 threads:
-
-```
-./libcuckoo,5%update,n=100000,p=128,z=0,grow=0,insert_mops=181,mops=536
-./libcuckoo,5%update,n=10000000,p=128,z=0,grow=0,insert_mops=298,mops=385
-./libcuckoo,50%update,n=100000,p=128,z=0,grow=0,insert_mops=188,mops=448
-./libcuckoo,50%update,n=10000000,p=128,z=0,grow=0,insert_mops=296,mops=342
-./libcuckoo,5%update,n=100000,p=128,z=0.99,grow=0,insert_mops=187,mops=2
-./libcuckoo,5%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=297,mops=2
-./libcuckoo,50%update,n=100000,p=128,z=0.99,grow=0,insert_mops=185,mops=1
-./libcuckoo,50%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=296,mops=3
-benchmark geometric mean of mops = 33.0592
-initial insert geometric mean of mops = 234.931
-```
-
-The last four workloads are for z=.99 (zipfian parameter .99), and it does abysmally on these.  In comparison here is the full
-result for `parlay_hash`:
-
-```
-./parlay_hash,5%update,n=100000,p=128,z=0,grow=0,insert_mops=83,mops=2024            
-./parlay_hash,5%update,n=10000000,p=128,z=0,grow=0,insert_mops=226,mops=659          
-./parlay_hash,50%update,n=100000,p=128,z=0,grow=0,insert_mops=123,mops=698           
-./parlay_hash,50%update,n=10000000,p=128,z=0,grow=0,insert_mops=318,mops=470         
-./parlay_hash,5%update,n=100000,p=128,z=0.99,grow=0,insert_mops=105,mops=1056        
-./parlay_hash,5%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=318,mops=969       
-./parlay_hash,50%update,n=100000,p=128,z=0.99,grow=0,insert_mops=168,mops=216        
-./parlay_hash,50%update,n=10000000,p=128,z=0.99,grow=0,insert_mops=317,mops=333      
-benchmark geometric mean of mops = 651.735                                           
-initial insert geometric mean of mops = 184.35
-```
-
-We note that zipfian .99 is what is suggested by the YCSB [Yahoo Cloud
-Serving Benchmark](https://research.yahoo.com/news/yahoo-cloud-serving-benchmark) as a good model for the skew of real-world
-data used in key value stores.
 
 
 ## Code Dependencies

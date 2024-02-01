@@ -9,7 +9,7 @@
 #include <utils/epoch.h>
 #include "bigatomic.h"
 
-constexpr bool PrintGrow = true;
+constexpr bool PrintGrow = false;
 #define USE_PARLAY 1
 
 namespace parlay {
