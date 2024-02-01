@@ -9,7 +9,7 @@
 #include <utils/epoch.h>
 #include "bigatomic.h"
 
-constexpr bool PrintGrow = false;
+constexpr bool PrintGrow = true;
 #define USE_PARLAY 1
 
 namespace parlay {
@@ -52,7 +52,7 @@ struct parlay_hash {
     else if constexpr (log_bucket_size == 1) return num_bits < 18 ? 11 : 18;
     else if constexpr (log_bucket_size == 2) return num_bits < 18 ? 12 : 20;
     else if constexpr (log_bucket_size == 3) return num_bits < 18 ? 14 : 22;
-    else return num_bits < 18 ? 16 : 24;
+    else return num_bits < 18 ? 20 : 24;
   }
 
   // clear_at_end will cause the scheduler and epoch-based collector

@@ -27,10 +27,14 @@ be cleaned up on destruction, otherwise they can be shared among hash maps.
 the map, returns the old value, otherwise inserts the key with the
 given value and returns std::nullopt.
 
-- `Remove(const K&) -> bool` : If the key is in the map, removes the
+- `Remove(const K&) -> std::optional<V>` : If the key is in the map, removes the
   key-value and returns the value, otherwise it returns std::nullopt.
 
-- `upsert(const K&, (const std::optional<V>&) -> V)) -> bool` : If the
+- `Upsert(const K&, const V&) -> std::optional<V>` : If the key is in the map, updates
+the value with given value and returns the old value, otherwise inserts the key value pair
+and returns std::nullopt.
+
+- `Upsert(const K&, (const std::optional<V>&) -> V)) -> bool` : If the
 key is in the map with an associated value v then it applies the function (second argument)
 to `std::optional<V>(v)`, replaces the current value for the key with the
 returned value, and returns false.  Otherwise it applies the
@@ -55,6 +59,10 @@ containing all the entries of the map as key-value pairs.  Runs in
 the hash map.  Safe to run with other operations, but is not
 linearizable with updates.  Its concurrency semantics are the same as
 for `size`.
+
+- `for_each(std::pair<K,V> -> void) -> void` :
+Applies the given function to each element in the map.  Has the same weakly linearizable properties as
+size.
 
 - `clear() -> void` : Clears all entries of the map.   It does not resize.
 
@@ -113,7 +121,7 @@ In addition to our hash map, the repository includes the following open source h
 - ./boost_hash          ([boost's concurrent_flat_map](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent))
 - ./parallel_hashmap    ([parallel hashmap](https://github.com/greg7mdp/parallel-hashmap)) **
 - ./folly_sharded       (our own sharded version using folly's efficient [non-concurrent F14map](https://github.com/facebook/folly/blob/main/folly/container/F14Map.h)) **
-- ./abseil_sharded      (our own sharded version using folly's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container)) **
+- ./abseil_sharded      (our own sharded version using abseil's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container)) **
 - ./std_sharded         (our own sharded version of std::unordered_map) **
 
 For some of these you need to have the relevant library installed
@@ -181,7 +189,7 @@ the hash map multiple times).
 
 | Hash Map | 1 thread | 16 threads | 128 threads | 128 insert | 128 grow |
 | - | - | - | - | - | - |
-| parlay_hash lf | 15.9 | 162 | 651 | 301 | 112 |
+| [parlay_hash](timings/parlay_hash) | 15.9 | 162 | 651 | 301 | 112 |
 | parlay_hash lock | 16.1 | 156 | 692 | 269 | 99 |
 | tbb_hash | 9.3 | 62.4 | 64.6 | 23 | 23 |
 | libcuckoo | 11.5 | 50.5 | 33.1 | 293 | 6.3 |
