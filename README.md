@@ -187,19 +187,18 @@ sixth column is for inserting 10M unique keys on 128 threads with the
 table initialized to size 1 (i.e., it includes the time for growing
 the hash map multiple times).
 
-| Hash Map | 1 thread | 16 threads | 128 threads | 128 insert | 128 grow |
+| Hash Map | Memory | 1 thread | 16 threads | 128 threads | 128 insert | 128 grow |
 | - | - | - | - | - | - |
-| [parlay_hash](timings/parlay_hash) | 15.9 | 162 | 651 | 301 | 112 |
-| [tbb_hash](timings/tbb_hash) | 9.3 | 62.4 | 64.6 | 23 | 23 |
-| [libcuckoo](timings/libcuckoo) | 11.5 | 50.5 | 33.1 | 293 | 6.3 |
-| [growt](timings/growt) | 7.8 | 44.6 | 171 | 61 | 61 |
-| [folly_hash](timings/folly_hash) | 11.9 | 82.4 | failed | 139 | 41 |
-| [boost_hash](timings/boost_hash) | 24.7 | 84.7 | 57.2 | 31 | 13.6 | 
-| [parallel_hashmap](timings/parallel_hashmap) | 22 | 80.6 | 110 | 199 | --- |
-| [folly_sharded](timings/folly_sharded) | 17.7 | 79 | 115 | 380 | --- |
-| [seq_hash](timings/seq_hash) | 17.7 | 79 | 115 | 380 | --- |
-| abseil (sequential) | 40.1 | --- | --- | --- | --- |
-| std (sequential) | 13.2 | --- | --- | --- | --- |
+| [parlay_hash](timings/parlay_hash) | 24.3 | ? | ? | 1165 | 302 | ? |
+| [tbb_hash](timings/tbb_hash) | --- | ? | ? | 55 | 27 | ? |
+| [libcuckoo](timings/libcuckoo) | 43.5 | ? | ? | 29 | 206 | ? |
+| [folly_hash](timings/folly_hash) | 91.9 |  ? | ? | 177 | 248 | ? |
+| [boost_hash](timings/boost_hash) | 37.9 |  ? | ? | 60 | 28 | ? |
+| [parallel_hashmap](timings/parallel_hashmap) | 36.0 |  ? | ? | 116 | 148 | ? |
+| [folly_sharded](timings/folly_sharded) | 34.5 |  ? | ? | 126 | 301 | ?
+| [seq_hash](timings/seq_hash) | 37.2 |  ? | ? | 106 | 277 | ? |
+| abseil (sequential) | ? | ? | --- | --- | --- | --- |
+| std (sequential) | ? | ? | --- | --- | --- | --- |
 
 We do not include growing numbers for the semi growable hash tables.
 
