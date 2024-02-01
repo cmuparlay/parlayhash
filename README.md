@@ -188,7 +188,7 @@ table initialized to size 1 (i.e., it includes the time for growing
 the hash map multiple times).
 
 | Hash Map | Memory | 1 thread | 16 threads | 128 threads | 128 insert | 128 grow |
-| - | - | - | - | - | - |
+| - | - | - | - | - | - | - | 
 | [parlay_hash](timings/parlay_hash) | 24.3 | ? | ? | 1165 | 302 | ? |
 | [tbb_hash](timings/tbb_hash) | --- | ? | ? | 55 | 27 | ? |
 | [libcuckoo](timings/libcuckoo) | 43.5 | ? | ? | 29 | 206 | ? |
