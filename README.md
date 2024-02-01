@@ -146,18 +146,39 @@ and adding a line of the form:
 to [CMakeFile.txt](benchmarks/CMakeFiles.txt).
 
 The benchmarks will run by default on the number of hardware threads
-you have on your machine.  They will run over two data sizes (100K and
-10M), two update percents (5% and 50%), and two distributions (uniform
-and zipfian=.99).  This is a total of 8 workloads since all
-combinations are tried.  The updates are 50% insertions (without
-replacement if already there) and 50% removes, the rest of the
-operations are finds.  For example, the 50% update workload will have
-25% insertions, 25% removes, and 50% finds.  The key-value pairs
-consist of two longs.  The experiment is set up so 1/2 the insertions
-and 1/2 the removes are successful on average.
+you have on your machine.  It runs a few experiments on different workloads
+and reports a geometric mean across the experiments in operation per second.
 
-Performance is reported in millions of operations-per-second (mops) for
-each combination.  The geometric mean over all combinations is also reported.
+- Table of long keys and long values : will run over two data sizes
+(10K and 10M), three update percents (0%, 10% and 50%), and two
+distributions (uniform and zipfian=.99).  This is a total of 12
+workloads since all combinations are tried.  The updates are 50%
+insertions (without replacement if already there) and 50% removes, the
+rest of the operations are finds.  For example, the 50% update
+workload will have 25% insertions, 25% removes, and 50% finds.
+
+- Set of ints: will run over over 2 sizes (10K and 10M) with update
+percent set 10% and zipfian set to zero.  This is to test how it does
+and small entries.
+
+- Table of strings for keys, and 4-tuples of longs for values.  The
+keys are selected from a trigram distribution, so they have skew that
+is meant to represents the skew of word probabilities in the English
+Language.  The experiment runs over a single map size (about 1.2
+Million entries) and three updated percents (0%, 10% and 50%).
+
+In addition to reporting the performance in operations per second, it
+reports the performance to fill the initialial table using inserts.
+It reports the geometric mean for the largest experiment across the
+three types (i.e 10M for long-long and int, and 1.2M for strings).
+
+Finally it reports the geometric mean of the number of bytes used per
+elemement for each of the three types (long-long, int, string-4xlong).
+Note the perfect number (i.e. no wasted memory) would be
+(16*4*56)^(1/3) = 15.3 (long-long = 16 bytes, int = 4 bytes
+string-4xlong = 24 + 4*8 = 56 bytes).  This is total memory as
+measured by jemalloc.
+
 Options include:
 
     -n <size>  : just this size
@@ -175,9 +196,7 @@ Here are some timings on a AWS EC2 c6i.metal instance.  This machine
 has two Intel Xeon Ice Lake chips with 32 cores each.  Each core is
 2-way hyperthreaded, for a total of 128 threads.  Each number reports
 the geometric mean of mops over the eight workloads mentioned above
-(two sizes x two update rates x two distributions).  For our hash map,
-we show both the times for the locked (lock) and lock free (lf)
-versions.  Times were taken for code available November 2023.
+(two sizes x two update rates x two distributions).  
 
 Columns 2 through 4 correspond to 1 thread, 16 threads (8 cores) and
 128 threads (64 cores) when the hash map is initialized to the correct
