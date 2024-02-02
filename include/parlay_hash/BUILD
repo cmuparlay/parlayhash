@@ -2,7 +2,6 @@ cc_library(
     name = "epoch",
     hdrs = ["epoch.h"],
     deps = [
-        "@parlaylib//parlay:alloc",
         "@parlaylib//parlay:primitives",
     ],
 )
