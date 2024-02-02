@@ -12,8 +12,8 @@ and then include the following in your code:
 ```
 
 Here are some comparisons of timings and memory usage to the
-most widely used open source concurrent hash tables.  They are
-averages (geometric means) over a variety of work loads.  The work loads and details on
+most widely used open-source concurrent hash tables.  These numbers are
+averages (geometric means) over a variety of work loads.  The workloads and details on
 experiments are described below.
 
 | Hash Map | Memory | 1 thread | 16 threads | 128 threads | 128 insert | 
@@ -50,12 +50,23 @@ be cleaned up on destruction, otherwise they can be shared among hash maps.
 - `Find(const K&) -> std::optional<V>` : If the key is in the map, returns the value associated
   with it, otherwise returns std::nullopt.
 
+- `Find(const K&, (const V&) -> T) -> std::optional<T>` : Same as
+  `Find(k)` but applies the function to the value before returning.
+  Can be useful if `V` is large and only a summary is needed.
+
 - `Insert(const K&, const V&) -> std::optional<V>` : If the key is in
 the map, returns the value without doing an update, otherwise inserts the key with the
 given value and returns std::nullopt.
 
+- `Insert(const K&, const V&, (const V&) -> T) -> std::optional<T>` : Same as `Insert(k,v)` but
+applies the function to the old value before returning it.
+
+
 - `Remove(const K&) -> std::optional<V>` : If the key is in the map, removes the
   key-value and returns the value, otherwise it returns std::nullopt.
+
+- `Remove(const K&, (const V&) -> T) -> std::optional<T>` : Same as `Remove(k)` but
+applies the function to the old value before returning it.
 
 - `Upsert(const K&, const V&) -> std::optional<V>` : If the key is in the map, updates
 the value with given value and returns the old value, otherwise inserts the key value pair
@@ -102,26 +113,6 @@ The library supports growable hash maps, although if the proper size
 is given on construction, no growing will be needed.  The number of
 buckets increase by a constant factor when any bucket gets too large.
 The copying is done incrementally by each update.
-
-[//]: # ", allowing for a
-mostly lock-free implementation.  Queries (finds) are still wait-free,
-but updates can take a fine-grained lock (on a block of buckets) when
-the hash map is growing.  Also allocation of a new **uninitialized
-array** for the buckets at the start of a grow cycle takes a lock to
-avoid multiple allocations, and since the allocator will most likely
-take a lock anyway for large arrays."
-
-[//]: # "
-By default the implementations are lock free (or mostly lock free when
-growing).  However, we also support locked-based versions by defining
-`USE_LOCKS`.  In the locked-based version, queries (finds) will still
-be wait free, but updates take locks.  One advantage of the lock-based
-version is that the function passed to `upsert` will be run in
-isolation (i.e., mutually exclusive of any other invocation of the
-function by an upsert on the same key) and just once.  With the
-lock-free version the function could be run multiple times
-concurrently, although the value of only one will be used.
-"
 
 There is also a `parlay::parlay_unordered_set` that supports sets of keys.  It has a similar
 interface.
@@ -175,9 +166,12 @@ and adding a line of the form:
 to [CMakeFile.txt](benchmarks/CMakeFiles.txt).
 
 The benchmarks will run by default on the number of hardware threads
-you have on your machine.  It runs a several experiments on different
-workloads and reports a geometric mean across the experiments in terms
-of operation per second.
+you have on your machine.
+
+## Workloads
+
+The experiments run a variety of workloads and report a geometric mean across the workloads.
+The default workloads are the following:
 
 - Table of long keys and long values : will run over two data sizes
 (10K and 10M), three update percents (0%, 10% and 50%), and two
@@ -215,25 +209,12 @@ Note the perfect number (i.e. no wasted memory) would be
 string-4xlong = 24 + 4*8 = 56 bytes).  Hence, for example, 30 would
 indicate approximately a factor of 2x overhead.
 
-Options include:
-
-    -n <size>  : just this size
-    -u <update percent>   : just this percent
-    -z <zipfian parameter>  : just this zipfian parameter
-    -grow : starts map at size 1 instead of size n
-    -verbose : prints out some extra information
-    -t <time in seconds>  : length of each trial, default = 1
-    -r <num rounds>  : number of rounds for each size/update-percent/zipfian, default = 2
-    -p <num threads> 
-
-
-
 ## Timings
 
 The timings reported in the table are for an AWS EC2 c6i.large for one
 thread, an AWS EC2 c6i.4xlarge for 16 threads, and a c6i.32xlarge for
 128 threads.  These all use Intel Xeon Ice Lake chips, and are 2 way
-hyperthreaded (e.g. the c6i.32xlarge has 64 cores, but 128
+hyperthreaded (e.g. the c6i.32xlarge has 64 cores, corresponding to 128
 hyperthreads).  All timings are on the Ubuntu (linux) OS.  The
 c6i.32xlarge has two nodes so we use "numactl -i all" to distribute
 the memory across the two nodes for all experiments.  This slightly
@@ -245,6 +226,19 @@ use: `echo always > /sys/kernel/mm/transparent_hugepage/enabled`.
 This needs to be done in privileged mode (i.e., using `sudo`).  It
 improves performance on average by about ten percent on most of the
 hash maps.
+
+## Options
+
+Options include:
+
+    -n <size>  : just this size
+    -u <update percent>   : just this percent
+    -z <zipfian parameter>  : just this zipfian parameter
+    -grow : starts map at size 1 instead of size n
+    -verbose : prints out some extra information
+    -t <time in seconds>  : length of each trial, default = 1
+    -r <num rounds>  : number of rounds for each size/update-percent/zipfian, default = 2
+    -p <num threads> 
 
 ## Code Dependencies
 
