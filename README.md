@@ -115,10 +115,10 @@ the benchmarks:
 In addition to our hash map, the repository includes the following open source hash maps:
 - ./tbb_hash            ([tbb concurrent hash map](https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_unordered_map_cls.html))
 - ./libcuckoo           ([libcuckoo's cuckooohash_map](https://github.com/efficient/libcuckoo))
-- ./growt               ([growt's concurrent hash map](https://github.com/TooBiased/growt))
 - ./folly_hash          ([folly's ConcurrentHashMap](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h))
 - ./boost_hash          ([boost's concurrent_flat_map](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent))
-- ./parallel_hashmap    ([parallel hashmap](https://github.com/greg7mdp/parallel-hashmap)) **
+- ./parallel_hashmap    ([parallel hashmap](https://github.com/greg7mdp/parallel-hashmap)
+) **
 - ./folly_sharded       (our own sharded version using folly's efficient [non-concurrent F14map](https://github.com/facebook/folly/blob/main/folly/container/F14Map.h)) **
 - ./abseil_sharded      (our own sharded version using abseil's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container)) **
 - ./std_sharded         (our own sharded version of std::unordered_map) **
@@ -208,6 +208,7 @@ Columns 3 through 5 correspond to 1 thread, 16 threads (8 cores) and
 128 threads (64 cores) when the hash map is initialized to the correct
 size. For 1 thread numbers we use a c6i.large instance and for 16 thread numbers we use a c6i.4xlarge instance. The sixth column is for inserting 10M unique keys on 128
 threads with the table initialized to the correct final size.
+
 [//]: # "The
 seventh column is for inserting 10M unique keys on 128 threads with the
 table initialized to size 1 (i.e., it includes the time for growing
@@ -216,16 +217,16 @@ the hash map multiple times)."
 | Hash Map | Memory | 1 thread | 16 threads | 128 threads | 128 insert | 
 | - | - | - | - | - | - |
 | - | bytes/elt | Mops/sec | Mops/sec | Mops/sec | Mops/sec |
-| [parlay_hash](timings/parlay_hash_128) | 24.3 | 19.1 | 213 | 1139 | 302 |
-| [tbb_hash](timings/tbb_hash_128) | --- | 12.3 | 71 | 55 | 27 |
-| [libcuckoo](timings/libcuckoo_128) | 43.5 | 13.2 | 57 | 29 | 206 |
-| [folly_hash](timings/folly_hash_128) | 91.9 | 10.7 | 103 | 177 | 248 |
-| [boost_hash](timings/boost_hash_128) | 37.9 | 21.9 | 113 | 60 | 28 |
-| [parallel_hashmap](timings/parallel_hashmap_128) | 36.0 | 18.5 | 82 | 116 | 148 |
-| [folly_sharded](timings/folly_sharded_128) | 34.5 | 17.7 | 83 | 126 | 301 |
-| [seq_hash](timings/seq_hash_128) | 37.2 | 19.9 | 121 | 106 | 277 |
-| [abseil (sequential)](timings/abseil_1) | 36.0 | 33.7 | --- | --- | --- |
-| [std_hash (sequential)](timings/std_hash_1) | 44.7 | 13.4 | --- | --- | --- | 
+| [parlay_hash](timings/parlay_hash_128) | [24.3](timings/parlay_hash_128) | [19.1](timings/parlay_hash_1) | [213](timings/parlay_hash_16) | [1139](timings/parlay_hash_128) | [302](timings/parlay_hash_128) |
+| [tbb_hash](https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_unordered_map_cls.html) | [---](timings/tbb_hash_128) | [12.3](timings/tbb_hash_1) | [71](timings/tbb_hash_16) | [55](timings/tbb_hash_128) | [27](timings/tbb_hash_128) |
+| [libcuckoo](https://github.com/efficient/libcuckoo)) | [43.5](timings/libcuckoo_128) | [13.2](timings/libcuckoo_1) | [57](timings/libcuckoo_16) | [29](timings/libcuckoo_128) | [206](timings/libcuckoo_128) |
+| [folly_hash](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h) | [91.9](timings/folly_hash_128) | [10.7](timings/folly_hash_1) | [103](timings/folly_hash_16) | [177](timings/folly_hash_128) | [248](timings/folly_hash_128) |
+| [boost_hash](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent) | [37.9](timings/boost_hash_128) | [21.9](timings/boost_hash_1) | [113](timings/boost_hash_16) | [60](timings/boost_hash_128) | [28](timings/boost_hash_128) |
+| [parallel_hashmap](https://github.com/greg7mdp/parallel-hashmap) | [36.0](timings/parallel_hashmap_128) | [18.5](timings/parallel_hashmap_1) | [82](timings/parallel_hashmap_16) | [116](timings/parallel_hashmap_128) | [148](timings/parallel_hashmap_128) |
+| [folly_sharded](other/folly_sharded/unordered_map.h) | [34.5](timings/folly_sharded_128) | [17.7](timings/folly_sharded_1) | [83](timings/folly_sharded_16) | [126](timings/folly_sharded_128) | [301](timings/folly_sharded_128) |
+| [seq_hash](https://github.com/Thermadiag/seq/blob/main/docs/concurrent_map.md) | [37.2](timings/seq_hash_128) | [19.9](timings/seq_hash_1) | [121](timings/seq_hash_16) | [106](timings/seq_hash_128) | [277](timings/seq_hash_128) |
+| [abseil (sequential)](https://abseil.io/docs/cpp/guides/container) | [36.0](timings/abseil_1) | [33.7](timings/abseil_1) | --- | --- | --- |
+| [std_hash (sequential)](https://en.cppreference.com/w/cpp/container/unordered_map) | [44.7](timings/std_hash_1) | [13.4](timings/std_hash_1) | --- | --- | --- | 
 
 No space is reported for `tbb_hash` since it uses its own memory
 allocator and jemalloc cannot track usage.  Many of the hash maps do
@@ -234,6 +235,7 @@ badly on many threads under high contention.
 ## Code Dependencies
 
 Our hash map uses [parlaylib](https://github.com/cmuparlay/parlaylib)
+
 for parallelism.  In particular the array of buckets is initialized in
 parallel, and the `size` and `entries` functions run in parallel.  The
 parlaylib files are included in the repository so it need not be
