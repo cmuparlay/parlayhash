@@ -28,6 +28,7 @@ experiments are described below.
 | [folly_sharded](other/folly_sharded/unordered_map.h) | [34.5](timings/folly_sharded_128) | [17.3](timings/folly_sharded_1) | [84](timings/folly_sharded_16) | [115](timings/folly_sharded_128) | [289](timings/folly_sharded_128) |
 | [seq_hash](https://github.com/Thermadiag/seq/blob/main/docs/concurrent_map.md) | [34.3](timings/seq_hash_128) | [19.6](timings/seq_hash_1) | [125](timings/seq_hash_16) | [110](timings/seq_hash_128) | [269](timings/seq_hash_128) |
 | [abseil (sequential)](https://abseil.io/docs/cpp/guides/container) | [36.0](timings/abseil_1) | [32.6](timings/abseil_1) | --- | --- | --- |
+| [folly_F14 (sequential)](https://engineering.fb.com/2019/04/25/developer-tools/f14/) | [24.7](timings/folly_F14_1) | [26.8](timings/folly_F14_1) | --- | --- | --- |
 | [std_hash (sequential)](https://en.cppreference.com/w/cpp/container/unordered_map) | [44.7](timings/std_hash_1) | [13.0](timings/std_hash_1) | --- | --- | --- | 
 
 All performance numbers are in millions of operations per second

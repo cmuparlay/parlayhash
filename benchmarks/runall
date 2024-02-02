@@ -8,7 +8,7 @@ tables = ["parlay_hash", "tbb_hash", "libcuckoo", "folly_sharded", "folly_hash",
 p = int(getArg("-p", maxcpus));
 
 if p == 1 :
-    tables += ["abseil", "std_hash"]
+    tables += ["abseil", "std_hash", "folly_F14"]
 
 def runexp(x, args, arg_str) :
     filename = "../../timings/" + x + "_" + str(p) + arg_str
