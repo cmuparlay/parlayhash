@@ -1,44 +1,32 @@
-./libcuckoo,0%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=82,mops=328
-./libcuckoo,0%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=124,mops=317
-./libcuckoo,0%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=313,mops=407
-./libcuckoo,0%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=314,mops=405
+./libcuckoo,0%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=87,mops=324
+./libcuckoo,0%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=126,mops=323
+./libcuckoo,0%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=316,mops=405
+./libcuckoo,0%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=317,mops=405
 
-./libcuckoo,10%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=109,mops=466
-./libcuckoo,10%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=142,mops=465
-./libcuckoo,10%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=315,mops=391
-./libcuckoo,10%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=315,mops=387
+./libcuckoo,10%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=145,mops=463
+./libcuckoo,10%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=148,mops=464
+./libcuckoo,10%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=315,mops=388
+./libcuckoo,10%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=312,mops=347
 
-./libcuckoo,50%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=96,mops=382
-./libcuckoo,50%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=116,mops=400
-./libcuckoo,50%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=314,mops=349
-./libcuckoo,50%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=314,mops=348
+./libcuckoo,50%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=142,mops=378
+./libcuckoo,50%update,n=10000,p=128,long_long,z=0,grow=0,mem_pe=58,insert_mops=135,mops=398
+./libcuckoo,50%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=315,mops=349
+./libcuckoo,50%update,n=10000000,p=128,long_long,z=0,grow=0,mem_pe=33,insert_mops=315,mops=348
 
 ./libcuckoo,0%update,n=10000,p=128,long_long,z=0.99,grow=0,mem_pe=58,insert_mops=141,mops=2
-./libcuckoo,0%update,n=10000,p=128,long_long,z=0.99,grow=0,mem_pe=58,insert_mops=118,mops=2
+./libcuckoo,0%update,n=10000,p=128,long_long,z=0.99,grow=0,mem_pe=58,insert_mops=144,mops=2
 ./libcuckoo,0%update,n=10000000,p=128,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=315,mops=3
-./libcuckoo,0%update,n=10000000,p=128,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=314,mops=2
+./libcuckoo,0%update,n=10000000,p=128,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=315,mops=3
 
-./libcuckoo,10%update,n=10000,p=128,long_long,z=0.99,grow=0,mem_pe=58,insert_mops=137,mops=2
-./libcuckoo,10%update,n=10000,p=128,long_long,z=0.99,grow=0,mem_pe=58,insert_mops=137,mops=2
-./libcuckoo,10%update,n=10000000,p=128,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=315,mops=3
-./libcuckoo,10%update,n=10000000,p=128,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=317,mops=3
+./libcuckoo,10%update,n=10000,p=128,long_long,z=0.99,grow=0,mem_pe=58,insert_mops=145,mops=1
+./libcuckoo,10%update,n=10000,p=128,long_long,z=0.99,grow=0,mem_pe=58,insert_mops=155,mops=2
+./libcuckoo,10%update,n=10000000,p=128,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=316,mops=3
+./libcuckoo,10%update,n=10000000,p=128,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=316,mops=2
 
-./libcuckoo,50%update,n=10000,p=128,long_long,z=0.99,grow=0,mem_pe=58,insert_mops=145,mops=1
-./libcuckoo,50%update,n=10000,p=128,long_long,z=0.99,grow=0,mem_pe=58,insert_mops=146,mops=2
-./libcuckoo,50%update,n=10000000,p=128,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=315,mops=2
+./libcuckoo,50%update,n=10000,p=128,long_long,z=0.99,grow=0,mem_pe=58,insert_mops=135,mops=1
+./libcuckoo,50%update,n=10000,p=128,long_long,z=0.99,grow=0,mem_pe=58,insert_mops=153,mops=1
+./libcuckoo,50%update,n=10000000,p=128,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=315,mops=3
 ./libcuckoo,50%update,n=10000000,p=128,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=316,mops=3
 
-./libcuckoo,10%update,n=10000,p=128,int,z=0,grow=0,mem_pe=42,insert_mops=151,mops=478
-./libcuckoo,10%update,n=10000,p=128,int,z=0,grow=0,mem_pe=42,insert_mops=99,mops=473
-./libcuckoo,10%update,n=10000000,p=128,int,z=0,grow=0,mem_pe=17,insert_mops=346,mops=460
-./libcuckoo,10%update,n=10000000,p=128,int,z=0,grow=0,mem_pe=17,insert_mops=347,mops=460
-
-./libcuckoo,0%update,n=1229916,p=128,string_4xlong,trigram,grow=0,mem_pe=141,insert_mops=245,mops=4
-./libcuckoo,0%update,n=1229916,p=128,string_4xlong,trigram,grow=0,mem_pe=141,insert_mops=244,mops=3
-./libcuckoo,10%update,n=1229916,p=128,string_4xlong,trigram,grow=0,mem_pe=140,insert_mops=242,mops=3
-./libcuckoo,10%update,n=1229916,p=128,string_4xlong,trigram,grow=0,mem_pe=140,insert_mops=226,mops=4
-./libcuckoo,50%update,n=1229916,p=128,string_4xlong,trigram,grow=0,mem_pe=141,insert_mops=242,mops=3
-./libcuckoo,50%update,n=1229916,p=128,string_4xlong,trigram,grow=0,mem_pe=141,insert_mops=244,mops=4
-initial insert geometric mean of mops = 273.511
-benchmark geometric mean of mops = 30.0016
-bytes/element geometric mean = 43.5597
+./libcuckoo,10%update,n=10000,p=128,int,z=0,grow=0,mem_pe=42,insert_mops=160,mops=475
+./libcuckoo,10%update,n=10000,p=128,int,z=0,grow=0,mem_pe=42,insert_mops=160,mops=476
