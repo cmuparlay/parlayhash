@@ -463,11 +463,14 @@ int main(int argc, char* argv[]) {
       auto [itime, btime, size] =
 	test_loop<string_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
 				   trial_time, latency_cuttoff, verbose, warmup, grow, pad);
-      insert_times.push_back(itime);
+      if (cnt++ == 0) {
+	byte_sizes.push_back(size);
+	insert_times.push_back(itime);
+      }
       bench_times.push_back(btime);
-      if (cnt++ == 0) byte_sizes.push_back(size);
     }
   }
+  if (print_means) std::cout << std::endl;
 #endif
 
   if (print_means) {
