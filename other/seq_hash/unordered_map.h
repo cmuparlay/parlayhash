@@ -1,7 +1,5 @@
 #pragma once
-
 #define USE_SET
-
 #include <seq/seq/concurrent_map.hpp>
 
 template <typename K,
@@ -9,7 +7,6 @@ template <typename K,
 	  class Hash = std::hash<K>,
 	  class KeyEqual = std::equal_to<K>>
 struct unordered_map {
-
   using Table = seq::concurrent_map<K, V, Hash, KeyEqual, std::allocator<std::pair<K,V>>, 10>;
   Table table;
   std::optional<V> find(const K& k) {

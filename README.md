@@ -149,12 +149,16 @@ In addition to our hash map, the repository includes the following open source h
 - ./folly_sharded       (our own sharded version using folly's efficient [non-concurrent F14map](https://github.com/facebook/folly/blob/main/folly/container/F14Map.h)) **
 - ./std_sharded         (our own sharded version of std::unordered_map) **
 
+<!--- 
+- ./growt               ([growt's concurrent hash map](https://github.com/TooBiased/growt))
+--->
+
 For some of these you need to have the relevant library installed
 (e.g., boost, folly, abseil, tbb).  All of them support arbitrary
 copyable key and value types when supplied hash and equality functions
 for the keys.
 
-The tables marked with ** are "semi" growable.  In particular they all
+The tables marked with ** are "semi" growable.  In particular they are all
 sharded and to perform well one needs to select the right number of
 shards, which depends on the expected size and number of threads.  For
 the experiments given below we selected 2^14 shards unless the library

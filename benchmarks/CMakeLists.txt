@@ -37,6 +37,7 @@ find_package(folly)
 if (folly_FOUND)
   add_benchmark(folly_hash other "folly;glog;dl;pthread;double-conversion;fmt;gflags;unwind" "" "")
   add_benchmark(folly_sharded other "folly;glog;dl;pthread;double-conversion;fmt;gflags;unwind" "" "")
+  add_benchmark(folly_F14 other "folly;glog;dl;pthread;double-conversion;fmt;gflags;unwind" "" "")
 endif()
 
 find_package(TBB)
