@@ -1,8 +1,7 @@
 # ParlayHash :
-A Header-Only Scalable Concurrent Hash Map.
 
-A growable concurrent hash map supporting which is designed to scale
-well to hundreds of threads and work reasonably well under high
+A Header-Only Concurrent Hash Map.  It is growable and is designed to
+scale well to hundreds of threads and work reasonably well under high
 contention.
 
 The simplest way to use the library is to copy the [include](include) directory into your code directory
@@ -34,13 +33,13 @@ given value and returns std::nullopt.
 the value with given value and returns the old value, otherwise inserts the key value pair
 and returns std::nullopt.
 
-- `Upsert(const K&, (const std::optional<V>&) -> V)) -> bool` : If the
+- `Upsert(const K&, (const std::optional<V>&) -> V)) -> std::optional<V>` : If the
 key is in the map with an associated value v then it applies the function (second argument)
 to `std::optional<V>(v)`, replaces the current value for the key with the
-returned value, and returns false.  Otherwise it applies the
+returned value, and returns the old value.  Otherwise it applies the
 function to std::nullopt and inserts the key into the map with the
-returned value, and returns true.   For example using: `[&] (auto x) {return v;}` will just set
-the given key to have value v whether it was in there or not. 
+returned value, and returns std::nullopt.   For example using: `[&] (auto v) {return v+1;}` will increment
+the value by one.
 
 - `size() -> long` : Returns the number of elements in the map.
 Runs in **parallel** and does work proportional to the
@@ -205,26 +204,28 @@ has two Intel Xeon Ice Lake chips with 32 cores each.  Each core is
 the geometric mean of mops over the eight workloads mentioned above
 (two sizes x two update rates x two distributions).  
 
-Columns 2 through 4 correspond to 1 thread, 16 threads (8 cores) and
+Columns 3 through 5 correspond to 1 thread, 16 threads (8 cores) and
 128 threads (64 cores) when the hash map is initialized to the correct
-size.  The fifth column is for inserting 10M unique keys on 128
-threads with the table initialized to the correct final size.  The
-sixth column is for inserting 10M unique keys on 128 threads with the
+size. For 1 thread numbers we use a c6i.large instance and for 16 thread numbers we use a c6i.4xlarge instance. The sixth column is for inserting 10M unique keys on 128
+threads with the table initialized to the correct final size.
+[//]: # "The
+seventh column is for inserting 10M unique keys on 128 threads with the
 table initialized to size 1 (i.e., it includes the time for growing
-the hash map multiple times).
+the hash map multiple times)."
 
-| Hash Map | Memory | 1 thread | 16 threads | 128 threads | 128 insert | 128 grow |
-| - | - | - | - | - | - | - | 
-| [parlay_hash](timings/parlay_hash) | 24.3 | ? | ? | 1165 | 302 | ? |
-| [tbb_hash](timings/tbb_hash) | --- | ? | ? | 55 | 27 | ? |
-| [libcuckoo](timings/libcuckoo) | 43.5 | ? | ? | 29 | 206 | ? |
-| [folly_hash](timings/folly_hash) | 91.9 |  ? | ? | 177 | 248 | ? |
-| [boost_hash](timings/boost_hash) | 37.9 |  ? | ? | 60 | 28 | ? |
-| [parallel_hashmap](timings/parallel_hashmap) | 36.0 |  ? | ? | 116 | 148 | ? |
-| [folly_sharded](timings/folly_sharded) | 34.5 |  ? | ? | 126 | 301 | ?
-| [seq_hash](timings/seq_hash) | 37.2 |  ? | ? | 106 | 277 | ? |
-| abseil (sequential) | ? | ? | --- | --- | --- | --- |
-| std (sequential) | ? | ? | --- | --- | --- | --- |
+| Hash Map | Memory | 1 thread | 16 threads | 128 threads | 128 insert | 
+| - | - | - | - | - | - |
+| - | bytes/elt | Mops/sec | Mops/sec | Mops/sec | Mops/sec |
+| [parlay_hash](timings/parlay_hash) | 24.3 | 19.1 | 213 | 1165 | 302 |
+| [tbb_hash](timings/tbb_hash) | --- | 12.3 | 71 | 54 | 27 |
+| [libcuckoo](timings/libcuckoo) | 43.5 | 13.2 | 57 | 29 | 206 |
+| [folly_hash](timings/folly_hash) | 91.9 | 10.7 | 103 | 177 | 248 |
+| [boost_hash](timings/boost_hash) | 37.9 | 21.9 | 113 | 60 | 28 |
+| [parallel_hashmap](timings/parallel_hashmap) | 36.0 | 18.5 | 82 | 116 | 148 |
+| [folly_sharded](timings/folly_sharded) | 34.5 | 17.7 | 83 | 126 | 301 |
+| [seq_hash](timings/seq_hash) | 37.2 | 19.9 | 121 | 106 | 277 |
+| abseil (sequential) | 36.0 | 33.7 | --- | --- | --- |
+| std_hash (sequential) | 44.7 | 13.4 | --- | --- | --- | 
 
 We do not include growing numbers for the semi growable hash tables.
 
