@@ -1,44 +1,44 @@
-./parlay_hash,0%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=130,mops=652
-./parlay_hash,0%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=128,mops=652
-./parlay_hash,0%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=95,mops=167
-./parlay_hash,0%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=95,mops=169
+./parlay_hash,0%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=121,mops=672
+./parlay_hash,0%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=129,mops=671
+./parlay_hash,0%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=114,mops=201
+./parlay_hash,0%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=113,mops=199
 
-./parlay_hash,10%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=124,mops=418
-./parlay_hash,10%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=126,mops=418
-./parlay_hash,10%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=96,mops=157
-./parlay_hash,10%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=93,mops=157
+./parlay_hash,10%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=119,mops=419
+./parlay_hash,10%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=128,mops=419
+./parlay_hash,10%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=113,mops=186
+./parlay_hash,10%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=114,mops=187
 
-./parlay_hash,50%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=131,mops=237
-./parlay_hash,50%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=95,mops=236
-./parlay_hash,50%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=96,mops=127
-./parlay_hash,50%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=95,mops=126
+./parlay_hash,50%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=127,mops=237
+./parlay_hash,50%update,n=10000,p=16,long_long,z=0,grow=0,mem_pe=52,insert_mops=128,mops=237
+./parlay_hash,50%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=113,mops=148
+./parlay_hash,50%update,n=10000000,p=16,long_long,z=0,grow=0,mem_pe=54,insert_mops=114,mops=148
 
-./parlay_hash,0%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=127,mops=706
-./parlay_hash,0%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=127,mops=700
-./parlay_hash,0%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=95,mops=251
-./parlay_hash,0%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=95,mops=246
+./parlay_hash,0%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=129,mops=703
+./parlay_hash,0%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=127,mops=696
+./parlay_hash,0%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=113,mops=308
+./parlay_hash,0%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=113,mops=308
 
-./parlay_hash,10%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=126,mops=402
-./parlay_hash,10%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=125,mops=401
-./parlay_hash,10%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=95,mops=217
-./parlay_hash,10%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=95,mops=212
+./parlay_hash,10%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=128,mops=405
+./parlay_hash,10%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=128,mops=401
+./parlay_hash,10%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=113,mops=260
+./parlay_hash,10%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=113,mops=259
 
-./parlay_hash,50%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=129,mops=198
-./parlay_hash,50%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=129,mops=199
-./parlay_hash,50%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=95,mops=158
-./parlay_hash,50%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=95,mops=154
+./parlay_hash,50%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=127,mops=201
+./parlay_hash,50%update,n=10000,p=16,long_long,z=0.99,grow=0,mem_pe=52,insert_mops=128,mops=201
+./parlay_hash,50%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=112,mops=172
+./parlay_hash,50%update,n=10000000,p=16,long_long,z=0.99,grow=0,mem_pe=54,insert_mops=106,mops=164
 
-./parlay_hash,10%update,n=10000,p=16,int,z=0,grow=0,mem_pe=13,insert_mops=118,mops=340
-./parlay_hash,10%update,n=10000,p=16,int,z=0,grow=0,mem_pe=13,insert_mops=93,mops=340
-./parlay_hash,10%update,n=10000000,p=16,int,z=0,grow=0,mem_pe=13,insert_mops=117,mops=172
-./parlay_hash,10%update,n=10000000,p=16,int,z=0,grow=0,mem_pe=13,insert_mops=118,mops=174
+./parlay_hash,10%update,n=10000,p=16,int,z=0,grow=0,mem_pe=13,insert_mops=111,mops=323
+./parlay_hash,10%update,n=10000,p=16,int,z=0,grow=0,mem_pe=13,insert_mops=97,mops=327
+./parlay_hash,10%update,n=10000000,p=16,int,z=0,grow=0,mem_pe=13,insert_mops=131,mops=197
+./parlay_hash,10%update,n=10000000,p=16,int,z=0,grow=0,mem_pe=13,insert_mops=131,mops=198
 
-./parlay_hash,0%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=62,mops=183
-./parlay_hash,0%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=63,mops=183
-./parlay_hash,10%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=61,mops=144
-./parlay_hash,10%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=62,mops=142
-./parlay_hash,50%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=62,mops=95
-./parlay_hash,50%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=59,mops=95
-initial insert geometric mean of mops = 76.9096
-benchmark geometric mean of mops = 231.161
-bytes/element geometric mean = 40.7092
+./parlay_hash,0%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=67,mops=210
+./parlay_hash,0%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=66,mops=211
+./parlay_hash,10%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=64,mops=156
+./parlay_hash,10%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=62,mops=159
+./parlay_hash,50%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=65,mops=101
+./parlay_hash,50%update,n=1229916,p=16,string_4xlong,trigram,grow=0,mem_pe=92,insert_mops=60,mops=99
+initial insert geometric mean of mops = 82.6297
+benchmark geometric mean of mops = 250.863
+bytes/element geometric mean = 40.6475
