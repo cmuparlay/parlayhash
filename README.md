@@ -11,10 +11,10 @@ and then include the following in your code:
 #include "include/parlay_hash/unordered_map.h"
 ```
 
-Here are some comparisons of timings and memory usage compared to the
+Here are some comparisons of timings and memory usage to the
 most widely used open source concurrent hash tables.  They are
 averages (geometric means) over a variety of work loads.  The work loads and details on
-experiments are described further down.
+experiments are described below.
 
 | Hash Map | Memory | 1 thread | 16 threads | 128 threads | 128 insert | 
 | - | - | - | - | - | - |
@@ -201,12 +201,12 @@ Language.  The experiment runs over a single map size (about 1.2
 Million entries) and three updated percents (0%, 10% and 50%).
 
 In addition to reporting the performance in operations per second, it
-reports the performance to fill the initialial table using inserts.
+reports the performance to fill the initial table using inserts.
 It reports the geometric mean for the largest experiment across the
 three types (i.e 10M for long-long and int, and 1.2M for strings).
 
 Finally it reports the geometric mean of the number of bytes used per
-elemement for the hash tables that use each of the three types
+element for the hash tables that use each of the three types
 (long-long, int, string-4xlong).  This is total memory as measured by
 jemalloc (i.e. difference in allocated memory from before the table is
 created until after it is created and all n elements are inserted).
@@ -233,7 +233,7 @@ Options include:
 The timings reported in the table are for an AWS EC2 c6i.large for one
 thread, an AWS EC2 c6i.4xlarge for 16 threads, and a c6i.32xlarge for
 128 threads.  These all use Intel Xeon Ice Lake chips, and are 2 way
-hyperthreaded (e.g. the c6i.32xlarge only has 64 cores, but 128
+hyperthreaded (e.g. the c6i.32xlarge has 64 cores, but 128
 hyperthreads).  All timings are on the Ubuntu (linux) OS.  The
 c6i.32xlarge has two nodes so we use "numactl -i all" to distribute
 the memory across the two nodes for all experiments.  This slightly
