@@ -1,0 +1,44 @@
+./folly_hash,0%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=189,insert_mops=12,mops=27
+./folly_hash,0%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=189,insert_mops=12,mops=27
+./folly_hash,0%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=80,insert_mops=5,mops=7
+./folly_hash,0%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=80,insert_mops=4,mops=6
+
+./folly_hash,10%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=189,insert_mops=11,mops=23
+./folly_hash,10%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=189,insert_mops=10,mops=23
+./folly_hash,10%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=80,insert_mops=4,mops=5
+./folly_hash,10%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=80,insert_mops=4,mops=5
+
+./folly_hash,50%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=189,insert_mops=11,mops=14
+./folly_hash,50%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=189,insert_mops=13,mops=14
+./folly_hash,50%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=80,insert_mops=4,mops=3
+./folly_hash,50%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=80,insert_mops=4,mops=3
+
+./folly_hash,0%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=188,insert_mops=0,mops=32
+./folly_hash,0%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=188,insert_mops=10,mops=32
+./folly_hash,0%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=80,insert_mops=4,mops=8
+./folly_hash,0%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=80,insert_mops=4,mops=8
+
+./folly_hash,10%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=188,insert_mops=9,mops=26
+./folly_hash,10%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=188,insert_mops=11,mops=27
+./folly_hash,10%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=80,insert_mops=4,mops=7
+./folly_hash,10%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=80,insert_mops=4,mops=8
+
+./folly_hash,50%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=188,insert_mops=8,mops=16
+./folly_hash,50%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=188,insert_mops=12,mops=16
+./folly_hash,50%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=80,insert_mops=4,mops=4
+./folly_hash,50%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=80,insert_mops=4,mops=5
+
+./folly_hash,10%update,n=10000,p=1,int,z=0,grow=0,mem_pe=172,insert_mops=6,mops=26
+./folly_hash,10%update,n=10000,p=1,int,z=0,grow=0,mem_pe=172,insert_mops=8,mops=26
+./folly_hash,10%update,n=10000000,p=1,int,z=0,grow=0,mem_pe=64,insert_mops=5,mops=6
+./folly_hash,10%update,n=10000000,p=1,int,z=0,grow=0,mem_pe=64,insert_mops=6,mops=6
+
+./folly_hash,0%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=147,insert_mops=3,mops=7
+./folly_hash,0%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=147,insert_mops=3,mops=7
+./folly_hash,10%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=147,insert_mops=3,mops=6
+./folly_hash,10%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=147,insert_mops=3,mops=6
+./folly_hash,50%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=147,insert_mops=3,mops=4
+./folly_hash,50%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=147,insert_mops=3,mops=4
+initial insert geometric mean of mops = 4.31754
+benchmark geometric mean of mops = 10.4812
+bytes/element geometric mean = 91.8928
