@@ -5,9 +5,23 @@ from runtests import *
 
 tables = ["parlay_hash", "tbb_hash", "libcuckoo", "folly_sharded", "folly_hash", "boost_hash", "parallel_hashmap", "seq_hash"]
 
-for x in tables :
-    filename = "../../timings/" + x
-    command = "numactl -i all ./" + x + " -full"
+p = int(getArg("-p", maxcpus));
+
+if p == 1 :
+    tables += ["abseil", "std_hash"]
+
+def runexp(x, args, arg_str) :
+    filename = "../../timings/" + x + "_" + str(p) + arg_str
+    if p > 64 :
+        command = "PARLAY_NUM_THREADS=" + str(p) + " numactl -i all ./" + x + " -full " + args
+    else :
+        command = "PARLAY_NUM_THREADS=" + str(p) + " ./" + x + " -full " + args
     if os.path.exists(filename) :
         os.remove(filename)
-    runstring(command, filename)
+    runstring(command, filename)    
+
+for x in tables :
+    runexp(x, "", "")
+
+runexp("parlay_hash", "-pad 2", "_p2")
+

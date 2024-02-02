@@ -123,7 +123,9 @@ test_loop(commandLine& C,
 	  double latency_cutoff, // cutoff to measure percent below
 	  bool verbose, // show some more info
 	  bool warmup,  // run one warmup round
-	  bool grow) {  // start with table of size 1
+	  bool grow, // start with table of size 1
+	  int pad // start with table of size pad x n
+	  ) {  
 
   using K = typename Map::K;
   enum op_type : char {Find, Insert, Remove};
@@ -141,10 +143,10 @@ test_loop(commandLine& C,
   parlay::sequence<double> insert_times;
   parlay::sequence<double> bench_times;
   parlay::sequence<double> bytes_pes;
-
+  
   for (int i = 0; i < rounds + warmup; i++) { {
     long mem_at_start = jemalloc_get_allocated();
-    Map map = grow ? Map(1) : Map(n);
+    Map map = grow ? Map(1) : Map(n*pad);
     size_t np = n/p;
     size_t mp = m/p;
     auto start_insert = std::chrono::system_clock::now();
@@ -378,6 +380,7 @@ int main(int argc, char* argv[]) {
   bool warmup = !P.getOption("-nowarmup");
   bool grow = P.getOption("-grow");
   bool print_means = !P.getOption("-nomeans");
+  int pad = P.getOptionIntValue("-pad", 1);
   bool string_only = P.getOption("-string");
   bool no_string = P.getOption("-nostring");
   bool full = P.getOption("-full");
@@ -415,7 +418,7 @@ int main(int argc, char* argv[]) {
 	  str << "long_long,z=" << zipfian_param;
 	  auto [itime, btime, size] =
 	    test_loop<int_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-				    trial_time, latency_cuttoff, verbose, warmup, grow);
+				    trial_time, latency_cuttoff, verbose, warmup, grow, pad);
 	  bench_times.push_back(btime);
 	  insert_time = itime;
 	  byte_size = size;
@@ -437,7 +440,7 @@ int main(int argc, char* argv[]) {
 	str << "int,z=" << zipfian_param;
 	auto [itime, btime, size] =
 	  test_loop<int_set_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-				  trial_time, latency_cuttoff, verbose, warmup, grow);
+				  trial_time, latency_cuttoff, verbose, warmup, grow, pad);
 	bench_times.push_back(btime);
 	insert_time = itime;
 	byte_size = size;
@@ -459,7 +462,7 @@ int main(int argc, char* argv[]) {
       str << "string_4xlong,trigram";
       auto [itime, btime, size] =
 	test_loop<string_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-				   trial_time, latency_cuttoff, verbose, warmup, grow);
+				   trial_time, latency_cuttoff, verbose, warmup, grow, pad);
       insert_times.push_back(itime);
       bench_times.push_back(btime);
       if (cnt++ == 0) byte_sizes.push_back(size);

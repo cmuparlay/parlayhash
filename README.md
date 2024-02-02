@@ -216,26 +216,20 @@ the hash map multiple times)."
 | Hash Map | Memory | 1 thread | 16 threads | 128 threads | 128 insert | 
 | - | - | - | - | - | - |
 | - | bytes/elt | Mops/sec | Mops/sec | Mops/sec | Mops/sec |
-| [parlay_hash](timings/parlay_hash) | 24.3 | 19.1 | 213 | 1165 | 302 |
-| [tbb_hash](timings/tbb_hash) | --- | 12.3 | 71 | 54 | 27 |
-| [libcuckoo](timings/libcuckoo) | 43.5 | 13.2 | 57 | 29 | 206 |
-| [folly_hash](timings/folly_hash) | 91.9 | 10.7 | 103 | 177 | 248 |
-| [boost_hash](timings/boost_hash) | 37.9 | 21.9 | 113 | 60 | 28 |
-| [parallel_hashmap](timings/parallel_hashmap) | 36.0 | 18.5 | 82 | 116 | 148 |
-| [folly_sharded](timings/folly_sharded) | 34.5 | 17.7 | 83 | 126 | 301 |
-| [seq_hash](timings/seq_hash) | 37.2 | 19.9 | 121 | 106 | 277 |
-| abseil (sequential) | 36.0 | 33.7 | --- | --- | --- |
-| std_hash (sequential) | 44.7 | 13.4 | --- | --- | --- | 
+| [parlay_hash](timings/parlay_hash_128) | 24.3 | 19.1 | 213 | 1139 | 302 |
+| [tbb_hash](timings/tbb_hash_128) | --- | 12.3 | 71 | 55 | 27 |
+| [libcuckoo](timings/libcuckoo_128) | 43.5 | 13.2 | 57 | 29 | 206 |
+| [folly_hash](timings/folly_hash_128) | 91.9 | 10.7 | 103 | 177 | 248 |
+| [boost_hash](timings/boost_hash_128) | 37.9 | 21.9 | 113 | 60 | 28 |
+| [parallel_hashmap](timings/parallel_hashmap_128) | 36.0 | 18.5 | 82 | 116 | 148 |
+| [folly_sharded](timings/folly_sharded_128) | 34.5 | 17.7 | 83 | 126 | 301 |
+| [seq_hash](timings/seq_hash_128) | 37.2 | 19.9 | 121 | 106 | 277 |
+| [abseil (sequential)](timings/abseil_1) | 36.0 | 33.7 | --- | --- | --- |
+| [std_hash (sequential)](timings/std_hash_1) | 44.7 | 13.4 | --- | --- | --- | 
 
-We do not include growing numbers for the semi growable hash tables.
-
-The folly ConcurrentHashMap failed on 128 threads (for version
-f53ec94, Nov 1, 2023).  We [reported the bug](https://github.com/facebook/folly/issues/2097) and the developers replied
-that it is due to a bug in their hazard-pointer implementation (a
-16-bit counter is overflowing).
-
-Many of the hash maps do badly on many threads under high contention.
-
+No space is reported for `tbb_hash` since it uses its own memory
+allocator and jemalloc cannot track usage.  Many of the hash maps do
+badly on many threads under high contention.
 
 ## Code Dependencies
 
