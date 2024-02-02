@@ -11,11 +11,39 @@ and then include the following in your code:
 #include "include/parlay_hash/unordered_map.h"
 ```
 
+Here are some comparisons of timings and memory usage compared to the
+most widely used open source concurrent hash tables.  They are
+averages (geometric means) over a variety of work loads.  The work loads and details on
+experiments are described further down.
+
+| Hash Map | Memory | 1 thread | 16 threads | 128 threads | 128 insert | 
+| - | - | - | - | - | - |
+| - | bytes/elt | Mops/sec | Mops/sec | Mops/sec | Mops/sec |
+| [parlay_hash](./README.md) | [24.3](timings/parlay_hash_128) | [19.0](timings/parlay_hash_1) | [214](timings/parlay_hash_16) | [1139](timings/parlay_hash_128) | [302](timings/parlay_hash_128) |
+| [tbb_hash](https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_unordered_map_cls.html) | --- | [11.8](timings/tbb_hash_1) | [71](timings/tbb_hash_16) | [55](timings/tbb_hash_128) | [27](timings/tbb_hash_128) |
+| [libcuckoo](https://github.com/efficient/libcuckoo) | [43.6](timings/libcuckoo_128) | [13.0](timings/libcuckoo_1) | [58](timings/libcuckoo_16) | [30](timings/libcuckoo_128) | [274](timings/libcuckoo_128) |
+| [folly_hash](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h) | [91.8](timings/folly_hash_128) | [10.5](timings/folly_hash_1) | [107](timings/folly_hash_16) | [167](timings/folly_hash_128) | [208](timings/folly_hash_128) |
+| [boost_hash](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent) | [37.9](timings/boost_hash_128) | [21.5](timings/boost_hash_1) | [115](timings/boost_hash_16) | [60](timings/boost_hash_128) | [25](timings/boost_hash_128) |
+| [parallel_hashmap](https://github.com/greg7mdp/parallel-hashmap) | [36.0](timings/parallel_hashmap_128) | [18.3](timings/parallel_hashmap_1) | [85](timings/parallel_hashmap_16) | [113](timings/parallel_hashmap_128) | [137](timings/parallel_hashmap_128) |
+| [folly_sharded](other/folly_sharded/unordered_map.h) | [34.5](timings/folly_sharded_128) | [17.3](timings/folly_sharded_1) | [84](timings/folly_sharded_16) | [115](timings/folly_sharded_128) | [289](timings/folly_sharded_128) |
+| [seq_hash](https://github.com/Thermadiag/seq/blob/main/docs/concurrent_map.md) | [34.3](timings/seq_hash_128) | [19.6](timings/seq_hash_1) | [125](timings/seq_hash_16) | [110](timings/seq_hash_128) | [269](timings/seq_hash_128) |
+| [abseil (sequential)](https://abseil.io/docs/cpp/guides/container) | [36.0](timings/abseil_1) | [32.6](timings/abseil_1) | --- | --- | --- |
+| [std_hash (sequential)](https://en.cppreference.com/w/cpp/container/unordered_map) | [44.7](timings/std_hash_1) | [13.0](timings/std_hash_1) | --- | --- | --- | 
+
+All performance numbers are in millions of operations per second
+(Mops/sec or mops).  All experiments were run on AWS EC2 c6i
+instances, which are Intel Xeon Ice Lake processors (more details
+below).
+The `threads` columns are for a mix of insert/delete/find operations on different numbers of threads.
+The `insert`  column is for inserting 10M unique keys on 128 
+threads with the table initialized to the correct final size.
+The `memory` column is the memory usage per entry (in bytes) of the hash table
+
 ## Interface
 
 The library supports the following interface for any copyable key type `K` and value type `V`.
 
-- `parlay::unordered_map<K,V,Hash=std::hash<K>,Equal=std::equal_to<K>>(long n, bool cleanup=false)` :
+- `parlay::parlay_unordered_map<K,V,Hash=std::hash<K>,Equal=std::equal_to<K>>(long n, bool cleanup=false)` :
 constructor for map of initial size n.  If `cleanup` is set, all memory pools and scheduler threads will
 be cleaned up on destruction, otherwise they can be shared among hash maps.
 
@@ -23,7 +51,7 @@ be cleaned up on destruction, otherwise they can be shared among hash maps.
   with it, otherwise returns std::nullopt.
 
 - `Insert(const K&, const V&) -> std::optional<V>` : If the key is in
-the map, returns the old value, otherwise inserts the key with the
+the map, returns the value without doing an update, otherwise inserts the key with the
 given value and returns std::nullopt.
 
 - `Remove(const K&) -> std::optional<V>` : If the key is in the map, removes the
@@ -38,8 +66,7 @@ key is in the map with an associated value v then it applies the function (secon
 to `std::optional<V>(v)`, replaces the current value for the key with the
 returned value, and returns the old value.  Otherwise it applies the
 function to std::nullopt and inserts the key into the map with the
-returned value, and returns std::nullopt.   For example using: `[&] (auto v) {return v+1;}` will increment
-the value by one.
+returned value, and returns std::nullopt.   For example: `Upsert(k, [&] (auto v) {return (v.has_value()) ? *v + 1 : 1;})` will atomically increment the value by 1 if there, or set the value to 1 if not.
 
 - `size() -> long` : Returns the number of elements in the map.
 Runs in **parallel** and does work proportional to the
@@ -96,6 +123,9 @@ lock-free version the function could be run multiple times
 concurrently, although the value of only one will be used.
 "
 
+There is also a `parlay::parlay_unordered_set` that supports sets of keys.  It has a similar
+interface.
+
 ## Benchmarks
 
 Benchmarks for comparing performance to other hash maps can be found
@@ -117,10 +147,9 @@ In addition to our hash map, the repository includes the following open source h
 - ./libcuckoo           ([libcuckoo's cuckooohash_map](https://github.com/efficient/libcuckoo))
 - ./folly_hash          ([folly's ConcurrentHashMap](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h))
 - ./boost_hash          ([boost's concurrent_flat_map](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent))
-- ./parallel_hashmap    ([parallel hashmap](https://github.com/greg7mdp/parallel-hashmap)
-) **
+- ./parallel_hashmap    ([parallel hashmap](https://github.com/greg7mdp/parallel-hashmap)) **
+- ./seq_hash    ([seq's concurrent hashmap](https://github.com/Thermadiag/seq/blob/main/docs/concurrent_map.md)) **
 - ./folly_sharded       (our own sharded version using folly's efficient [non-concurrent F14map](https://github.com/facebook/folly/blob/main/folly/container/F14Map.h)) **
-- ./abseil_sharded      (our own sharded version using abseil's efficient [non-concurrent flat_hash_map](https://abseil.io/docs/cpp/guides/container)) **
 - ./std_sharded         (our own sharded version of std::unordered_map) **
 
 For some of these you need to have the relevant library installed
@@ -131,10 +160,11 @@ for the keys.
 The tables marked with ** are "semi" growable.  In particular they all
 sharded and to perform well one needs to select the right number of
 shards, which depends on the expected size and number of threads.  For
-the experiments given below we selected 2^14 shards for all, except
-for parallel_hashmap, which has a limit of 2^12, which we picked.  We
-note this would be very wasteful for small tables, requiring hundreds of
-thousands of bytes even for a table with a single entry.
+the experiments given below we selected 2^14 shards unless the library
+limited the number of shards to a smaller number, in which case we
+picked the largest number.  We note this would be very wasteful for
+small tables, requiring hundreds of thousands of bytes even for a
+table with a single entry.
 
 Adding another hash table simply requires adding a stub file `other/<myhash>/unordered_map.h`
 (e.g., see [other/boost/hash/unordered_map.h](other/boost/hash/unordered_map.h))
@@ -196,41 +226,25 @@ Options include:
     -r <num rounds>  : number of rounds for each size/update-percent/zipfian, default = 2
     -p <num threads> 
 
+
+
 ## Timings
 
-Here are some timings on a AWS EC2 c6i.metal instance.  This machine
-has two Intel Xeon Ice Lake chips with 32 cores each.  Each core is
-2-way hyperthreaded, for a total of 128 threads.  Each number reports
-the geometric mean of mops over the eight workloads mentioned above
-(two sizes x two update rates x two distributions).  
-
-Columns 3 through 5 correspond to 1 thread, 16 threads (8 cores) and
-128 threads (64 cores) when the hash map is initialized to the correct
-size. For 1 thread numbers we use a c6i.large instance and for 16 thread numbers we use a c6i.4xlarge instance. The sixth column is for inserting 10M unique keys on 128
-threads with the table initialized to the correct final size.
-
-[//]: # "The
-seventh column is for inserting 10M unique keys on 128 threads with the
-table initialized to size 1 (i.e., it includes the time for growing
-the hash map multiple times)."
-
-| Hash Map | Memory | 1 thread | 16 threads | 128 threads | 128 insert | 
-| - | - | - | - | - | - |
-| - | bytes/elt | Mops/sec | Mops/sec | Mops/sec | Mops/sec |
-| [parlay_hash](./README.md) | [24.3](timings/parlay_hash_128) | [19.0](timings/parlay_hash_1) | [213](timings/parlay_hash_16) | [1139](timings/parlay_hash_128) | [302](timings/parlay_hash_128) |
-| [tbb_hash](https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_unordered_map_cls.html) | --- | [11.8](timings/tbb_hash_1) | [71](timings/tbb_hash_16) | [55](timings/tbb_hash_128) | [27](timings/tbb_hash_128) |
-| [libcuckoo](https://github.com/efficient/libcuckoo) | [43.6](timings/libcuckoo_128) | [13.0](timings/libcuckoo_1) | [57](timings/libcuckoo_16) | [30](timings/libcuckoo_128) | [274](timings/libcuckoo_128) |
-| [folly_hash](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h) | [91.8](timings/folly_hash_128) | [10.5](timings/folly_hash_1) | [103](timings/folly_hash_16) | [167](timings/folly_hash_128) | [208](timings/folly_hash_128) |
-| [boost_hash](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent) | [37.9](timings/boost_hash_128) | [21.5](timings/boost_hash_1) | [113](timings/boost_hash_16) | [60](timings/boost_hash_128) | [25](timings/boost_hash_128) |
-| [parallel_hashmap](https://github.com/greg7mdp/parallel-hashmap) | [36.0](timings/parallel_hashmap_128) | [18.3](timings/parallel_hashmap_1) | [82](timings/parallel_hashmap_16) | [113](timings/parallel_hashmap_128) | [137](timings/parallel_hashmap_128) |
-| [folly_sharded](other/folly_sharded/unordered_map.h) | [34.5](timings/folly_sharded_128) | [17.3](timings/folly_sharded_1) | [83](timings/folly_sharded_16) | [115](timings/folly_sharded_128) | [289](timings/folly_sharded_128) |
-| [seq_hash](https://github.com/Thermadiag/seq/blob/main/docs/concurrent_map.md) | [34.3](timings/seq_hash_128) | [19.6](timings/seq_hash_1) | [121](timings/seq_hash_16) | [110](timings/seq_hash_128) | [269](timings/seq_hash_128) |
-| [abseil (sequential)](https://abseil.io/docs/cpp/guides/container) | [36.0](timings/abseil_1) | [32.6](timings/abseil_1) | --- | --- | --- |
-| [std_hash (sequential)](https://en.cppreference.com/w/cpp/container/unordered_map) | [44.7](timings/std_hash_1) | [13.0](timings/std_hash_1) | --- | --- | --- | 
-
-No space is reported for `tbb_hash` since it uses its own memory
-allocator and jemalloc cannot track usage.  Many of the hash maps do
-badly on many threads under high contention.
+The timings reported in the table are for an AWS EC2 c6i.large for one
+thread, an AWS EC2 c6i.4xlarge for 16 threads, and a c6i.32xlarge for
+128 threads.  These all use Intel Xeon Ice Lake chips, and are 2 way
+hyperthreaded (e.g. the c6i.32xlarge only has 64 cores, but 128
+hyperthreads).  All timings are on the Ubuntu (linux) OS.  The
+c6i.32xlarge has two nodes so we use "numactl -i all" to distribute
+the memory across the two nodes for all experiments.  This slightly
+improves average performance, but more importantly makes the
+performance more stable.  We also set hugepages to "always", which
+reduces the number of TLB (translation lookaside buffer) misses for
+both ours and all the other hash tables.  In particular on Ubuntu we
+use: `echo always > /sys/kernel/mm/transparent_hugepage/enabled`.
+This needs to be done in privileged mode (i.e., using `sudo`).  It
+improves performance on average by about ten percent on most of the
+hash maps.
 
 ## Code Dependencies
 

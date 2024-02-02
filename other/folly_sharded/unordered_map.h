@@ -1,3 +1,7 @@
+// A simple sharded version of the folly::F14ValueMap (sequential) hash table.
+// Just randomly partitions keys into 2^log_num_shards shards with a lock on each
+// using the hash function to choose the shard.
+
 #pragma once
 
 #include <mutex>
@@ -35,10 +39,6 @@ struct unordered_map {
     auto r = table[idx].sub_table.find(k);
     if (r != table[idx].sub_table.end()) return (*r).second;
     else return std::optional<V>();
-  }
-
-  std::optional<V> find_(const K& k) {
-    return find(k);
   }
 
   bool insert(const K& k, const V& v) {
