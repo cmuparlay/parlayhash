@@ -39,6 +39,13 @@ The `insert`  column is for inserting 10M unique keys on 128
 threads with the table initialized to the correct final size.
 The `memory` column is the memory usage per entry (in bytes) of the hash table
 
+Details across the workloads can be found by clicking on the numbers.
+At 128 threads `parlay_hash` is faster across all workloads compared
+to all other hash tables listed.  Most of the others are particularly
+bad under high contention.  The exception is `folly_hash`, which does
+reasonably well under contention, but istead is bad under update heavy
+workloads.  It also uses a lot of memory.
+
 ## Interface
 
 The library supports the following interface for any copyable key type `K` and value type `V`.
@@ -51,22 +58,21 @@ be cleaned up on destruction, otherwise they can be shared among hash maps.
   with it, otherwise returns std::nullopt.
 
 - `Find(const K&, (const V&) -> T) -> std::optional<T>` : Same as
-  `Find(k)` but applies the function to the value before returning.
+  `Find(k)` but, if found, applies the function to the value and returns the result.
   Can be useful if `V` is large and only a summary is needed.
 
 - `Insert(const K&, const V&) -> std::optional<V>` : If the key is in
 the map, returns the value without doing an update, otherwise inserts the key with the
 given value and returns std::nullopt.
 
-- `Insert(const K&, const V&, (const V&) -> T) -> std::optional<T>` : Same as `Insert(k,v)` but
-applies the function to the old value before returning it.
-
+- `Insert(const K&, const V&, (const V&) -> T) -> std::optional<T>` : Same as `Insert(k,v)` but, if
+already in the table, applies the function to value and returns the result.
 
 - `Remove(const K&) -> std::optional<V>` : If the key is in the map, removes the
   key-value and returns the value, otherwise it returns std::nullopt.
 
-- `Remove(const K&, (const V&) -> T) -> std::optional<T>` : Same as `Remove(k)` but
-applies the function to the old value before returning it.
+- `Remove(const K&, (const V&) -> T) -> std::optional<T>` : Same as `Remove(k)` but, if removed,
+applies the function to the removed value and returns the result.
 
 - `Upsert(const K&, const V&) -> std::optional<V>` : If the key is in the map, updates
 the value with given value and returns the old value, otherwise inserts the key value pair
@@ -89,8 +95,8 @@ invocation or is inserted after its response.  This means, for
 example, that if there are no concurrent updates, it returns the
 correct size.  
 
-- `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a [parlay]
-(https://github.com/cmuparlay/parlaylib) sequence
+- `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a
+[parlay](https://github.com/cmuparlay/parlaylib) sequence
 containing all the entries of the map as key-value pairs.  Runs in
 **parallel** and takes work proportional to the number of elements in
 the hash map.  Safe to run with other operations, but is not

@@ -1,3 +1,0 @@
-./parlay_hash_new,0%update,n=10000,p=144,z=0,grow=0,mem_pe=26,insert_mops=173,mops=3661
-./parlay_hash_new,0%update,n=10000,p=144,z=0,grow=0,mem_pe=26,insert_mops=171,mops=3653
-./parlay_hash_new,0%update,n=1000000,p=144,z=0,grow=0,mem_pe=33,insert_mops=295,mops=1978
