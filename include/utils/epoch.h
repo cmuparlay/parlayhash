@@ -68,7 +68,6 @@
 #endif
 //#define EpochMemCheck 1
 
-#define USE_PARLAY_ALLOC 0
 #define USE_STEPPING 1
 //#define USE_UNDO 1
 
