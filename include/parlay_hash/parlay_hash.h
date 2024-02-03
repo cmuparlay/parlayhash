@@ -1021,7 +1021,7 @@ struct parlay_hash {
 
 };
 
-  static constexpr bool default_clear_at_end = false;
+  static constexpr bool default_clear_at_end = true;
 
   // conditionally rehash if type Hash::avalanching is not defined
   template<typename Hash, typename ignore = void>

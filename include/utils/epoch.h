@@ -438,9 +438,10 @@ private:
   // Clears all the lists, to be used on termination, or could be use
   // at a quiescent point when noone is reading any retired items.
   void clear() {
-    //std::cout << pools[0].old.size() << ", "
-    // 	      << pools[0].current.size() << ", "
-    // 	      << pools[0].reserve.size() << std::endl;
+    // for (int i=0; i < num_workers(); i++)
+    //   std::cout << i << ": " << pools[1].old.size() << ", "
+    // 		<< pools[i].current.size() << ", "
+    // 		<< pools[i].reserve.size() << std::endl;
     get_epoch().update_epoch();
     for (int i=0; i < num_workers(); i++) {
       clear_list(pools[i].old);
