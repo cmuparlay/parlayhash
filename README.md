@@ -96,14 +96,6 @@ invocation or is inserted after its response.  This means, for
 example, that if there are no concurrent updates, it returns the
 correct size.  
 
-- `entries() -> parlay::sequence<std::pair<K,V>>` : Returns a
-[parlay](https://github.com/cmuparlay/parlaylib) sequence
-containing all the entries of the map as key-value pairs.  Runs in
-**parallel** and takes work proportional to the number of elements in
-the hash map.  Safe to run with other operations, but is not
-linearizable with updates.  Its concurrency semantics are the same as
-for `size`.
-
 - `for_each(std::pair<K,V> -> void) -> void` :
 Applies the given function to each element in the map.  Has the same weakly linearizable properties as
 size.
@@ -253,19 +245,20 @@ Options include:
 
 ## Code Dependencies
 
-Our hash map uses [parlaylib](https://github.com/cmuparlay/parlaylib)
-
-for parallelism.  In particular the array of buckets is initialized in
-parallel, and the `size` and `entries` functions run in parallel.  The
-parlaylib files are included in the repository so it need not be
-installed.
-Note that parlaylib will start up threads as needed to run certain operations in parallel.   Once no longer needed, these will go to sleep but will still be around.
-
 The file [include/parlay_hash/unordered_map.h](include/parylay_hash/unordered_map.h) is mostly self contained.
 The only non C++ standard library files that it uses are the following:
 - [include/utils/epoch.h](include/utils/epoch.h), which is an implementation of epoch-based safe memory reclamation.   It supports the functions `New<T>(...args)` and `Retire(T* ptr)`, which correspond to `new` and `delete`.   The retire, however, delays destruction until it is safe to do so (i.e., when no operation that was running at the time of the retire is still running).
 - [include/utils/lock.h](include/utils/lock.h), which is a simple implementation of shared locks.  It is only used if you use the lock-based version of the parlay_hash.  The implementation has an array with a fixed number of locks (currently 65K), and a location is hashed to one of the locks in the array.   Each lock is a simple spin lock.    This file has no dependencies beyond the C++ standard library.
-- Files from the [include/parlaylib](include/parlaylib) library.
+
+ParlayHash optionally uses
+[parlaylib](https://github.com/cmuparlay/parlaylib), by defining the
+variable `USE_PARLAY`.  This will allow certain operations to run in
+parallel.  In particular the array of buckets is initialized in
+parallel, and the `size` and `entries` functions run in parallel.  The
+parlaylib files are included in the repository so it need not be
+installed.  Note that parlaylib will start up threads as needed to run
+certain operations in parallel.  Once no longer needed, these will go
+to sleep but will still be around.
 
 The other implementations (e.g. tbb, folly, ...) require the relevant libraries, but do not require `parlaylib` themselves.   However, our benchmarking harness uses `parlaylib` to run the benchmarks for all implementations.
 

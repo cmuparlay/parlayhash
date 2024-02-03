@@ -3,11 +3,9 @@
 
 #include <functional>
 #include <optional>
-#define PARLAY_USE_STD_ALLOC 1
-#include <parlay/primitives.h>
-#include <parlay/sequence.h>
 #include <utils/epoch.h>
 #include "bigatomic.h"
+#include "parallel.h"
 
 constexpr bool PrintGrow = false;
 #define USE_PARLAY 1
@@ -61,7 +59,7 @@ struct parlay_hash {
   bool clear_memory_and_scheduler_at_end;
 
   // a reference to the scheduler (null if not to be cleared)
-  parlay::internal::scheduler_type* sched_ref;
+  parlay::scheduler_type* sched_ref;
 
   // *********************************************
   // The state structure for each bucket
@@ -310,15 +308,6 @@ struct parlay_hash {
   // Each version increases in size, by grow_factor
   // *********************************************
 
-  template <typename F>
-  static void parallel_for(long n, const F& f) {
-#ifdef USE_PARLAY
-    parlay::parallel_for(0, n, f);
-#else
-    for (long i=0; i < n; i++) f(i);
-#endif
-  }
-  
   // status of a block of buckets, used when initializing and when copying to a new version
   enum status : char {Uninit, Initializing, Empty, Working, Done};
 
@@ -352,23 +341,15 @@ struct parlay_hash {
     table_version(long n) 
       : next(nullptr),
 	finished_block_count(0),
-	num_bits(std::max<long>(parlay::log2_up(min_block_size),
+	num_bits(std::max<long>((long) std::ceil(std::log2(min_block_size-1)),
 				(long) std::ceil(std::log2(1.5*n)) - log_bucket_size)),
 	size(1ul << num_bits),
 	block_size(num_bits < 10 ? min_block_size : get_block_size(num_bits)),
 	overflow_size(get_overflow_size(num_bits))
-	//buckets(parlay::sequence<bucket>::uninitialized(size)),
-	//block_status(parlay::sequence<std::atomic<status>>(size/block_size)) 
     {
       if (PrintGrow) std::cout << "initial size: " << size << std::endl;
       buckets = (bucket*) malloc(sizeof(bucket)*size);
       block_status = (std::atomic<status>*) malloc(sizeof(std::atomic<status>) * size/block_size);
-      // status x = Uninit;
-      // if (true) { //size < 1024) {
-      // 	for(long i = 0; i < size; i++)
-      // 	  initialize(buckets[i]);
-      // 	x = Empty;
-      // }
       parallel_for(size, [&] (long i) { initialize(buckets[i]);});
       parallel_for(size/block_size, [&] (long i) { block_status[i] = Empty;});
     }
@@ -381,8 +362,6 @@ struct parlay_hash {
 	size(t->size * grow_factor),
 	block_size(get_block_size(num_bits)),
 	overflow_size(get_overflow_size(num_bits))
-	//buckets(parlay::sequence<bucket>::uninitialized(size)),
-	//block_status(parlay::sequence<std::atomic<status>>::uninitialized(size/block_size))
     {
       buckets = (bucket*) malloc(sizeof(bucket)*size);
       block_status = (std::atomic<status>*) malloc(sizeof(std::atomic<status>) * size/block_size);
@@ -585,7 +564,7 @@ struct parlay_hash {
     : entries_(entries),
       clear_memory_and_scheduler_at_end(clear_at_end),
       sched_ref(clear_at_end ?
-		new parlay::internal::scheduler_type(std::thread::hardware_concurrency()) :
+		new parlay::scheduler_type(std::thread::hardware_concurrency()) :
 		nullptr),
       link_pool(clear_at_end ?
 		new epoch::memory_pool<link>() :
@@ -895,18 +874,9 @@ struct parlay_hash {
 
   long size() {
     table_version* ht = current_table_version.load();
-    //std::cout << std::endl;
     return epoch::with_epoch([&] {
-#ifdef USE_PARLAY
-      return parlay::reduce(parlay::tabulate(ht->size, [&] (size_t i) {
-	    return bucket_size_rec(ht, i);}));
-#else
-    long r = 0;
-    for (long i=0; i < ht->size; i++)
-      r += bucket_size_rec(ht, i);
-    return r;
-#endif
-    });
+       return parlay::tabulate_reduce(ht->size, [&] (size_t i) {
+	   return bucket_size_rec(ht, i);});});
   }
 
   template <typename F>
@@ -926,17 +896,17 @@ struct parlay_hash {
   //   any element whose insert linearizes after the response will not be included
   //   any element that is present from invocation to response will be included
   // Elements that are inserted or deleted between the invocation and response might or might not appear.
-  template <typename F>
-  parlay::sequence<Entry> entries(const F& f) {
-    table_version* ht = current_table_version.load();
-    return epoch::with_epoch([&] {
-      auto s = parlay::tabulate(ht->size, [&] (size_t i) {
-        parlay::sequence<Entry> r;
-	for_each_in_bucket_rec(ht, i, [&] (const Entry& entry) {
-	  r.push_back(f(entry));});
-	return r;});
-      return flatten(s);});
-  }
+  // template <typename F>
+  // parlay::sequence<Entry> entries(const F& f) {
+  //   table_version* ht = current_table_version.load();
+  //   return epoch::with_epoch([&] {
+  //     auto s = parlay::tabulate(ht->size, [&] (size_t i) {
+  //       parlay::sequence<Entry> r;
+  // 	for_each_in_bucket_rec(ht, i, [&] (const Entry& entry) {
+  // 	  r.push_back(f(entry));});
+  // 	return r;});
+  //     return flatten(s);});
+  // }
 
   // Applies f to all elments in table.
   // Same pseudo-linearizable guarantee as entries and size.
@@ -1050,6 +1020,115 @@ struct parlay_hash {
   }
 
 };
+
+  static constexpr bool default_clear_at_end = false;
+
+  // conditionally rehash if type Hash::avalanching is not defined
+  template<typename Hash, typename ignore = void>
+  struct rehash {
+    size_t operator()(size_t h) {
+      size_t x = h * UINT64_C(0xbf58476d1ce4e5b9); // linear transform
+      return (x ^ (x >> 31));  // non-linear transform
+    }};
+
+  template<typename Hash>
+  struct rehash<Hash, typename Hash::is_avalanching> {
+    size_t operator()(size_t i) {return i;}};
+
+  // Definition where entries of the hash table are stored indirectly
+  // through a pointer.  This means the entries themselves will never
+  // move, but requires a level of indirection when accessing them.
+  // Tags the high-bits of pointers with part of the hash function so
+  // one can avoid the indirection if the tags do not match.
+  // Currently used for all types that are not trivially copyable.
+  template <typename EntryData>
+  struct IndirectEntries {
+    using DataS = EntryData;
+    using Data = typename DataS::value_type;
+    using Hash = typename DataS::Hash;
+    using KeyEqual = typename DataS::KeyEqual;
+      
+    struct Entry {
+      using K = typename DataS::K;
+      using Key = std::pair<const K*,size_t>;
+      static constexpr bool Direct = false;
+      Data* ptr;
+      static Data* tag_ptr(size_t hashv, Data* data) {
+	return (Data*) (((hashv >> 48) << 48) | ((size_t) data));
+      }
+      Data* get_ptr() const {
+	return (Data*) (((size_t) ptr) & ((1ul << 48) - 1)); }
+      static unsigned long hash(const Key& k) {
+	return k.second;}
+      bool equal(const Key& k) const {
+	return (((k.second >> 48) == (((size_t) ptr) >> 48)) &&
+		KeyEqual{}(DataS::get_key(*get_ptr()), *k.first)); }
+      Key get_key() const { return make_key(DataS::get_key(*get_ptr()));}
+      Data& get_entry() const { return *get_ptr();}
+      static Key make_key(const K& key) {
+	return Key(&key, rehash<Hash>{}(Hash{}(key)));}
+      Entry(Key k, Data* data) : ptr(tag_ptr(hash(k), data)) {}
+      Entry() {}
+    };
+
+    bool clear_at_end;
+    using Key = typename Entry::Key;
+
+    // a memory pool for the entries
+    epoch::memory_pool<Data>* data_pool;
+
+    IndirectEntries(bool clear_at_end=false) 
+      : clear_at_end(clear_at_end),
+	data_pool(clear_at_end ?
+		  new epoch::memory_pool<Data>() :
+		  &epoch::get_default_pool<Data>()) {}
+    ~IndirectEntries() {
+      if (clear_at_end) { delete data_pool;}
+    }
+
+    // allocates memory for the entry
+    Entry make_entry(const Key& k, const Data& data) {
+      return Entry(k, data_pool->New(data)); }
+
+    // retires the memory for the entry
+    void retire_entry(Entry& e) {
+      data_pool->Retire(e.get_ptr()); }
+  };
+
+  // Definition where entries of the hash table are stored directly.
+  // This means the entries might be moved during updates, including
+  // insersions, removals, and resizing.  Currently used for trivially
+  // copyable types.
+  template <typename EntryData>
+  struct DirectEntries {
+    using DataS = EntryData;
+    using Data = typename DataS::value_type;
+    using Hash = typename DataS::Hash;
+    using KeyEqual = typename DataS::KeyEqual;
+    using K = typename DataS::K;
+
+    struct Entry {
+      using K = typename DataS::K;
+      using Key = K;
+      static const bool Direct = true;
+      Data data;
+      static unsigned long hash(const Key& k) {
+	return rehash<Hash>{}(Hash{}(k));}
+      bool equal(const Key& k) const { return KeyEqual{}(get_key(), k); }
+      static Key make_key(const K& k) {return k;}
+      const K& get_key() const {return DataS::get_key(data);}
+      const Data& get_entry() const { return data;}
+      Entry(const Data& data) : data(data) {}
+      Entry() {}
+    };
+
+    DirectEntries(bool clear_at_end=false) {}
+    Entry make_entry(const K& k, const Data& data) {
+      return Entry(data); }
+
+    // retiring is a noop since no memory has been allocated for entries
+    void retire_entry(Entry& e) {}
+  };
 
 }  // namespace parlay
 #endif  // PARLAY_HASH_H_
