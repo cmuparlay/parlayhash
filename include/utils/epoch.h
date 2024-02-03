@@ -55,7 +55,8 @@
 #include <vector>
 #include <list>
 #include <limits>
-#include "parlay/thread_specific.h"
+// Needed for parlay::my_thread_id of parlay::num_thread_ids
+#include "threads/thread_specific.h"
 
 #ifndef PARLAY_EPOCH_H_
 #define PARLAY_EPOCH_H_
@@ -67,11 +68,11 @@
 #endif
 //#define EpochMemCheck 1
 
-#define USE_MALLOC 1
+#define USE_PARLAY_ALLOC 0
 #define USE_STEPPING 1
 //#define USE_UNDO 1
 
-#ifndef USE_MALLOC
+#ifdef USE_PARLAY_ALLOC
 #include "parlay/alloc.h"
 #endif
 
@@ -306,7 +307,7 @@ private:
     }
   }
 
-#ifndef USE_MALLOC
+#ifdef USE_PARLAY_ALLOC
   using Allocator = parlay::type_allocator<wrapper>;
 #endif
 
@@ -331,10 +332,10 @@ private:
 
   void free_wrapper(wrapper* x) {
     check_wrapper_on_destruct(x);
-#ifdef USE_MALLOC
-    return free(x);
-#else
+#ifdef USE_PARLAY_ALLOC
     return Allocator::free(x);
+#else
+    return free(x);
 #endif
   }
   
@@ -351,10 +352,10 @@ private:
 	return w;
       }
     }
-#ifdef USE_MALLOC
-    wrapper* w = (wrapper*) malloc(sizeof(wrapper));
-#else
+#ifdef USE_PARLAY_ALLOC
     wrapper* w = Allocator::alloc();
+#else
+    wrapper* w = (wrapper*) malloc(sizeof(wrapper));
 #endif
     set_wrapper_on_construct(w);
     return w;
