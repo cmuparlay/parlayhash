@@ -19,17 +19,18 @@ experiments are described below.
 | Hash Map | Memory | 1 thread | 16 threads | 128 threads | 128 insert | 
 | - | - | - | - | - | - | 
 | - | bytes/elt | Mops/sec | Mops/sec | Mops/sec | Mops/sec | 
-| [parlay_hash](./README.md) | [26.2](timings/parlay_hash_1) | [19.0](timings/parlay_hash_1) | [214](timings/parlay_hash_16) | [1113](timings/parlay_hash_128) | [354](timings/parlay_hash_128) | 
-| [tbb_hash](https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_unordered_map_cls.html) | --- | [11.8](timings/tbb_hash_1) | [71](timings/tbb_hash_16) | [53](timings/tbb_hash_128) | [22](timings/tbb_hash_128) | 
-| [libcuckoo](https://github.com/efficient/libcuckoo) | [43.6](timings/libcuckoo_1) | [13.0](timings/libcuckoo_1) | [58](timings/libcuckoo_16) | [29](timings/libcuckoo_128) | [295](timings/libcuckoo_128) | 
-| [folly_hash](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h) | [91.9](timings/folly_hash_1) | [10.5](timings/folly_hash_1) | [107](timings/folly_hash_16) | [164](timings/folly_hash_128) | [232](timings/folly_hash_128) | 
-| [folly_sharded](other/folly_sharded/unordered_map.h) | [34.5](timings/folly_sharded_1) | [17.3](timings/folly_sharded_1) | [84](timings/folly_sharded_16) | [112](timings/folly_sharded_128) | [330](timings/folly_sharded_128) | 
-| [boost_hash](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent) | [37.9](timings/boost_hash_1) | [21.5](timings/boost_hash_1) | [115](timings/boost_hash_16) | [60](timings/boost_hash_128) | [29](timings/boost_hash_128) | 
-| [parallel_hashmap](https://github.com/greg7mdp/parallel-hashmap) | [36.0](timings/parallel_hashmap_1) | [18.3](timings/parallel_hashmap_1) | [85](timings/parallel_hashmap_16) | [105](timings/parallel_hashmap_128) | [169](timings/parallel_hashmap_128) | 
-| [seq_hash](https://github.com/Thermadiag/seq/blob/main/docs/concurrent_map.md) | [33.4](timings/seq_hash_1) | [19.6](timings/seq_hash_1) | [125](timings/seq_hash_16) | [107](timings/seq_hash_128) | [289](timings/seq_hash_128) | 
-| [abseil (sequential)](https://abseil.io/docs/cpp/guides/container) | [36.0](timings/abseil_1) | [32.6](timings/abseil_1) |  --- | --- | --- |
-| [folly_F14 (sequential)](https://engineering.fb.com/2019/04/25/developer-tools/f14/) | [24.7](timings/folly_F14_1) | [26.8](timings/folly_F14_1) |  --- | --- | --- |
-| [std_hash (sequential)](https://en.cppreference.com/w/cpp/container/unordered_map) | [44.7](timings/std_hash_1) | [13.1](timings/std_hash_1) |  --- | --- | --- |
+| [parlay_hash](./README.md) | [26.3](timings/parlay_hash_1) | [21.4](timings/parlay_hash_1) | [214](timings/parlay_hash_16) | [1130](timings/parlay_hash_128) | [370](timings/parlay_hash_128) | 
+| [parlay_hash_2x](./README.md) | [41.0](timings/parlay_hash_2x_1) | [24.4](timings/parlay_hash_2x_1) | [251](timings/parlay_hash_2x_16) | [1259](timings/parlay_hash_2x_128) | [393](timings/parlay_hash_2x_128) | 
+| [tbb_hash](https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_unordered_map_cls.html) | --- | [13.2](timings/tbb_hash_1) | [71](timings/tbb_hash_16) | [54](timings/tbb_hash_128) | [23](timings/tbb_hash_128) | 
+| [libcuckoo](https://github.com/efficient/libcuckoo) | [43.6](timings/libcuckoo_1) | [14.2](timings/libcuckoo_1) | [58](timings/libcuckoo_16) | [29](timings/libcuckoo_128) | [299](timings/libcuckoo_128) | 
+| [folly_hash](https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h) | [91.9](timings/folly_hash_1) | [12.2](timings/folly_hash_1) | [107](timings/folly_hash_16) | [157](timings/folly_hash_128) | [237](timings/folly_hash_128) | 
+| [folly_sharded](other/folly_sharded/unordered_map.h) | [34.5](timings/folly_sharded_1) | [19.4](timings/folly_sharded_1) | [84](timings/folly_sharded_16) | [116](timings/folly_sharded_128) | [329](timings/folly_sharded_128) | 
+| [boost_hash](https://www.boost.org/doc/libs/1_83_0/libs/unordered/doc/html/unordered.html#concurrent) | [37.9](timings/boost_hash_1) | [25.3](timings/boost_hash_1) | [115](timings/boost_hash_16) | [58](timings/boost_hash_128) | [30](timings/boost_hash_128) | 
+| [parallel_hashmap](https://github.com/greg7mdp/parallel-hashmap) | [36.0](timings/parallel_hashmap_1) | [22.0](timings/parallel_hashmap_1) | [85](timings/parallel_hashmap_16) | [112](timings/parallel_hashmap_128) | [185](timings/parallel_hashmap_128) | 
+| [seq_hash](https://github.com/Thermadiag/seq/blob/main/docs/concurrent_map.md) | [33.4](timings/seq_hash_1) | [23.5](timings/seq_hash_1) | [125](timings/seq_hash_16) | [105](timings/seq_hash_128) | [289](timings/seq_hash_128) | 
+| [abseil (sequential)](https://abseil.io/docs/cpp/guides/container) | [36.0](timings/abseil_1) | [40.1](timings/abseil_1) |  --- | --- | --- |
+| [folly_F14 (sequential)](https://engineering.fb.com/2019/04/25/developer-tools/f14/) | [24.7](timings/folly_F14_1) | [28.9](timings/folly_F14_1) |  --- | --- | --- |
+| [std_hash (sequential)](https://en.cppreference.com/w/cpp/container/unordered_map) | [44.7](timings/std_hash_1) | [15.0](timings/std_hash_1) |  --- | --- | --- |
 
 All performance numbers are in millions of operations per second
 (Mops/sec or mops).  All experiments were run on AWS EC2 c6i
@@ -46,6 +47,8 @@ to all other hash tables listed.  Most of the others are particularly
 bad under high contention.  The exception is `folly_hash`, which does
 reasonably well under contention, but istead is bad under update heavy
 workloads.  It also uses a lot of memory.
+`parlay_hash_2x` is the same as `parlay_hash` but with the table
+initialized to size 2n instead of n.
 
 ## Interface
 

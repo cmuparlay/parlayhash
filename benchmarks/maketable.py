@@ -1,4 +1,5 @@
 maps = [("parlay_hash", "./README.md"),
+        ("parlay_hash_2x", "./README.md"),
         ("tbb_hash", "https://spec.oneapi.io/versions/latest/elements/oneTBB/source/containers/concurrent_unordered_map_cls.html"),
         ("libcuckoo", "https://github.com/efficient/libcuckoo" ),
         ("folly_hash", "https://github.com/facebook/folly/blob/main/folly/concurrency/ConcurrentHashMap.h"),
