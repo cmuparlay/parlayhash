@@ -1,44 +1,45 @@
-./seq_hash,0%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=30,mops=43
-./seq_hash,0%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=31,mops=43
-./seq_hash,0%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=9,mops=11
-./seq_hash,0%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=9,mops=11
+./seq_hash,0%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=34,mops=43
+./seq_hash,0%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=33,mops=43
+./seq_hash,0%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=14,mops=18
+./seq_hash,0%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=14,mops=17
 
-./seq_hash,10%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=31,mops=33
-./seq_hash,10%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=30,mops=33
-./seq_hash,10%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=8,mops=10
-./seq_hash,10%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=9,mops=11
+./seq_hash,10%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=31,mops=34
+./seq_hash,10%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=33,mops=34
+./seq_hash,10%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=14,mops=16
+./seq_hash,10%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=14,mops=16
 
-./seq_hash,50%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=29,mops=27
-./seq_hash,50%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=24,mops=27
-./seq_hash,50%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=9,mops=9
-./seq_hash,50%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=9,mops=9
+./seq_hash,50%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=32,mops=27
+./seq_hash,50%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=37,insert_mops=33,mops=27
+./seq_hash,50%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=13,mops=12
+./seq_hash,50%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=29,insert_mops=13,mops=13
 
 ./seq_hash,0%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=37,insert_mops=29,mops=42
-./seq_hash,0%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=37,insert_mops=31,mops=42
-./seq_hash,0%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=9,mops=16
-./seq_hash,0%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=9,mops=15
+./seq_hash,0%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=37,insert_mops=32,mops=42
+./seq_hash,0%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=14,mops=21
+./seq_hash,0%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=14,mops=22
 
-./seq_hash,10%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=37,insert_mops=29,mops=34
+./seq_hash,10%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=37,insert_mops=31,mops=34
 ./seq_hash,10%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=37,insert_mops=32,mops=34
-./seq_hash,10%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=9,mops=14
-./seq_hash,10%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=9,mops=14
+./seq_hash,10%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=14,mops=20
+./seq_hash,10%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=14,mops=20
 
 ./seq_hash,50%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=37,insert_mops=31,mops=28
-./seq_hash,50%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=37,insert_mops=32,mops=28
-./seq_hash,50%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=9,mops=12
-./seq_hash,50%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=9,mops=12
+./seq_hash,50%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=37,insert_mops=33,mops=28
+./seq_hash,50%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=14,mops=17
+./seq_hash,50%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=29,insert_mops=14,mops=17
 
-./seq_hash,10%update,n=10000,p=1,int,z=0,grow=0,mem_pe=18,insert_mops=33,mops=36
-./seq_hash,10%update,n=10000,p=1,int,z=0,grow=0,mem_pe=18,insert_mops=36,mops=36
-./seq_hash,10%update,n=10000000,p=1,int,z=0,grow=0,mem_pe=10,insert_mops=11,mops=13
-./seq_hash,10%update,n=10000000,p=1,int,z=0,grow=0,mem_pe=10,insert_mops=10,mops=13
+./seq_hash,10%update,n=10000,p=1,int,z=0,grow=0,mem_pe=18,insert_mops=35,mops=36
+./seq_hash,10%update,n=10000,p=1,int,z=0,grow=0,mem_pe=18,insert_mops=30,mops=36
+./seq_hash,10%update,n=10000000,p=1,int,z=0,grow=0,mem_pe=10,insert_mops=14,mops=19
+./seq_hash,10%update,n=10000000,p=1,int,z=0,grow=0,mem_pe=10,insert_mops=15,mops=19
 
-./seq_hash,0%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=7,mops=16
-./seq_hash,0%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=7,mops=16
-./seq_hash,10%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=7,mops=15
-./seq_hash,10%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=7,mops=15
-./seq_hash,50%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=7,mops=12
-./seq_hash,50%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=7,mops=12
-initial insert geometric mean of mops = 8.6197
-benchmark geometric mean of mops = 19.6367
+./seq_hash,0%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=9,mops=19
+./seq_hash,0%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=8,mops=20
+./seq_hash,10%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=8,mops=18
+./seq_hash,10%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=9,mops=18
+./seq_hash,50%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=8,mops=15
+./seq_hash,50%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=116,insert_mops=8,mops=14
+
+initial insert geometric mean of mops = 12.5349
+benchmark geometric mean of mops = 23.4659
 bytes/element geometric mean = 33.381

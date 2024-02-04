@@ -11,7 +11,7 @@ if p == 1 :
     tables += ["abseil", "std_hash", "folly_F14"]
 
 def runexp(x, args, arg_str) :
-    filename = "../../timings/" + x + "_" + str(p) + arg_str
+    filename = "../../timings/" + x + arg_str + "_" + str(p)
     if p > 64 :
         command = "PARLAY_NUM_THREADS=" + str(p) + " numactl -i all ./" + x + " -full " + args
     else :
@@ -23,5 +23,5 @@ def runexp(x, args, arg_str) :
 for x in tables :
     runexp(x, "", "")
 
-runexp("parlay_hash", "-pad 2", "_p2")
+runexp("parlay_hash", "-pad 2", "_2x")
 

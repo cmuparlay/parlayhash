@@ -1,44 +1,45 @@
-./abseil,0%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=105,mops=79
-./abseil,0%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=122,mops=79
-./abseil,0%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=24,mops=21
-./abseil,0%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=24,mops=22
+./abseil,0%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=118,mops=79
+./abseil,0%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=114,mops=79
+./abseil,0%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=32,mops=30
+./abseil,0%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=32,mops=30
 
-./abseil,10%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=72,mops=71
-./abseil,10%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=78,mops=71
-./abseil,10%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=23,mops=20
-./abseil,10%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=22,mops=20
+./abseil,10%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=78,mops=70
+./abseil,10%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=78,mops=70
+./abseil,10%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=31,mops=29
+./abseil,10%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=31,mops=28
 
-./abseil,50%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=69,mops=49
-./abseil,50%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=66,mops=49
-./abseil,50%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=22,mops=17
-./abseil,50%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=23,mops=17
+./abseil,50%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=81,mops=49
+./abseil,50%update,n=10000,p=1,long_long,z=0,grow=0,mem_pe=32,insert_mops=79,mops=49
+./abseil,50%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=32,mops=25
+./abseil,50%update,n=10000000,p=1,long_long,z=0,grow=0,mem_pe=33,insert_mops=32,mops=25
 
-./abseil,0%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=112,mops=86
-./abseil,0%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=115,mops=86
-./abseil,0%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=19,mops=24
-./abseil,0%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=20,mops=23
+./abseil,0%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=116,mops=83
+./abseil,0%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=115,mops=84
+./abseil,0%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=32,mops=40
+./abseil,0%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=32,mops=39
 
-./abseil,10%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=65,mops=53
-./abseil,10%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=64,mops=53
-./abseil,10%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=19,mops=22
-./abseil,10%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=19,mops=22
+./abseil,10%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=77,mops=53
+./abseil,10%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=84,mops=53
+./abseil,10%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=32,mops=37
+./abseil,10%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=32,mops=36
 
-./abseil,50%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=69,mops=48
-./abseil,50%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=69,mops=48
-./abseil,50%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=19,mops=20
-./abseil,50%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=20,mops=20
+./abseil,50%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=77,mops=48
+./abseil,50%update,n=10000,p=1,long_long,z=0.99,grow=0,mem_pe=32,insert_mops=83,mops=48
+./abseil,50%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=31,mops=29
+./abseil,50%update,n=10000000,p=1,long_long,z=0.99,grow=0,mem_pe=33,insert_mops=31,mops=30
 
-./abseil,10%update,n=10000,p=1,int,z=0,grow=0,mem_pe=9,insert_mops=106,mops=74
-./abseil,10%update,n=10000,p=1,int,z=0,grow=0,mem_pe=9,insert_mops=104,mops=74
-./abseil,10%update,n=10000000,p=1,int,z=0,grow=0,mem_pe=10,insert_mops=27,mops=20
-./abseil,10%update,n=10000000,p=1,int,z=0,grow=0,mem_pe=10,insert_mops=26,mops=21
+./abseil,10%update,n=10000,p=1,int,z=0,grow=0,mem_pe=9,insert_mops=111,mops=74
+./abseil,10%update,n=10000,p=1,int,z=0,grow=0,mem_pe=9,insert_mops=113,mops=74
+./abseil,10%update,n=10000000,p=1,int,z=0,grow=0,mem_pe=10,insert_mops=43,mops=33
+./abseil,10%update,n=10000000,p=1,int,z=0,grow=0,mem_pe=10,insert_mops=44,mops=33
 
-./abseil,0%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=5,mops=20
-./abseil,0%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=5,mops=21
-./abseil,10%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=5,mops=18
-./abseil,10%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=5,mops=18
-./abseil,50%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=5,mops=15
-./abseil,50%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=5,mops=15
-initial insert geometric mean of mops = 9.76374
-benchmark geometric mean of mops = 32.6114
+./abseil,0%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=6,mops=25
+./abseil,0%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=6,mops=25
+./abseil,10%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=6,mops=23
+./abseil,10%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=6,mops=23
+./abseil,50%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=6,mops=19
+./abseil,50%update,n=1229916,p=1,string_4xlong,trigram,grow=0,mem_pe=138,insert_mops=6,mops=19
+
+initial insert geometric mean of mops = 21.1253
+benchmark geometric mean of mops = 40.0734
 bytes/element geometric mean = 36.021
