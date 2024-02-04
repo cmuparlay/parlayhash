@@ -28,6 +28,7 @@ def get_nums(name, p) :
     return [insert_mops, exp_mops, size_pe]
 
 def gen_entry(val, ptr) :
+    if val == "0.0" : return "--- | "
     return "[" + val + "](" + ptr + ") | "
 
 def ptr_name(name, p) :
