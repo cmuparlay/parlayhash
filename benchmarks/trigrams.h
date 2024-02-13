@@ -76,8 +76,8 @@ struct nGramTable {
       j++;
       a[j] = next(a[j-2],a[j-1],i+j);
     }
-    a[j] = 0;
-    return j+1;
+    //a[j] = 0;
+    return j;
   }
 
   int wordLength(int i, int maxLen) {
@@ -89,7 +89,7 @@ struct nGramTable {
       char tmp = next(a0,a1,i+j);
       a0 = a1; a1 = tmp;
     }
-    return j+1;
+    return j;
   }
 
   char* word(int i) {
@@ -116,11 +116,12 @@ struct nGramTable {
 };
 
 // allocates all words one after the other
+template <class str_type>
 parlay::sequence<std::string> trigramWords(long n) { 
   nGramTable T = nGramTable();
-  return parlay::tabulate(n, [&] (size_t i) -> std::string {
+  return parlay::tabulate(n, [&] (size_t i) {
 	   long j = 100 * i;
-	   std::string x(T.wordLength(j, 100),'x');
+	   std::string x(T.wordLength(j, 100),' ');
 	   T.word(j, x.data(), 100);
 	   return x;});
 }

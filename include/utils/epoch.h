@@ -52,9 +52,12 @@
 // ***************************
 
 #include <atomic>
+#include <cstdlib>
+#include <ostream>
 #include <vector>
 #include <list>
 #include <limits>
+#include <type_traits>
 // Needed for parlay::my_thread_id of parlay::num_thread_ids
 #include "threads/thread_specific.h"
 
@@ -151,11 +154,11 @@ struct alignas(64) epoch_s {
     size_t current_e = ((1ul << 48) - 1) & current_state;
     size_t workers = num_workers();
     if (i == workers) {
-      for (auto h : before_epoch_hooks) h();
+      for (const auto h : before_epoch_hooks) h();
       long tmp = current_e;
       if (current_epoch.load() == current_e &&
 	  current_epoch.compare_exchange_strong(tmp, current_e+1)) {
-	for (auto h : after_epoch_hooks) h();
+	for (const auto h : after_epoch_hooks) h();
       }
       state new_state = current_e + 1;
       epoch_state.compare_exchange_strong(current_state, new_state);
@@ -191,9 +194,9 @@ struct alignas(64) epoch_s {
     } while (num_workers() != workers); // this is unlikely to loop
 
     // if so then increment current epoch
-    for (auto h : before_epoch_hooks) h();
+    for (const auto h : before_epoch_hooks) h();
     if (current_epoch.compare_exchange_strong(current_e, current_e+1)) {
-      for (auto h : after_epoch_hooks) h();
+      for (const auto h : after_epoch_hooks) h();
     }
   }
 };
@@ -332,9 +335,9 @@ private:
   void free_wrapper(wrapper* x) {
     check_wrapper_on_destruct(x);
 #ifdef USE_PARLAY_ALLOC
-    return Allocator::free(x);
+    return Allocator::freex);
 #else
-    return free(x);
+    return std::free(x);
 #endif
   }
   
@@ -354,7 +357,7 @@ private:
 #ifdef USE_PARLAY_ALLOC
     wrapper* w = Allocator::alloc();
 #else
-    wrapper* w = (wrapper*) malloc(sizeof(wrapper));
+    wrapper* w = (wrapper*) std::malloc(sizeof(wrapper));
 #endif
     set_wrapper_on_construct(w);
     return w;
@@ -453,6 +456,87 @@ private:
 
   void stats() {}
 };
+  
+template <typename T>
+struct alignas(64) retire_pool {
+private:
+
+  struct list_entry {
+    char data[sizeof(T)];
+  };
+
+  // each thread keeps one of these
+  struct alignas(256) old_current {
+    std::list<list_entry> old;  // linked list of retired items from previous epoch
+    std::list<list_entry> current; // linked list of retired items from current epoch
+    long epoch; // epoch on last retire, updated on a retire
+    long retire_count; // number of retires so far, reset on updating the epoch
+    epoch_s::state e_state;
+    old_current() : e_state(0), epoch(0), retire_count(0) {}
+  };
+
+  std::vector<old_current> pools;
+
+  // destructs entries on a list
+  void clear_list(std::list<list_entry>& lst) {
+    for (list_entry& x : lst)
+      ((T*) (&(x.data)))->~T();
+    lst.clear();
+  }
+
+  void advance_epoch(int i, old_current& pid) {
+    if (pid.epoch + 1 < get_epoch().get_current()) {
+      clear_list(pid.old);
+      pid.old = std::move(pid.current);
+      pid.epoch = get_epoch().get_current();
+    }
+#ifdef USE_STEPPING
+    long update_threshold = 10;
+#else
+    long update_threshold = 10 * num_workers();
+#endif
+    if (++pid.retire_count == update_threshold) {
+      pid.retire_count = 0;
+#ifdef USE_STEPPING
+      pid.e_state = get_epoch().update_epoch_steps(pid.e_state, 8);
+#else
+      get_epoch().update_epoch();
+#endif
+    }
+  }
+
+ public:
+  retire_pool() {
+    long workers = max_num_workers;
+    pools = std::vector<old_current>(workers);
+    for (int i = 0; i < workers; i++) 
+      pools[i].retire_count = 0;
+  }
+
+  retire_pool(const retire_pool&) = delete;
+  ~retire_pool() { clear(); }
+
+  void Retire(T* p) {
+    auto i = worker_id();
+    auto &pid = pools[i];
+    advance_epoch(i, pid);
+    list_entry x;
+    strncpy(x.data, (char*) p, sizeof(T));
+    pid.current.push_back(x);
+  }
+
+  // Clears all the lists, to be used on termination, or could be use
+  // at a quiescent point when noone is reading any retired items.
+  void clear() {
+    get_epoch().update_epoch();
+    for (int i=0; i < num_workers(); i++) {
+      clear_list(pools[i].old);
+      clear_list(pools[i].current);
+    }
+  }
+
+  void stats() {}
+};
 
 } // namespace internal
 
@@ -469,6 +553,15 @@ private:
   template <typename T>
   extern inline memory_pool<T>& get_default_pool() {
     static memory_pool<T> pool;
+    return pool;
+  }
+
+  template <typename T>
+  using retire_pool = internal::retire_pool<T>;
+
+  template <typename T>
+  extern inline retire_pool<T>& get_default_retire_pool() {
+    static retire_pool<T> pool;
     return pool;
   }
 

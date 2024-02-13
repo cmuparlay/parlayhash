@@ -12,18 +12,22 @@
 
 #include <parlay/primitives.h>
 #include <parlay/random.h>
+#include <parlay/io.h>
 #include "zipfian.h"
 #include "parse_command_line.h"
 #include "trigrams.h"
 
 #define STRING 1
+//using str_type = parlay::chars;
+//auto to_string(const std::string& s) {return parlay::to_chars(s);}
+using str_type = std::string;
+auto to_string(const std::string& s) {return s;}
 
 using K = unsigned long;
 using V = unsigned long;
 using namespace parlay;
 
 #include "unordered_map.h"
-
 
 // leave undefined if measuring througput since measuring latency will slow down throughput
 //#define Latency 1
@@ -45,8 +49,8 @@ struct IntHash {
 
 struct StringHash {
   using is_avalanching = void; // used to avoid secondary hashing
-  std::size_t operator()(std::string const& k) const noexcept {
-    return parlay::hash<std::string>{}(k);
+  std::size_t operator()(str_type const& k) const noexcept {
+    return parlay::hash<str_type>{}(k);
   }
 };
 
@@ -87,9 +91,10 @@ generate_integer_distribution(long n,   // num entries in map
   return std::pair(a,b);
 }
 
-std::pair<parlay::sequence<std::string>,parlay::sequence<std::string>>
+std::pair<parlay::sequence<str_type>,parlay::sequence<str_type>>
 generate_string_distribution(long n) {
-  auto b = trigramWords(n);
+  auto ts = trigramWords<str_type>(n);
+  auto b = parlay::map(ts, [] (const auto& s) { return to_string(s);});
   auto a = parlay::random_shuffle(parlay::remove_duplicates(b));
   //auto a = parlay::remove_duplicates(b);
   return std::pair(a,b);
@@ -164,6 +169,7 @@ test_loop(commandLine& C,
 #else
     parlay::parallel_for(0, n, [&] (size_t i) {
       map.insert(a[i]); });
+    
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
     long mem_after_insert = jemalloc_get_allocated();
     //if (parlay::reduce(x) != n)
@@ -364,7 +370,7 @@ struct bench_set {
 };
 #endif
 
-    
+
 int main(int argc, char* argv[]) {
   commandLine P(argc,argv,"[-n <size>] [-r <rounds>] [-p <procs>] [-z <zipfian_param>] [-u <update percent>] [-verbose]");
 
@@ -452,7 +458,7 @@ int main(int argc, char* argv[]) {
   }
   
 #ifdef STRING
-  using string_map_type = bench_map<std::string, long, StringHash, 4>;
+  using string_map_type = bench_map<str_type, long, StringHash, 4>;
   if (!no_string) { // && n == 0 && update_percent == -1 && zipfian_param == -1.0) {
     int cnt = 0;
     for (auto update_percent : percents) {

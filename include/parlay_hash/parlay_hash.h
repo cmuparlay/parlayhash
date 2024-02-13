@@ -8,7 +8,6 @@
 #include "parallel.h"
 
 constexpr bool PrintGrow = false;
-#define USE_PARLAY 1
 
 namespace parlay {
 
@@ -880,14 +879,14 @@ struct parlay_hash {
   }
 
   template <typename F>
-  void for_each_buckect_rec(table_version* t, long i, const F& f) {
+  void for_each_bucket_rec(table_version* t, long i, const F& f) {
     state s = t->buckets[i].v.load();
     if (!s.is_forwarded())
-      for_each_in_state(s);
+      for_each_in_state(s, f);
     else {
       table_version* next = t->next.load();
       for (int j = 0; j < grow_factor; j++)
-	for_each_in_bucket_rec(next, grow_factor * i + j, f);
+	for_each_bucket_rec(next, grow_factor * i + j, f);
     }
   }
 
@@ -915,7 +914,7 @@ struct parlay_hash {
     table_version* ht = current_table_version.load();
     return epoch::with_epoch([&] {
       for(long i = 0; i < ht->size; i++)
-	for_each_buckect_rec(ht, i, f);});
+	for_each_bucket_rec(ht, i, f);});
   }
 
   // *********************************************
@@ -1111,7 +1110,7 @@ struct parlay_hash {
       using K = typename DataS::K;
       using Key = K;
       static const bool Direct = true;
-      Data data;
+      Data data; 
       static unsigned long hash(const Key& k) {
 	return rehash<Hash>{}(Hash{}(k));}
       bool equal(const Key& k) const { return KeyEqual{}(get_key(), k); }
@@ -1129,6 +1128,57 @@ struct parlay_hash {
     // retiring is a noop since no memory has been allocated for entries
     void retire_entry(Entry& e) {}
   };
+
+  template <typename EntryData>
+  struct DirectEntriesX {
+    using DataS = EntryData;
+    using Data = typename DataS::value_type;
+    using Hash = typename DataS::Hash;
+    using KeyEqual = typename DataS::KeyEqual;
+    using K = typename DataS::K;
+
+    struct Entry {
+      using K = typename DataS::K;
+      using Key = K;
+      static const bool Direct = true;
+      //char data[sizeof(Data)];
+      //Data data;
+      std::array<long,1 + (sizeof(Data)-1)/8> data;
+      static unsigned long hash(const Key& k) {
+	return rehash<Hash>{}(Hash{}(k));}
+      bool equal(const Key& k) const { return KeyEqual{}(get_key(), k); }
+      static Key make_key(const K& k) {return k;}
+      const K& get_key() const { return DataS::get_key(*((Data*) &data));}
+      const Data& get_entry() const { return *((Data*) &data);}
+      Entry(const Data& d) { new (&data) Data(d); }
+      Entry() {}
+    };
+
+    bool clear_at_end;
+
+    // a memory pool for the entries
+    epoch::retire_pool<Data>* data_pool;
+
+    DirectEntriesX(bool clear_at_end=false) 
+      : clear_at_end(clear_at_end),
+	data_pool(clear_at_end ?
+    		  new epoch::retire_pool<Data>() :
+    		  &epoch::get_default_retire_pool<Data>())
+    {}
+    ~DirectEntriesX() {
+      if (clear_at_end) { delete data_pool;}
+    }
+
+    // allocates memory for the entry
+    Entry make_entry(const K& k, const Data& data) {
+      return Entry(data);}
+
+    // retires the memory for the entry
+    void retire_entry(Entry& e) {
+      data_pool->Retire((Data*) &(e.data)); 
+    }
+  };
+  
 
 }  // namespace parlay
 #endif  // PARLAY_HASH_H_
