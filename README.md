@@ -45,7 +45,7 @@ Details across the workloads can be found by clicking on the numbers.
 At 128 threads `parlay_hash` is faster across all workloads compared
 to all other hash tables listed.  Most of the others are particularly
 bad under high contention.  The exception is `folly_hash`, which does
-reasonably well under contention, but istead is bad under update heavy
+reasonably well under contention, but instead is bad under update heavy
 workloads.  It also uses a lot of memory.
 `parlay_hash_2x` is the same as `parlay_hash` but with the table
 initialized to size 2n instead of n.
@@ -179,7 +179,7 @@ you have on your machine.
 The experiments run a variety of workloads and report a geometric mean across the workloads.
 The default workloads are the following:
 
-- Table of long keys and long values : will run over two data sizes
+- Table of long (8 byte integers) keys and long values : will run over two data sizes
 (10K and 10M), three update percents (0%, 10% and 50%), and two
 distributions (uniform and zipfian=.99).  This is a total of 12
 workloads since all combinations are tried.  The updates are 50%
@@ -190,7 +190,7 @@ We note that zipfian .99 is what is suggested by the YCSB [Yahoo Cloud
 Serving Benchmark](https://research.yahoo.com/news/yahoo-cloud-serving-benchmark) as a good model for the skew of real-world
 data used in key value stores.
 
-- Set of ints: will run over over 2 sizes (10K and 10M) with update
+- Set of ints (4-byte integers): will run over over 2 sizes (10K and 10M) with update
 percent set 10% and zipfian set to zero.  This is to test how it does
 and small entries.
 
