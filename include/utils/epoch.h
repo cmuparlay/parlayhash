@@ -176,7 +176,7 @@ struct alignas(64) epoch_s {
 
   // this version does the full speep
   void update_epoch() {
-    size_t id = worker_id();
+    //size_t id = worker_id();
     long current_e = get_current();
 
     // check if everyone is done with earlier epochs

@@ -4,10 +4,13 @@
 
 #include <iostream>
 #include <fstream>
+#include <string>
+#include <stddef.h>
 #include <math.h>
 #include <limits.h>
 #include "parlay/random.h"
 #include "parlay/primitives.h"
+#include "parlay/sequence.h"
 
 #define TRIGRAM_FILE "../../benchmarks/trigrams.txt"
 

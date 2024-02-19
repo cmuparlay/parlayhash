@@ -329,7 +329,7 @@ public:
   //auto Find(const K& k, const F& f = {}) {
   template <typename F = decltype(identity)>
   auto Find(const K& k, const F& f = identity) {
-    using rtype = typename std::result_of<F(Entry)>::type;
+    using rtype = typename std::invoke_result<F,Entry>::type;
     table_version* ht = current_table_version.load();
     bucket* s = ht->get_bucket(k);
     auto l = s->load();
@@ -351,7 +351,7 @@ public:
 
   template <typename F = decltype(identity)>
   auto Insert(const Entry& entry, const F& f = identity) {
-    using rtype = typename std::result_of<F(Entry)>::type;
+    using rtype = typename std::invoke_result<F,Entry>::type;
     table_version* ht = current_table_version.load();
     long idx = ht->get_index(entry.get_key());
     bucket* s = &ht->buckets[idx];
@@ -392,7 +392,7 @@ public:
 
   template <typename F = decltype(identity)>
   auto Remove(const K& k, const F& f = identity) {
-    using rtype = typename std::result_of<F(Entry)>::type;
+    using rtype = typename std::invoke_result<F,Entry>::type;
     table_version* ht = current_table_version.load();
     long idx = ht->get_index(k);
     bucket* s = &ht->buckets[idx];

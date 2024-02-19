@@ -126,12 +126,12 @@ public :
 
   template <typename F = decltype(get_value)>
   auto Insert(const K& key, const V& value, const F& f = get_value)
-    -> std::optional<typename std::result_of<F(Entry)>::type> 
+    -> std::optional<typename std::invoke_result<F,Entry>::type> 
   { return m.Insert(Entry(key, value), f); }
 
   template <typename F = decltype(get_value)>
   auto Remove(const K& k, const F& f = get_value) 
-    -> std::optional<typename std::result_of<F(Entry)>::type>
+    -> std::optional<typename std::invoke_result<F,Entry>::type>
   { return m.Remove(k, f); }
 
   iterator erase(iterator pos) { return erase(pos); }

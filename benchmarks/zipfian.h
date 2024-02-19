@@ -9,8 +9,10 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <stddef.h>
 
 #include "parlay/primitives.h"
+#include "parlay/utilities.h"
 
 struct Zipfian {
 public:
@@ -28,7 +30,7 @@ public:
 
   uint64_t operator () (size_t i) {
     uint64_t r = parlay::hash64(i);
-    double u = ((double) r)/std::numeric_limits<uint64_t>::max(); // uniform between 0.0 and 1.0
+    double u = ((double) r)/((double) std::numeric_limits<uint64_t>::max()); // uniform between 0.0 and 1.0
     double uz = u * zeta_n_;
     if (uz < 1.0) return 0;
     if (uz < 1.0 + std::pow(0.5, theta_)) return 1;

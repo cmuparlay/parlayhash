@@ -1,7 +1,12 @@
 #include <string>
 #include <iostream>
+#include <sstream>
 #include <chrono>
 #include <tuple>
+#include <cmath>
+#include <utility>
+#include <array>
+#include <vector>
 
 #define JEMALLOC 
 #define PARLAY_USE_STD_ALLOC 1
@@ -10,6 +15,8 @@
 #include <jemalloc/jemalloc.h>
 #endif
 
+#include <parlay/parallel.h>
+#include <parlay/sequence.h>
 #include <parlay/primitives.h>
 #include <parlay/random.h>
 #include <parlay/io.h>
@@ -132,7 +139,7 @@ test_loop(commandLine& C,
 	  int pad // start with table of size pad x n
 	  ) {  
 
-  using K = typename Map::K;
+  //using K = typename Map::K;
   enum op_type : char {Find, Insert, Remove};
   long n = a.size()/2;
   long m = b.size();

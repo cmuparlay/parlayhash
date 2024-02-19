@@ -20,11 +20,18 @@ message(STATUS "CMAKE_CXX_FLAGS_RELWITHDEBINFO: ${CMAKE_CXX_FLAGS_RELWITHDEBINFO
 message(STATUS "CMAKE_EXE_LINKER_FLAGS          ${CMAKE_EXE_LINKER_FLAGS}")
 message(STATUS "CMAKE_INSTALL_PREFIX:           ${CMAKE_INSTALL_PREFIX}" )
 
+# set(CMAKE_CXX_CLANG_TIDY
+#   clang-tidy;
+#   -format-style='file';
+#   -header-filter=${CMAKE_CURRENT_SOURCE_DIR};
+# )
+
 # -------------------------------------------------------------------
 #                       Library definition
 
 set(PARLAYHASH_INCLUDE_DIR "${PARLAYHASH_SOURCE_DIR}/include")
 #set(CMAKE_CXX_COMPILER "/usr/bin/g++-11")
+#set(CMAKE_CXX_COMPILER "/usr/bin/clang++-16")
 
 add_library(parlay INTERFACE)
 target_include_directories(parlay INTERFACE ${PARLAYHASH_INCLUDE_DIR})

@@ -162,7 +162,7 @@ struct parlay_hash {
   // returns std::optional(f(entry)) for entry with given key
   template <typename F>
   static auto find_in_list(const link* nxt, const K& k, const F& f) {
-    using rtype = typename std::result_of<F(Entry)>::type;
+    using rtype = typename std::invoke_result<F,Entry>::type;
     long cnt = 0;
     while (nxt != nullptr && !nxt->entry.equal(k)) {
       nxt = nxt->next;
@@ -275,7 +275,7 @@ struct parlay_hash {
   // std::nullopt.
   template <typename F>
   auto find_in_state(const state& s, const K& k, const F& f)
-    -> std::optional<typename std::result_of<F(Entry)>::type>
+    -> std::optional<typename std::invoke_result<F,Entry>::type>
   {
     long len = s.buffer_cnt();
     for (long i = 0; i < std::min(len, buffer_size); i++)
@@ -604,7 +604,7 @@ struct parlay_hash {
   // unlikely.
   template <typename F>
   auto find_in_bucket_rec(table_version* t, bckt* s, const K& k, const F& f)
-    -> std::optional<typename std::result_of<F(Entry)>::type>
+    -> std::optional<typename std::invoke_result<F,Entry>::type>
   {
     state x = s->load();
     //if bucket is forwarded, go to next version
@@ -622,7 +622,7 @@ struct parlay_hash {
   // Hence one hand inline and one prefetch (not used anywhere else in code).
   template <typename F>
   auto Find(const K& k, const F& f)
-    -> std::optional<typename std::result_of<F(Entry)>::type>
+    -> std::optional<typename std::invoke_result<F,Entry>::type>
   {
     table_version* ht = current_table_version.load();
     long idx = ht->get_index(k);
@@ -638,14 +638,14 @@ struct parlay_hash {
       // if not found and not overfull, then done
       if (s.buffer_cnt() <= buffer_size) return std::nullopt;
       // otherwise need to search overflow, which requires protection
-      return epoch::with_epoch([&] {
+      return epoch::with_epoch([&, tag=tag, &s = s] {
         // if state has not changed, then just search list
 	if (b->lv(tag)) return find_in_list(s.overflow_list(), k, f).first;
 	return find_in_bucket_rec(ht, b, k, f);
       });
     } else { // if using indirection always use protection
       __builtin_prefetch(b); // allows read to be pipelined with epoch announcement
-      return epoch::with_epoch([&] () -> std::optional<typename std::result_of<F(Entry)>::type> {
+      return epoch::with_epoch([&] () -> std::optional<typename std::invoke_result<F,Entry>::type> {
 	  return find_in_bucket_rec(ht, b, k, f);});
 
 
@@ -658,9 +658,9 @@ struct parlay_hash {
   // contains f(e) if not, where e is the entry matching the key.
   template <typename Constr, typename F>
   auto Insert(const K& key, const Constr& constr, const F& f)
-    -> std::optional<typename std::result_of<F(Entry)>::type>
+    -> std::optional<typename std::invoke_result<F,Entry>::type>
   {
-    using rtype = std::optional<typename std::result_of<F(Entry)>::type>;
+    using rtype = std::optional<typename std::invoke_result<F,Entry>::type>;
     table_version* ht = current_table_version.load();
     long idx = ht->get_index(key);
     auto b = &(ht->buckets[idx].v);
@@ -722,9 +722,9 @@ struct parlay_hash {
   // contains f(e) if not, where e is the entry matching the key.
   template <typename Constr, typename G>
   auto Upsert(const K& key, const Constr& constr, G& g)
-    -> std::optional<typename std::result_of<G(Entry)>::type>
+    -> std::optional<typename std::invoke_result<G,Entry>::type>
   {
-    using rtype = std::optional<typename std::result_of<G(Entry)>::type>;
+    using rtype = std::optional<typename std::invoke_result<G,Entry>::type>;
     table_version* ht = current_table_version.load();
     long idx = ht->get_index(key);
     auto b = &(ht->buckets[idx].v);
@@ -790,9 +790,9 @@ struct parlay_hash {
   // and contains f(e) otherwise, where e is the entry that is removed.
   template <typename F>
   auto Remove(const K& key, const F& f)
-    -> std::optional<typename std::result_of<F(Entry)>::type>
+    -> std::optional<typename std::invoke_result<F,Entry>::type>
   {
-    using rtype = std::optional<typename std::result_of<F(Entry)>::type>;
+    using rtype = std::optional<typename std::invoke_result<F,Entry>::type>;
     table_version* ht = current_table_version.load();
     long idx = ht->get_index(key);
     auto b = &(ht->buckets[idx].v);
