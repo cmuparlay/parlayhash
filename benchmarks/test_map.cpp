@@ -89,7 +89,7 @@ generate_integer_distribution(long n,   // num entries in map
   // take m numbers from a in uniform or zipfian distribution
   parlay::sequence<int_type> b;
   if (zipfian_param != 0.0) {
-    Zipfian z(2 * n, zipfian_param);
+    auto z = zipfian(2*n, zipfian_param);
     b = parlay::tabulate(m, [&] (int i) { return a[z(i)]; });
     a = parlay::random_shuffle(a);
   } else {

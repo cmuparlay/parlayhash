@@ -1,51 +1,48 @@
-//
-//  from YCSB-cpp
-//
-//  Copyright (c) 2021 Guy Blelloch (adapted and simplified)
-//  Copyright (c) 2014 Jinglei Ren <jinglei@ren.systems>.
-//
-
-#include <cassert>
 #include <cmath>
 #include <cstdint>
-#include <limits>
-#include <stddef.h>
+#include <random>
 
 #include "parlay/primitives.h"
-#include "parlay/utilities.h"
+#include "parlay/delayed.h"
+#include "parlay/random.h"
 
-struct Zipfian {
-public:
-  static constexpr double kZipfianConst = 0.75; //99;
-  static constexpr uint64_t kMaxNumItems = (UINT64_MAX >> 24);
+// A generator for the zipfian distribution.
+// When constructed with z = zipfian(n, theta) the distribution will
+// include values up to n, and with zipfian parameter theta
+// Theta must be in the range [0,1)
+// Applying z(i) will return the i-th sample from the distribution
+struct zipfian {
+private:
 
-  Zipfian(uint64_t num_items, double zipfian_const = kZipfianConst) :
-  items_(num_items), theta_(zipfian_const), zeta_n_(num_items) {
-    assert(items_ >= 2 && items_ < kMaxNumItems);
-    zeta_2_ = Zeta(2, theta_);
-    zeta_n_ = Zeta(num_items, theta_);
-    alpha_ = 1.0 / (1.0 - theta_);
-    eta_ = Eta();
-  }
+  parlay::random_generator gen;
+  std::uniform_real_distribution<double> dis;
+  uint64_t items;
+  double theta, zeta_n, eta, alpha;
 
-  uint64_t operator () (size_t i) {
-    uint64_t r = parlay::hash64(i);
-    double u = ((double) r)/((double) std::numeric_limits<uint64_t>::max()); // uniform between 0.0 and 1.0
-    double uz = u * zeta_n_;
-    if (uz < 1.0) return 0;
-    if (uz < 1.0 + std::pow(0.5, theta_)) return 1;
-    return std::lround((items_-1) * std::pow(eta_ * u - eta_ + 1, alpha_));
-  }
-
-  double Eta() {
-    return (1 - std::pow(2.0 / items_, 1 - theta_)) / (1 - zeta_2_ / zeta_n_);
-  }
-
-  static double Zeta(uint64_t cur_num, double theta) {
-    return parlay::reduce(parlay::delayed_tabulate(cur_num, [=] (size_t i) {
+  double Zeta(uint64_t n) {
+    return parlay::reduce(parlay::delayed_tabulate(n, [=] (uint64_t i) {
 	  return 1.0/ std::pow(i+1, theta);}));
   }
 
-  uint64_t items_;
-  double theta_, zeta_n_, eta_, alpha_, zeta_2_;
+public:
+  zipfian(uint64_t items, double theta)
+    : items(items), theta(theta),
+      gen(parlay::random_generator(0)),
+      dis(std::uniform_real_distribution(0.0,1.0))
+  {
+    double zeta_2 = Zeta(2);
+    zeta_n = Zeta(items);
+    alpha = 1.0 / (1.0 - theta);
+    eta = (1 - std::pow(2.0 / items, 1 - theta)) / (1 - zeta_2 / zeta_n);
+  }
+
+  uint64_t operator () (uint64_t i) {
+    auto r = gen[i];
+    double u = dis(r);   // a number between 0 and 1
+    double uz = u * zeta_n;
+    if (uz < 1.0) return 0;
+    if (uz < 1.0 + std::pow(0.5, theta)) return 1;
+    return std::lround((items-1) * std::pow(eta * u - eta + 1, alpha));
+  }
+
 };
