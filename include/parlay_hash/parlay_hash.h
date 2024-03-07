@@ -661,65 +661,54 @@ struct parlay_hash {
     -> std::optional<typename std::invoke_result<F,Entry>::type>
   {
     using rtype = std::optional<typename std::invoke_result<F,Entry>::type>;
+    return epoch::with_epoch([&] () -> rtype {
+			       auto [e, flag] = insert_(key, constr);
+			       if (flag) return {};
+			       return rtype(f(e));});
+  }
+
+  template <typename Constr>
+  auto insert_(const K& key, const Constr& constr) -> std::pair<Entry, bool> {
     table_version* ht = current_table_version.load();
     long idx = ht->get_index(key);
     auto b = &(ht->buckets[idx].v);
-    // if entries are direct, then safe to scan the buffer without epoch protection
-    if constexpr (Entry::Direct) {
+    int delay = 200;
+    while (true) {
       auto [s, tag] = b->ll();
       copy_if_needed(ht, idx);
       check_bucket_and_state(ht, key, b, s, tag, idx);
+      long len = s.buffer_cnt();
       // if found in buffer then done
-      for (long i = 0; i < std::min(s.buffer_cnt(), buffer_size); i++)
-	if (s.buffer[i].equal(key)) return f(s.buffer[i]);
-      if (s.buffer_cnt() < buffer_size) { // buffer has space, insert to end of buffer
-	Entry entry = constr();
-	if (b->sc(tag, state(s, entry))) return std::nullopt;
-	entries_->retire_entry(entry);
+      for (long i = 0; i < std::min(len, buffer_size); i++)
+	if (s.buffer[i].equal(key)) return std::pair(s.buffer[i], false);
+      if (len < buffer_size) { // buffer has space, insert to end of buffer
+	Entry new_e = constr();
+	if (b->sc(tag, state(s, new_e))) return std::pair(new_e, true);
+	entries_->retire_entry(new_e); // if failed need to ty again
+      } else if (len == buffer_size) { // buffer full, insert new link
+	Entry new_e = constr();
+	link* new_head = new_link(new_e, nullptr);
+	if (b->sc(tag, state(s, new_head))) 
+	  return std::pair(new_e, true);
+	entries_->retire_entry(new_head->entry); // if failed need to try again
+	retire_link(new_head);
+      } else { // buffer overfull, need to check if in list
+	auto [x, list_len] = find_in_list(s.overflow_list(), key, identity);
+	if (list_len + buffer_size > ht->overflow_size) expand_table(ht);
+	if (x.has_value()) return std::pair(*x, false); // if in list, then done
+	Entry new_e = constr();
+	link* new_head = new_link(new_e, s.overflow_list());
+	if (b->sc(tag, state(s, new_head))) // try to add to head of list
+	  return std::pair(new_e, true);
+	entries_->retire_entry(new_head->entry); // if failed need to ty again
+	retire_link(new_head);
       }
+      // delay before trying again, only marginally helps
+      for (volatile int i=0; i < delay; i++);
+      delay = std::min(2*delay, 5000); // 1000-10000 are about equally good
     }
-    // if indirect, or not found in buffer and buffer overfull then protect
-    return epoch::with_epoch([&] () -> rtype {
-      int delay = 200;
-      while (true) {
-	auto [s, tag] = b->ll();
-	copy_if_needed(ht, idx);
-	check_bucket_and_state(ht, key, b, s, tag, idx);
-	long len = s.buffer_cnt();
-	// if found in buffer then done
-	for (long i = 0; i < std::min(len, buffer_size); i++)
-	  if (s.buffer[i].equal(key)) return f(s.buffer[i]);
-	if (len < buffer_size) { // buffer has space, insert to end of buffer
-	  Entry new_e = constr();
-	  if (b->sc(tag, state(s, new_e))) return std::nullopt;
-	  entries_->retire_entry(new_e); // if failed need to ty again
-	} else if (len == buffer_size) { // buffer full, insert new link
-	  link* new_head = new_link(constr(), nullptr);
-	  if (b->sc(tag, state(s, new_head))) 
-	    return std::nullopt;
-	  entries_->retire_entry(new_head->entry); // if failed need to try again
-	  retire_link(new_head);
-	} else { // buffer overfull, need to check if in list
-	  auto [x, list_len] = find_in_list(s.overflow_list(), key, f);
-	  if (list_len + buffer_size > ht->overflow_size) expand_table(ht);
-	  if (x.has_value()) return x; // if in list, then done
-	  link* new_head = new_link(constr(), s.overflow_list());
-	  if (b->sc(tag, state(s, new_head))) // try to add to head of list
-	    return std::nullopt;
-	  entries_->retire_entry(new_head->entry); // if failed need to ty again
-	  retire_link(new_head);
-	}
-	// delay before trying again, only marginally helps
-	for (volatile int i=0; i < delay; i++);
-	delay = std::min(2*delay, 5000); // 1000-10000 are about equally good
-      }
-    });
   }
 
-    // Inserts at key, and does nothing if key already in the table.
-  // The constr function construct the entry to be inserted if needed.
-  // Returns an optional, which is empty if sucessfully inserted or
-  // contains f(e) if not, where e is the entry matching the key.
   template <typename Constr, typename G>
   auto Upsert(const K& key, const Constr& constr, G& g)
     -> std::optional<typename std::invoke_result<G,Entry>::type>
@@ -993,13 +982,12 @@ struct parlay_hash {
   static constexpr auto identity = [] (const Entry& entry) {return entry;};
   static constexpr auto true_f = [] (const Entry& entry) {return true;};
 
+  
   template <typename Constr>
   std::pair<Iterator,bool> insert(const K& key, const Constr& constr) {
-    auto r = Insert(key, constr, true_f);
-    if (r.has_value())
-      return std::pair(Iterator(*r), false);
-    // not correct
-    return std::pair(Iterator(true), true);
+    return epoch::with_epoch([&] {
+      auto [e,flag] = insert_(key, constr);
+      return std::pair(Iterator(e), flag);});
   }
 
   Iterator erase(Iterator pos) {
