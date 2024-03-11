@@ -1,8 +1,18 @@
 #ifndef PARLAY_HASH_H_
 #define PARLAY_HASH_H_
 
+#include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <functional>
+#include <iterator>
 #include <optional>
+#include <thread>
+#include <tuple>
+#include <type_traits>
+#include <utility>
+#include <vector>
+
 #include <utils/epoch.h>
 #include "bigatomic.h"
 #include "parallel.h"
@@ -346,7 +356,7 @@ struct parlay_hash {
 	block_size(num_bits < 10 ? min_block_size : get_block_size(num_bits)),
 	overflow_size(get_overflow_size(num_bits))
     {
-      if (PrintGrow) std::cout << "initial size: " << size << std::endl;
+      //if (PrintGrow) std::cout << "initial size: " << size << std::endl;
       buckets = (bucket*) malloc(sizeof(bucket)*size);
       block_status = (std::atomic<status>*) malloc(sizeof(std::atomic<status>) * size/block_size);
       parallel_for(size, [&] (long i) { initialize(buckets[i]);});
@@ -392,8 +402,8 @@ struct parlay_hash {
       get_locks().try_lock((long) ht, [&] {
 	 if (ht->next == nullptr) {
 	   ht->next = new table_version(ht);
-	   if (PrintGrow)
-	     std::cout << "expand to: " << n * grow_factor << std::endl;
+	   //if (PrintGrow)
+	   //  std::cout << "expand to: " << n * grow_factor << std::endl;
 	 }
 	 return true;});
     }
@@ -1117,55 +1127,53 @@ struct parlay_hash {
     void retire_entry(Entry& e) {}
   };
 
-  template <typename EntryData>
-  struct DirectEntriesX {
-    using DataS = EntryData;
-    using Data = typename DataS::value_type;
-    using Hash = typename DataS::Hash;
-    using KeyEqual = typename DataS::KeyEqual;
-    using K = typename DataS::K;
+  // template <typename EntryData>
+  // struct DirectEntriesX {
+  //   using DataS = EntryData;
+  //   using Data = typename DataS::value_type;
+  //   using Hash = typename DataS::Hash;
+  //   using KeyEqual = typename DataS::KeyEqual;
+  //   using K = typename DataS::K;
 
-    struct Entry {
-      using K = typename DataS::K;
-      using Key = K;
-      static const bool Direct = true;
-      //char data[sizeof(Data)];
-      //Data data;
-      std::array<long,1 + (sizeof(Data)-1)/8> data;
-      static unsigned long hash(const Key& k) {
-	return rehash<Hash>{}(Hash{}(k));}
-      bool equal(const Key& k) const { return KeyEqual{}(get_key(), k); }
-      static Key make_key(const K& k) {return k;}
-      const K& get_key() const { return DataS::get_key(*((Data*) &data));}
-      const Data& get_entry() const { return *((Data*) &data);}
-      Entry(const Data& d) { new (&data) Data(d); }
-      Entry() {}
-    };
+  //   struct Entry {
+  //     using K = typename DataS::K;
+  //     using Key = K;
+  //     static const bool Direct = true;
+  //     std::array<long,1 + (sizeof(Data)-1)/8> data;
+  //     static unsigned long hash(const Key& k) {
+  // 	return rehash<Hash>{}(Hash{}(k));}
+  //     bool equal(const Key& k) const { return KeyEqual{}(get_key(), k); }
+  //     static Key make_key(const K& k) {return k;}
+  //     const K& get_key() const { return DataS::get_key(*((Data*) &data));}
+  //     const Data& get_entry() const { return *((Data*) &data);}
+  //     Entry(const Data& d) { new (&data) Data(d); }
+  //     Entry() {}
+  //   };
 
-    bool clear_at_end;
+  //   bool clear_at_end;
 
-    // a memory pool for the entries
-    epoch::retire_pool<Data>* data_pool;
+  //   // a memory pool for the entries
+  //   epoch::retire_pool<Data>* data_pool;
 
-    DirectEntriesX(bool clear_at_end=false) 
-      : clear_at_end(clear_at_end),
-	data_pool(clear_at_end ?
-    		  new epoch::retire_pool<Data>() :
-    		  &epoch::get_default_retire_pool<Data>())
-    {}
-    ~DirectEntriesX() {
-      if (clear_at_end) { delete data_pool;}
-    }
+  //   DirectEntriesX(bool clear_at_end=false) 
+  //     : clear_at_end(clear_at_end),
+  // 	data_pool(clear_at_end ?
+  //   		  new epoch::retire_pool<Data>() :
+  //   		  &epoch::get_default_retire_pool<Data>())
+  //   {}
+  //   ~DirectEntriesX() {
+  //     if (clear_at_end) { delete data_pool;}
+  //   }
 
-    // allocates memory for the entry
-    Entry make_entry(const K& k, const Data& data) {
-      return Entry(data);}
+  //   // allocates memory for the entry
+  //   Entry make_entry(const K& k, const Data& data) {
+  //     return Entry(data);}
 
-    // retires the memory for the entry
-    void retire_entry(Entry& e) {
-      data_pool->Retire((Data*) &(e.data)); 
-    }
-  };
+  //   // retires the memory for the entry
+  //   void retire_entry(Entry& e) {
+  //     data_pool->Retire((Data*) &(e.data)); 
+  //   }
+  // };
   
 
 }  // namespace parlay
