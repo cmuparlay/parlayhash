@@ -1,10 +1,12 @@
 set(SOURCES test_map.cpp)
+set(COMMON_DEFS JEMALLOC)
 
 function(add_benchmark NAME DIRECTORY LINKS OPTIONS DEFS)
   add_executable(${NAME} ${SOURCES})
   target_link_libraries(${NAME} PRIVATE parlay ${LINKS})
   target_compile_options(${NAME} PRIVATE ${OPTIONS})
   target_compile_definitions(${NAME} PRIVATE ${DEFS})
+  target_compile_definitions(${NAME} PRIVATE ${COMMON_DEFS})
   target_include_directories(${NAME} PRIVATE ${PARLAYHASH_SOURCE_DIR}/${DIRECTORY}/${NAME})
 endfunction()
 

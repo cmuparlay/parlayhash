@@ -45,7 +45,7 @@
 // incremental steps towards updating the epoch and clearing the
 // retired lists.
 //
-// Developed as part of parlay project at CMU, intially for flock then
+// Developed as part of parlay project at CMU, initially for flock then
 // used for verlib, and parlayhash.
 // Current dependence on parlay is just for parlay::my_thread_id() and
 // parlay::num_thread_ids() which are from "parlay/thread_specific.h".
@@ -53,11 +53,12 @@
 
 #include <atomic>
 #include <cstdlib>
+#include <functional>
+#include <list>
 #include <ostream>
 #include <vector>
-#include <list>
-#include <limits>
 #include <type_traits>
+#include <utility>
 // Needed for parlay::my_thread_id of parlay::num_thread_ids
 #include "threads/thread_specific.h"
 
@@ -174,9 +175,8 @@ struct alignas(64) epoch_s {
     return current_state;
   }
 
-  // this version does the full speep
+  // this version does the full sweep
   void update_epoch() {
-    //size_t id = worker_id();
     long current_e = get_current();
 
     // check if everyone is done with earlier epochs
@@ -211,14 +211,10 @@ struct alignas(64) epoch_s {
 // type specific memory pools
 // ***************************
 
-using namespace std::chrono;
-    
 template <typename T>
 struct alignas(64) memory_pool {
 private:
 
-  //static constexpr double milliseconds_between_epoch_updates = 20.0;
-  //using sys_time = time_point<std::chrono::system_clock>;
   struct list_entry {
     T* ptr;
 #ifdef USE_UNDO
@@ -239,7 +235,6 @@ private:
     long epoch; // epoch on last retire, updated on a retire
     long retire_count; // number of retires so far, reset on updating the epoch
     long alloc_count;
-    //sys_time time; // time of last epoch update
     epoch_s::state e_state;
     old_current() : e_state(0), epoch(0), retire_count(0), alloc_count(0) {}
   };
@@ -290,17 +285,13 @@ private:
       pid.epoch = get_epoch().get_current();
     }
     // a heuristic
-    //auto now = system_clock::now();
 #ifdef USE_STEPPING
     long update_threshold = 10;
 #else
     long update_threshold = 10 * num_workers();
 #endif
     if (++pid.retire_count == update_threshold) {
-      //|| duration_cast<milliseconds>(now - pid.time).retire_count() >
-      //milliseconds_between_epoch_updates * (1 + ((float) i)/workers)) {
       pid.retire_count = 0;
-      //pid.time = now;
 #ifdef USE_STEPPING
       pid.e_state = get_epoch().update_epoch_steps(pid.e_state, 8);
 #else
@@ -369,7 +360,6 @@ private:
     pools = std::vector<old_current>(workers);
     for (int i = 0; i < workers; i++) {
       pools[i].retire_count = 0;
-      //pools[i].time = system_clock::now();
     }
   }
 

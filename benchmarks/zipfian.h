@@ -7,7 +7,7 @@
 #include "parlay/random.h"
 
 // A generator for the zipfian distribution.
-// When constructed with z = zipfian(n, theta) the distribution will
+// When constructed with zipfian z(n, theta); the distribution will
 // include values up to n, and with zipfian parameter theta
 // Theta must be in the range [0,1)
 // Applying z(i) will return the i-th sample from the distribution

@@ -1,14 +1,16 @@
-#include <string>
-#include <iostream>
-#include <sstream>
-#include <chrono>
-#include <tuple>
-#include <cmath>
-#include <utility>
+#include <algorithm>
 #include <array>
+#include <chrono>
+#include <cmath>
+#include <cstddef>
+#include <iostream>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
-#define JEMALLOC 
 #define PARLAY_USE_STD_ALLOC 1
 
 #ifdef JEMALLOC
