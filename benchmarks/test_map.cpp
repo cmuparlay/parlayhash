@@ -25,7 +25,7 @@
 #include <jemalloc/jemalloc.h>
 #endif
 
-#define USE_ABSL_FLAGS
+// #define USE_ABSL_FLAGS
 
 #ifdef USE_ABSL_FLAGS
 #include "absl/flags/flag.h"
@@ -100,10 +100,10 @@ generate_integer_distribution(long n,   // num entries in map
   
   // generate 2*n unique numbers in random order
   auto x = parlay::delayed_tabulate(1.2* 2 * n,[&] (size_t i) {
-  		 return (int_type) (parlay::hash64(i) >> 1) ;});
+   		 return (int_type) (parlay::hash64(i) >> 1) ;});
   auto y = parlay::random_shuffle(parlay::remove_duplicates(x));
-  auto a = parlay::tabulate(2 * n, [&] (size_t i) {return y[i];});
-
+  auto a = parlay::tabulate(2 * n, [&] (long i) {return y[i];});
+  
   // take m numbers from a in uniform or zipfian distribution
   parlay::sequence<int_type> b;
   if (zipfian_param != 0.0) {

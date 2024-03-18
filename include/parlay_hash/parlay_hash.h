@@ -43,7 +43,7 @@ struct parlay_hash {
 
   // log_2 of the expected number of entries in a bucket (<= buffer_size)
   static constexpr long log_bucket_size = 
-    (buffer_size == 1) ? 0 : ((buffer_size == 2) ? 1 : ((buffer_size <= 4) ? 2 : ((buffer_size <= 8) ? 3 : 4)));
+    (buffer_size == 1) ? 0 : ((buffer_size == 2) ? 1 : ((buffer_size <= 4) ? 2 : ((buffer_size <= 8) ? 3 : 3)));
 
   static long get_block_size(int num_bits) {
     return num_bits < 16 ? 16 : 256; }
