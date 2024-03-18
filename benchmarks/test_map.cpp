@@ -11,22 +11,45 @@
 #include <utility>
 #include <vector>
 
+#include "parse_command_line.h"  // "parse_command_line.h"
+#include "trigrams.h"            // "trigrams.h"
+#include "zipfian.h"             // "zipfian.h"
+#include "parlay/primitives.h"  // <parlay/primitives.h>
+#include "parlay/parallel.h"  // <parlay/primitives.h>
+#include "parlay/utilities.h"  // <parlay/primitives.h>
+#include "parlay/random.h"      // <parlay/random.h>
+
 #define PARLAY_USE_STD_ALLOC 1
 
 #ifdef JEMALLOC
 #include <jemalloc/jemalloc.h>
 #endif
 
-#include <parlay/parallel.h>
-#include <parlay/sequence.h>
-#include <parlay/primitives.h>
-#include <parlay/random.h>
-#include <parlay/io.h>
-#include "zipfian.h"
-#include "parse_command_line.h"
-#include "trigrams.h"
+#define USE_ABSL_FLAGS
 
-#define STRING 1
+#ifdef USE_ABSL_FLAGS
+#include "absl/flags/flag.h"
+#include "absl/flags/parse.h"
+ABSL_FLAG(int, n, 0, "Table Size (0 will use multiple sizes)");
+ABSL_FLAG(int, r, 2, "Number of rounds");
+ABSL_FLAG(int, p, 0, "Number of threads (0 will use hardware concurrency)");
+ABSL_FLAG(int, u, -1, "Percent of operations that are updates (-1 will use multiple percents)");
+ABSL_FLAG(double, z, -1.0, "Zipfian parameter (-1 will use multiple parameters)");
+//ABSL_FLAG(bool, upsert, false, "Use upsert instead of insert");
+ABSL_FLAG(double, t, 1.0, "Time to run for each trial");
+ABSL_FLAG(double, latency, 0.0, "Measure percent of operations with more than given latency");
+ABSL_FLAG(bool, verbose, false, "Show detailed information");
+ABSL_FLAG(bool, nowarmup, false, "Do not Run one warmup round");
+ABSL_FLAG(bool, grow, false, "Start with table of size 1");
+ABSL_FLAG(bool, nomeans, false, "Don't print means");
+ABSL_FLAG(int, expand, 1, "Start with table of size expand * n");
+ABSL_FLAG(bool, string, false, "Only strings");
+ABSL_FLAG(bool, nostr, false, "No Strings");
+ABSL_FLAG(bool, full, false, "Run full set of benchmarks");
+#else
+#include "parse_command_line.h"  // "parse_command_line.h"
+#endif
+
 //using str_type = parlay::chars;
 //auto to_string(const std::string& s) {return parlay::to_chars(s);}
 using str_type = std::string;
@@ -37,15 +60,6 @@ using V = unsigned long;
 using namespace parlay;
 
 #include "unordered_map.h"
-
-// leave undefined if measuring througput since measuring latency will slow down throughput
-//#define Latency 1
-
-// #ifdef Latency
-// constexpr bool use_latency = true;
-// #else
-// constexpr bool use_latency = false;
-// #endif
 
 // growt requires handles, rest do not
 #ifdef USE_HANDLE
@@ -85,14 +99,10 @@ generate_integer_distribution(long n,   // num entries in map
   long m = 10 * n + 1000 * p;
   
   // generate 2*n unique numbers in random order
-  // get rid of top bit since growt seems to fail if used (must use it itself)
-  //auto x = parlay::delayed_tabulate(1.2* 2 * n,[&] (size_t i) {
-  //		 return (K) (parlay::hash64(i) >> 1) ;});
-  //auto y = parlay::random_shuffle(parlay::remove_duplicates(x));
-  //auto a = parlay::tabulate(2 * n, [&] (size_t i) {return y[i];});
-
-  // have to exlude key = 0 since growt does not seem to allow it
-  auto a = parlay::random_shuffle(parlay::tabulate(2 * n, [] (int_type i) { return i + 1;}));
+  auto x = parlay::delayed_tabulate(1.2* 2 * n,[&] (size_t i) {
+  		 return (int_type) (parlay::hash64(i) >> 1) ;});
+  auto y = parlay::random_shuffle(parlay::remove_duplicates(x));
+  auto a = parlay::tabulate(2 * n, [&] (size_t i) {return y[i];});
 
   // take m numbers from a in uniform or zipfian distribution
   parlay::sequence<int_type> b;
@@ -131,7 +141,7 @@ size_t jemalloc_get_allocated() { return 1;}
 
 template <typename Map>
 std::tuple<double,double,double,double,double>
-test_loop(commandLine& C,
+test_loop(const std::string& command_name,
 	  std::string info,
 	  const parlay::sequence<typename Map::K>& a,
 	  const parlay::sequence<typename Map::K>& b,
@@ -144,10 +154,9 @@ test_loop(commandLine& C,
 	  bool verbose, // show some more info
 	  bool warmup,  // run one warmup round
 	  bool grow, // start with table of size 1
-	  int pad // start with table of size pad x n
+	  int expand // start with table of size expand x n
 	  ) {  
 
-  //using K = typename Map::K;
   enum op_type : char {Find, Insert, Remove};
   long n = a.size()/2;
   long m = b.size();
@@ -168,30 +177,17 @@ test_loop(commandLine& C,
   
   for (int i = 0; i < rounds + warmup; i++) { {
     long mem_at_start = jemalloc_get_allocated();
-    Map map = grow ? Map(1) : Map(n*pad);
-    size_t np = n/p;
+    Map map = grow ? Map(1) : Map(n*expand);
     size_t mp = m/p;
     auto start_insert = std::chrono::system_clock::now();
 
     // initialize the map with n distinct elements
-#ifdef USE_HANDLE
-    long block_size = 1 + (n-1) / p;
-    parlay::parallel_for(0, p, [&] (size_t i) {
-      auto handle = map.get_handle();
-      long s = i * block_size;
-      long e = std::min(s + block_size, n);
-      for (int j = s; j < e; j++)
-	map.insert(HANDLE a[j]); }, 1, true);
-    std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
-#else
     parlay::parallel_for(0, n, [&] (size_t i) {
       map.insert(a[i]); });
     
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
     long mem_after_insert = jemalloc_get_allocated();
-    //if (parlay::reduce(x) != n)
-    //  std::cout << "insertions not counted" << std::endl;
-#endif
+
     if (map.size() != n)
       std::cout << "bad initial size = " << map.size() << std::endl;
 
@@ -217,7 +213,6 @@ test_loop(commandLine& C,
     auto start = std::chrono::system_clock::now();
     
     auto run_op = [&] (auto op, long& counter) {
-		    //if constexpr (use_latency) {
 		    if (latency_cutoff > 0) {
 			auto start_op_time = std::chrono::system_clock::now();
 			op();
@@ -311,7 +306,7 @@ test_loop(commandLine& C,
     double bytes_pe = ((double) (mem_after_insert - mem_at_start))/n;
     bytes_pes.push_back(bytes_pe);
 
-    std::cout << C.commandName() << ","
+    std::cout << command_name << ","
               << "update=" << update_percent << "%,"
               << "n=" << n << ","
               << "p=" << p << ","
@@ -407,8 +402,31 @@ struct bench_set {
 
 
 int main(int argc, char* argv[]) {
-  commandLine P(argc,argv,"[-n <size>] [-r <rounds>] [-p <procs>] [-z <zipfian_param>] [-u <update percent>] [-verbose]");
+  //InitGoogle(argv[0], &argc, &argv, /*remove_flags=*/false);
+  //graph_mining::in_memory::ParallelSchedulerReference scheduler;
 
+#ifdef ABSL_FLAGS_FLAG_H_
+  absl::ParseCommandLine(argc, argv);
+  int n = absl::GetFlag(FLAGS_n);
+  int p = absl::GetFlag(FLAGS_p) > 0
+              ? absl::GetFlag(FLAGS_p)
+              : parlay::num_workers();  
+  int rounds = absl::GetFlag(FLAGS_r);  
+  double zipfian_param = absl::GetFlag(FLAGS_z);  
+  int update_percent = absl::GetFlag(FLAGS_u);
+  bool upsert = false; // absl::GetFlag(FLAGS_upsert);  
+  double trial_time = absl::GetFlag(FLAGS_t);
+  double latency_cuttoff = absl::GetFlag(FLAGS_latency);
+  bool verbose = absl::GetFlag(FLAGS_verbose); 
+  bool warmup = !absl::GetFlag(FLAGS_nowarmup);
+  bool grow = absl::GetFlag(FLAGS_grow);       
+  bool print_means = !absl::GetFlag(FLAGS_nomeans);
+  int expand = absl::GetFlag(FLAGS_expand); 
+  bool string_only = absl::GetFlag(FLAGS_string);
+  bool no_string = absl::GetFlag(FLAGS_nostr);
+  bool full = absl::GetFlag(FLAGS_full); 
+#else
+  commandLine P(argc,argv,"[-n <size>] [-r <rounds>] [-p <procs>] [-z <zipfian_param>] [-u <update percent>] [-verbose]");
   long n = P.getOptionIntValue("-n", 0);
   int p = P.getOptionIntValue("-p", parlay::num_workers());
   int rounds = P.getOptionIntValue("-r", 2);
@@ -421,10 +439,13 @@ int main(int argc, char* argv[]) {
   bool warmup = !P.getOption("-nowarmup");
   bool grow = P.getOption("-grow");
   bool print_means = !P.getOption("-nomeans");
-  int pad = P.getOptionIntValue("-pad", 1);
+  int expand = P.getOptionIntValue("-expand", 1);
   bool string_only = P.getOption("-string");
   bool no_string = P.getOption("-nostring");
   bool full = P.getOption("-full");
+#endif
+  
+  std::string command_name(argv[0]);
 
   std::vector<long> sizes;
   std::vector<int> percents;
@@ -460,11 +481,11 @@ int main(int argc, char* argv[]) {
 	  std::stringstream str;
 	  str << "long_long,z=" << zipfian_param;
 	  auto [itime, btime, size, q_latency, u_latency] =
-	    test_loop<int_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-				    trial_time, latency_cuttoff, verbose, warmup, grow, pad);
+	    test_loop<int_map_type>(command_name, str.str(), a, b, p, rounds, update_percent, upsert,
+				    trial_time, latency_cuttoff, verbose, warmup, grow, expand);
 	  bench_times.push_back(btime);
-	  q_latencies.push_back(q_latency);
-	  u_latencies.push_back(u_latency);
+	  if (update_percent < 100) q_latencies.push_back(q_latency);
+	  if (update_percent > 0) u_latencies.push_back(u_latency);
 	  insert_time = itime;
 	  byte_size = size;
 	}
@@ -484,11 +505,11 @@ int main(int argc, char* argv[]) {
 	std::stringstream str;
 	str << "int,z=" << zipfian_param;
 	auto [itime, btime, size, q_latency, u_latency] =
-	  test_loop<int_set_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-				  trial_time, latency_cuttoff, verbose, warmup, grow, pad);
+	  test_loop<int_set_type>(command_name, str.str(), a, b, p, rounds, update_percent, upsert,
+				  trial_time, latency_cuttoff, verbose, warmup, grow, expand);
 	bench_times.push_back(btime);
-	q_latencies.push_back(q_latency);
-	u_latencies.push_back(u_latency);
+	if (update_percent < 100) q_latencies.push_back(q_latency);
+	if (update_percent > 0) u_latencies.push_back(u_latency);
 	insert_time = itime;
 	byte_size = size;
       }
@@ -498,7 +519,6 @@ int main(int argc, char* argv[]) {
     insert_times.push_back(insert_time);
   }
   
-#ifdef STRING
   using string_map_type = bench_map<str_type, long, StringHash, 4>;
   if (!no_string) { // && n == 0 && update_percent == -1 && zipfian_param == -1.0) {
     int cnt = 0;
@@ -508,19 +528,18 @@ int main(int argc, char* argv[]) {
       std::stringstream str;
       str << "string_4xlong,trigram";
       auto [itime, btime, size, q_latency, u_latency] =
-	test_loop<string_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
-				   trial_time, latency_cuttoff, verbose, warmup, grow, pad);
+	test_loop<string_map_type>(command_name, str.str(), a, b, p, rounds, update_percent, upsert,
+				   trial_time, latency_cuttoff, verbose, warmup, grow, expand);
       if (cnt++ == 0) {
 	byte_sizes.push_back(size);
 	insert_times.push_back(itime);
       }
       bench_times.push_back(btime);
-      q_latencies.push_back(q_latency);
-      u_latencies.push_back(u_latency);
+      if (update_percent < 100) q_latencies.push_back(q_latency);
+      if (update_percent > 0) u_latencies.push_back(u_latency);
     }
   }
   if (print_means) std::cout << std::endl;
-#endif
 
   if (print_means) {
     if (latency_cuttoff > 0) {

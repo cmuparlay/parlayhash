@@ -64,7 +64,7 @@ struct parlay_hash {
 
   // clear_at_end will cause the scheduler and epoch-based collector
   // to clear their state on destruction
-  static constexpr bool default_clear_at_end = false;
+  static constexpr bool default_clear_at_end = true;
   bool clear_memory_and_scheduler_at_end;
 
   // a reference to the scheduler (null if not to be cleared)
@@ -580,7 +580,7 @@ struct parlay_hash {
 		&epoch::get_default_pool<link>()),
       current_table_version(new table_version(n)),
       initial_table_version(current_table_version.load())
-  {}
+  { }
 
   ~parlay_hash() {
     clear(false);
