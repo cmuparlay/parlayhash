@@ -41,6 +41,12 @@ using namespace parlay;
 // leave undefined if measuring througput since measuring latency will slow down throughput
 //#define Latency 1
 
+// #ifdef Latency
+// constexpr bool use_latency = true;
+// #else
+// constexpr bool use_latency = false;
+// #endif
+
 // growt requires handles, rest do not
 #ifdef USE_HANDLE
 #define HANDLE handle,
@@ -124,7 +130,7 @@ size_t jemalloc_get_allocated() { return 1;}
 #endif
 
 template <typename Map>
-std::tuple<double,double,double>
+std::tuple<double,double,double,double,double>
 test_loop(commandLine& C,
 	  std::string info,
 	  const parlay::sequence<typename Map::K>& a,
@@ -157,6 +163,8 @@ test_loop(commandLine& C,
   parlay::sequence<double> insert_times;
   parlay::sequence<double> bench_times;
   parlay::sequence<double> bytes_pes;
+  parlay::sequence<double> query_latency_percents;
+  parlay::sequence<double> update_latency_percents;
   
   for (int i = 0; i < rounds + warmup; i++) { {
     long mem_at_start = jemalloc_get_allocated();
@@ -201,12 +209,25 @@ test_loop(commandLine& C,
     parlay::sequence<long> query_counts(p);
     parlay::sequence<long> query_success_counts(p);
     parlay::sequence<long> update_success_counts(p);
-    parlay::sequence<long> latency_counts(p);
+    parlay::sequence<long> query_latency_counts(p);
+    parlay::sequence<long> update_latency_counts(p);
 
     if (verbose) std::cout << "entries inserted" << std::endl;
 
     auto start = std::chrono::system_clock::now();
-
+    
+    auto run_op = [&] (auto op, long& counter) {
+		    //if constexpr (use_latency) {
+		    if (latency_cutoff > 0) {
+			auto start_op_time = std::chrono::system_clock::now();
+			op();
+			auto current = std::chrono::system_clock::now();
+			std::chrono::duration<double> duration = current - start_op_time;
+			if (duration.count() * 1000000 < latency_cutoff)
+			  counter++;
+		      } else { op(); }
+		  };
+    
     // start up p threads, each doing a sequence of operations
     parlay::parallel_for(0, p, [&] (size_t i) {
       int cnt = 0;
@@ -218,7 +239,8 @@ test_loop(commandLine& C,
       long query_count = 0;
       long query_success_count = 0;
       long update_success_count = 0;
-      long latency_count = 0.0;
+      long query_latency_count = 0.0;
+      long update_latency_count = 0.0;
 #ifdef USE_HANDLE
       auto handle = map.get_handle();
 #endif
@@ -236,38 +258,24 @@ test_loop(commandLine& C,
 	    query_counts[i] = query_count;
 	    query_success_counts[i] = query_success_count;
 	    update_success_counts[i] = update_success_count;
-	    latency_counts[i] = latency_count;
+	    query_latency_counts[i] = query_latency_count;
+	    update_latency_counts[i] = update_latency_count;
 	    return;
 	  }
 	}
 
+
 	// do one of find, insert, or remove
 	if (op_types[k] == Find) {
 	  query_count++;
-#ifdef Latency
-	  auto start_op_time = std::chrono::system_clock::now();
-	  query_success_count += map.find(b[j]);
-	  auto current = std::chrono::system_clock::now();
-	  std::chrono::duration<double> duration = current - start_op_time;
-	  if (duration.count() * 1000000 < latency_cutoff)
-	    latency_count++;
-#else
-	  query_success_count += map.find(b[j]);
-#endif
+	  run_op([&] { query_success_count += map.find(b[j]);}, query_latency_count);
 	} else if (op_types[k] == Insert) {
-#ifdef UPSERTX
-	  if (upsert) {
-	    if (map.upsert(HANDLE b[j], [&] (std::optional<V> v) {return default_value;})) {added++; update_success_count++;}
-	  } else {
-	    if (map.insert(HANDLE b[j], default_value)) {added++; update_success_count++;}
-	  }
-#else
-	  if (map.insert(b[j])) {added++; update_success_count++;}
-#endif
+	  run_op([&] {if (map.insert(b[j])) {added++; update_success_count++;}},
+		 update_latency_count);
 	} else { // (op_types[k] == Remove)
-	  if (map.remove(b[j])) {removed++; update_success_count++;}
+	  run_op([&] {if (map.remove(b[j])) {removed++; update_success_count++;}},
+		 update_latency_count);
 	}
-
 
 	// wrap around if ran out of samples
 	if (++j >= (i+1)*mp) j = i*mp;
@@ -285,25 +293,39 @@ test_loop(commandLine& C,
 
     size_t num_ops = parlay::reduce(totals);
     size_t queries = parlay::reduce(query_counts);
-    double latency_count = (double) parlay::reduce(latency_counts);
+    size_t updates = num_ops - queries;
+
+    double query_latency_count = (double) parlay::reduce(query_latency_counts);
+    double query_latency_percent = (queries == 0) ? 100.0 : query_latency_count / queries * 100.0;
+    if (queries > 0)
+      query_latency_percents.push_back(query_latency_percent);
+	
+    double update_latency_count = (double) parlay::reduce(update_latency_counts);
+    double update_latency_percent = (updates == 0) ? 100.0 : update_latency_count / updates * 100.0;
+    if (updates > 0)
+      update_latency_percents.push_back(update_latency_percent);
+    
     double mops = num_ops / (duration.count() * 1e6);
     bench_times.push_back(mops);
+
     double bytes_pe = ((double) (mem_after_insert - mem_at_start))/n;
     bytes_pes.push_back(bytes_pe);
+
     std::cout << C.commandName() << ","
-              << update_percent << "%update,"
+              << "update=" << update_percent << "%,"
               << "n=" << n << ","
               << "p=" << p << ","
               << info << ","
-#ifdef Latency
-      	      << latency_count / queries * 100.0 << "%@" << latency_cutoff << "usec,"
-#endif
       	      << "grow=" << grow << ","
 	      << "mem_pe=" << (int) bytes_pe << ","
-	      << "insert_mops=" << (int) imops << ","
-              << "mops=" << (int) mops << std::endl;
+	      << "insert_mops=" << (int) imops << ",";
+    if (latency_cutoff > 0) {
+      std::cout << "query_latency=" << query_latency_percent << "%@" << latency_cutoff << "usec,"
+		<< "update_latency=" << update_latency_percent << "%@" << latency_cutoff << "usec"
+		<< std::endl;
+    } else
+      std::cout << "mops=" << (int) mops << std::endl;
 
-    size_t updates = num_ops - queries;
     size_t queries_success = parlay::reduce(query_success_counts);
     size_t updates_success = parlay::reduce(update_success_counts);
     double qratio = (double) queries_success / queries;
@@ -335,8 +357,12 @@ test_loop(commandLine& C,
     }
 #endif
   }
-  return std::tuple{ geometric_mean(insert_times),
-      geometric_mean(bench_times), geometric_mean(bytes_pes)};
+  return std::tuple{
+      geometric_mean(insert_times),
+      geometric_mean(bench_times),
+      geometric_mean(bytes_pes),
+      geometric_mean(query_latency_percents),
+      geometric_mean(update_latency_percents)};
 }
 
 template <typename K_, typename V_, typename Hash, int val_len>
@@ -390,7 +416,7 @@ int main(int argc, char* argv[]) {
   int update_percent = P.getOptionIntValue("-u", -1);
   bool upsert = P.getOption("-upsert");
   double trial_time = P.getOptionDoubleValue("-t", 1.0);
-  double latency_cuttoff = P.getOptionDoubleValue("-latency", 10.0); // in miliseconds
+  double latency_cuttoff = P.getOptionDoubleValue("-latency", 0.0); // in miliseconds
   bool verbose = P.getOption("-verbose");
   bool warmup = !P.getOption("-nowarmup");
   bool grow = P.getOption("-grow");
@@ -419,6 +445,8 @@ int main(int argc, char* argv[]) {
   parlay::sequence<double> insert_times;
   parlay::sequence<double> bench_times;
   parlay::sequence<double> byte_sizes;
+  parlay::sequence<double> q_latencies;
+  parlay::sequence<double> u_latencies;
   
   using int_type = unsigned long;
   using int_map_type = bench_map<int_type, int_type, IntHash, 1>;
@@ -431,10 +459,12 @@ int main(int argc, char* argv[]) {
 	  auto [a, b] = generate_integer_distribution<int_type>(n, p, zipfian_param);
 	  std::stringstream str;
 	  str << "long_long,z=" << zipfian_param;
-	  auto [itime, btime, size] =
+	  auto [itime, btime, size, q_latency, u_latency] =
 	    test_loop<int_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
 				    trial_time, latency_cuttoff, verbose, warmup, grow, pad);
 	  bench_times.push_back(btime);
+	  q_latencies.push_back(q_latency);
+	  u_latencies.push_back(u_latency);
 	  insert_time = itime;
 	  byte_size = size;
 	}
@@ -453,10 +483,12 @@ int main(int argc, char* argv[]) {
 	auto [a, b] = generate_integer_distribution<small_int_type>(n, p, zipfian_param);
 	std::stringstream str;
 	str << "int,z=" << zipfian_param;
-	auto [itime, btime, size] =
+	auto [itime, btime, size, q_latency, u_latency] =
 	  test_loop<int_set_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
 				  trial_time, latency_cuttoff, verbose, warmup, grow, pad);
 	bench_times.push_back(btime);
+	q_latencies.push_back(q_latency);
+	u_latencies.push_back(u_latency);
 	insert_time = itime;
 	byte_size = size;
       }
@@ -475,7 +507,7 @@ int main(int argc, char* argv[]) {
       auto [a, b] = generate_string_distribution(n);
       std::stringstream str;
       str << "string_4xlong,trigram";
-      auto [itime, btime, size] =
+      auto [itime, btime, size, q_latency, u_latency] =
 	test_loop<string_map_type>(P, str.str(), a, b, p, rounds, update_percent, upsert,
 				   trial_time, latency_cuttoff, verbose, warmup, grow, pad);
       if (cnt++ == 0) {
@@ -483,17 +515,24 @@ int main(int argc, char* argv[]) {
 	insert_times.push_back(itime);
       }
       bench_times.push_back(btime);
+      q_latencies.push_back(q_latency);
+      u_latencies.push_back(u_latency);
     }
   }
   if (print_means) std::cout << std::endl;
 #endif
 
   if (print_means) {
-    std::cout << "initial insert geometric mean of mops = " << geometric_mean(insert_times) << std::endl;
-    std::cout << "benchmark geometric mean of mops = " << geometric_mean(bench_times) << std::endl;
+    if (latency_cuttoff > 0) {
+      std::cout << "query latency = " << geometric_mean(q_latencies) << "%@" << latency_cuttoff << "usecs" << std::endl;
+      std::cout << "update latency = " << geometric_mean(u_latencies) << "%@" << latency_cuttoff << "usecs" << std::endl;
+    } else  {       
+      std::cout << "initial insert geometric mean of mops = " << geometric_mean(insert_times) << std::endl;
+      std::cout << "benchmark geometric mean of mops = " << geometric_mean(bench_times) << std::endl;
 #ifdef JEMALLOC
-    std::cout << "bytes/element geometric mean = " << geometric_mean(byte_sizes) << std::endl;
+      std::cout << "bytes/element geometric mean = " << geometric_mean(byte_sizes) << std::endl;
 #endif
+    }
   }
   return 0;
 }
