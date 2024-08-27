@@ -38,6 +38,86 @@ There are four components of this effort:
     - `MCTracking_proofs.tla`: Proof that the witness matches the initial configuration, is non-empty and a singleton, 
       proofs of miscellaneous lemmas, and proof of `StrongLinearizability`. -->
 
+## How to run
+
+### Setup
+
+To create the docker image, run the following command from this directory:
+```bash
+docker build -t phash-proofs-img .
+docker run -it --name phash-proofs-cont --platform linux/amd64 phash-proofs-img
+```
+
+If you exit the container and want to re-enter it, run:
+```bash
+docker start phash-proofs-cont
+docker exec -it phash-proofs-cont /bin/bash
+```
+
+If you would like to remove the container and the image, run:
+```bash
+docker rm phash-proofs-cont
+docker rmi phash-proofs-img
+```
+
+### Running the proof(s)
+
+Navigate to the `/opt/parlayhash/proofs` directory to find the proofs.
+The inductive invariant proof files are in the `inductive` directory,
+and the meta-configuration tracking proof files are in the `mc-tracking` directory.
+Switch to the desired directory. 
+Supposing you want to run the `IndInv_proofs.tla` proof, run:
+```bash
+tlapm IndInv_proofs.tla --nofp --timing -I ..
+```
+
+The `--nofp` flag is used to disable fingerprinting, which is not necessary for these proofs, while
+the `--timing` flag is used to report the time taken for each operation (parsing, analysis, interaction, etc.).
+The `-I ..` flag is used to include the parent directory in the search path, so that the TLA+ module can find the other modules it depends on.
+
+To verify that the proof does not contain any missing or omitted steps, you can optionally run:
+```bash
+tlapm IndInv_proofs.tla --summary -I ..
+```
+
+If the only reported metric is `obligations_count`, then there are no missing or omitted proofs; 
+otherwise the number of such proof obligations will also be reported.
+
+Note that some proofs may require a longer proof search timeout, 
+which can be lengthened by the `--stretch` flag, e.g. `--stretch 3` to triple the default timeout.
+See the Notes column in the Evaluation section below for the stretch factor used for each proof, if any.
+
+## Evaluation
+
+The evaluation of the proofs was done on a 2021 MacBook Pro with a 3.2 GHz 10-core Apple M1 Pro processor
+and 16 GB of RAM, running macOS Sonoma 14.5.
+
+### Inductive invariant
+
+| File                                | Obligation Count | Time        | Notes
+| ----------------------------------- | ---------------- | ----------- | -----
+| `IndInv_proofs.tla`                 | 236              | 19.22s      
+| `IndInv_invoc_proofs.tla`           | 893              | 2m 30.38s
+| `IndInv_find_proofs.tla`            | 429              | 1m 2.52s
+| `IndInv_insert_proofs.tla`          | 1413             | 5m 41.94s
+| `IndInv_upsert_proofs.tla`          | 1710             | 6m 36.71s
+| `IndInv_remove_proofs.tla`          | 1724             | 8m 55.11s   | Set stretch to 3
+| `IndInv_return_proofs.tla`          | 744              | 1m 26.71s
+| **Total**                           | **7149**         | **26m 32.59s**
+
+### Meta-configuration tracking
+
+| File                                | Obligation Count | Time
+| ----------------------------------- | ---------------- | ----
+| `MCTracking_proofs.tla`             | 341              | 1m 41.10s
+| `MCTracking_invoc_proofs.tla`       | 463              | 3m 13.64s
+| `MCTracking_find_proofs.tla`        | 793              | 3m 33.74s
+| `MCTracking_insert_proofs.tla`      | 2666             | 14m 55.02s
+| `MCTracking_upsert_proofs.tla`      | 2581             |
+| `MCTracking_remove_proofs.tla`      | 2324             |
+| `MCTracking_return_proofs.tla`      | 1648             |
+| **Total**                           | **XXX**          | **XXX**
+
 ## Important definitions and theorems
 Here is a list of useful definitions and theorems, and where they are defined and proven:
 - Pertaining to the inductive invariant - all defined in `IndInv.tla`:

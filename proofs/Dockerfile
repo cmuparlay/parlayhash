@@ -3,7 +3,7 @@
 # Acknowledgement: This Dockerfile is based on the following Dockerfile by
 # Kevin Sullivan (https://github.com/kevinsullivan/TLAPlusDocker.git).
 
-FROM --platform=linux/amd64 ubuntu:22.04
+FROM --platform=linux/amd64 ubuntu:24.04
 
 SHELL ["/bin/bash", "-c"]
 
@@ -42,3 +42,10 @@ RUN echo 'export PATH=$PATH:/opt/tools/tlaps/bin:/opt/tools/tlaps/bin' >> $HOME/
 # Java (at least for TLA+)
 RUN apt -y install default-jre default-jdk
 RUN echo "export JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64" >> ~/.profile
+
+# Clone proofs, no need to clone the entire repo
+RUN git clone -n --depth=1 --filter=tree:0 https://github.com/uguryavuz/parlayhash.git
+RUN cd parlayhash && git sparse-checkout set --no-cone "/proofs/*" '!/proofs/Dockerfile' && git checkout
+
+# Set the working directory
+WORKDIR /opt/parlayhash/proofs
