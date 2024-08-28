@@ -1,46 +1,33 @@
 # ParlayHash - proof of strong linearizability via meta-configuration tracking
 
 This directory contains the TLA+ implementation of ParlayHash, 
-and a TLAPS proof of its strong linearizability, using the meta-configuration tracking approach
-[Jayanti et al. 2024](https://dl.acm.org/doi/abs/10.1145/3632924). 
-There are four components of this effort:
-- The definition of the domain of meta-configurations and the transition relation between
-  meta-configurations of the *unordered map type* which ParlayHash implements.
-  This is in the file `UnorderedMapType.tla`.
-- The specification of the ParlayHash algorithm itself, in the file `Implementation.tla`.
-- The definition of a set of invariants that constitute an inductive invariant, 
-  that are later used to prove the strong linearizability of ParlayHash; and its proof.
-  The definitions of invariants and declarations of theorems are in `IndInv.tla`.
-  The proof is split into 7 files, all starting with `IndInv_`.
-  <!-- The theorem stating that the inductive invariant is an invariant of the specificiation is `SpecInv`.  -->
-  <!-- The proof is split into 7 files, each containing a part of the proof. 
-    - `IndInv_find_proofs.tla`: Ind. inv. preserved by the intermediate steps of the find operation.
-    - `IndInv_insert_proofs.tla`: Ind. inv. preserved by the intermediate steps of the insert operation.
-    - `IndInv_upsert_proofs.tla`: Ind. inv. preserved by the intermediate steps of the upsert operation.
-    - `IndInv_remove_proofs.tla`: Ind. inv. preserved by the intermediate steps of the remove operation.
-    - `IndInv_invoc_proofs.tla`: Ind. inv. preserved by the invocation of operations.
-    - `IndInv_return_proofs.tla`: Ind. inv. preserved by the return line of operations.
-    - `IndInv_proofs.tla`: Ind. inv. holds for the initial configuration, is preserved by a stuttering step, and 
-       proof of `SpecInv`. -->
-- The definition of the witnessing meta-configuration set for proof of linearizability,
-  and the proof of the well-formedness, non-emptiness, and the singleton property of the set.
-  Note that the former two are sufficient to prove linearizability, and the singleton property
-  proves strong linearizability.
-  The definitions of invariants and declarations of theorems are in `MCTracking.tla`.
-  <!-- The theorem stating that the properties listed above are an invariant of the specificiation is `StrongLinearizability`. -->
-  The proof is split into 7 files, all starting with `MCTracking_`.
-    <!-- - `MCTracking_find_proofs.tla`: Well-formedness maintained by the intermediate steps of the find operation.
-    - `MCTracking_insert_proofs.tla`: Well-formedness maintained by the intermediate steps of the insert operation.
-    - `MCTracking_upsert_proofs.tla`: Well-formedness maintained by the intermediate steps of the upsert operation.
-    - `MCTracking_remove_proofs.tla`: Well-formedness maintained by the intermediate steps of the remove operation.
-    - `MCTracking_invoc_proofs.tla`: Well-formedness maintained by the invocation of operations.
-    - `MCTracking_return_proofs.tla`: Well-formedness maintained by the return line of operations.
-    - `MCTracking_proofs.tla`: Proof that the witness matches the initial configuration, is non-empty and a singleton, 
-      proofs of miscellaneous lemmas, and proof of `StrongLinearizability`. -->
+and a [TLAPS](https://proofs.tlapl.us/doc/web/content/Home.html) 
+(TLA+ Proof System) proof of its strong linearizability.
+The proof approach begins by defining and proving an inductive invariant 
+that ParlayHash maintains throughout its execution, followed by establishing 
+a set of conditions that ensure ParlayHash is a strongly linearizable implementation 
+of the unordered map type. These conditions are derived from the work of 
+[Jayanti et al. 2024](https://dl.acm.org/doi/abs/10.1145/3632924), which introduces 
+a novel method for proving the linearizability (and strong linearizability) of concurrent 
+data structure implementations, called _meta-configuration tracking_.
+
+This effort is organized into four key components:
+- The unordered map type that ParlayHash implements is defined in `UnorderedMapType.tla`. 
+This includes specifying the state space of the type, and the transition between states 
+that operations on the type (i.e. find, insert, upsert, remove) can induce.
+- The ParlayHash algorithm itself is specified in `Implementation.tla`.
+- A set of invariants is defined to ensure that ParlayHash maintains the required properties 
+during its operations. These invariants are declared in `IndInv.tla`, and their proofs are split 
+across several TLA+ modules in the `inductive` directory.
+- The conditions that ParlayHash must meet to ensure strong linearizability are defined.
+These are declared in `MCTracking.tla`, and their proofs are split across several TLA+ modules 
+in the `mc-tracking` directory.
 
 ## How to run
 
-### Setup
+### Setup 
+
+#### Docker (recommended)
 
 To create the docker image, run the following command from this directory:
 ```bash
@@ -60,32 +47,59 @@ docker rm phash-proofs-cont
 docker rmi phash-proofs-img
 ```
 
+#### Local
+
+To run the proofs locally, you will need to have TLAPS installed on your machine,
+which can be done by following the instructions [here](https://tla.msr-inria.inria.fr/tlaps/content/Download/Binaries.html).
+You can then proceed to run the proofs as described below.
+For consistent reproducibility of the results, we recommend using the provided Docker image.
+
 ### Running the proof(s)
 
 Navigate to the `/opt/parlayhash/proofs` directory to find the proofs.
 The inductive invariant proof files are in the `inductive` directory,
 and the meta-configuration tracking proof files are in the `mc-tracking` directory.
 Switch to the desired directory. 
-Supposing you want to run the `IndInv_proofs.tla` proof, run:
+Supposing you want to run the `IndInv_invoc_proofs.tla` proof, run:
 ```bash
-tlapm IndInv_proofs.tla --nofp --timing -I ..
+tlapm IndInv_invoc_proofs.tla --nofp --timing -I ..
 ```
 
 The `--nofp` flag is used to disable fingerprinting, which is not necessary for these proofs, while
 the `--timing` flag is used to report the time taken for each operation (parsing, analysis, interaction, etc.).
 The `-I ..` flag is used to include the parent directory in the search path, so that the TLA+ module can find the other modules it depends on.
 
+If the command runs to completion without any errors, then the proof is verified;
+i.e. every proof obligation was discharged successfully. 
+You will see log messages indicating that there are _unexpanded symbols_ at various points in the proof,
+which is expected and does not indicate an error.
+
+Note that some proofs may require a longer proof search timeout, 
+which can be lengthened by the `--stretch` flag, e.g. `--stretch 3` to triple the default timeout.
+See the Notes column in the Evaluation section below for the stretch factor used for each proof, if any.
+Depending on your machine's capabilities, you may need to increase the stretch factor further.
+
 To verify that the proof does not contain any missing or omitted steps, you can optionally run:
 ```bash
-tlapm IndInv_proofs.tla --summary -I ..
+tlapm IndInv_invoc_proofs.tla --summary -I ..
 ```
 
 If the only reported metric is `obligations_count`, then there are no missing or omitted proofs; 
 otherwise the number of such proof obligations will also be reported.
 
-Note that some proofs may require a longer proof search timeout, 
-which can be lengthened by the `--stretch` flag, e.g. `--stretch 3` to triple the default timeout.
-See the Notes column in the Evaluation section below for the stretch factor used for each proof, if any.
+### Fingerprints
+
+The [fingerprints](https://proofs.tlapl.us/doc/web/content/Documentation/Publications/fm-long.pdf#page=12)
+for the proofs are stored in the `fingerprints` subdirectory of `inductive` and `mc-tracking`, respectively.
+Fingerprints are compact canonical representations of the proof obligations,
+and certify that the proof obligations have been previously verified by TLAPS.
+If you do not want to re-run the proofs in their entirety, you can direct TLAPS to use the fingerprints.
+Supposing you want to use the fingerprints for the `IndInv_invoc_proofs.tla` proof, run:
+```bash
+tlapm IndInv_invoc_proofs.tla --usefp fingerprints/IndInv_invoc_proofs.tlaps/fingerprints --timing -I ..
+```
+
+This will reduce the time taken to verify the proofs significantly. 
 
 ## Evaluation
 
@@ -107,16 +121,16 @@ and 16 GB of RAM, running macOS Sonoma 14.5.
 
 ### Meta-configuration tracking
 
-| File                                | Obligation Count | Time
-| ----------------------------------- | ---------------- | ----
+| File                                | Obligation Count | Time        | Notes
+| ----------------------------------- | ---------------- | ----------- | -----
 | `MCTracking_proofs.tla`             | 341              | 1m 41.10s
 | `MCTracking_invoc_proofs.tla`       | 463              | 3m 13.64s
 | `MCTracking_find_proofs.tla`        | 793              | 3m 33.74s
 | `MCTracking_insert_proofs.tla`      | 2666             | 14m 55.02s
-| `MCTracking_upsert_proofs.tla`      | 2581             |
-| `MCTracking_remove_proofs.tla`      | 2324             |
-| `MCTracking_return_proofs.tla`      | 1648             |
-| **Total**                           | **XXX**          | **XXX**
+| `MCTracking_upsert_proofs.tla`      | 2581             | 15m 5.80s   | Set stretch to 3
+| `MCTracking_remove_proofs.tla`      | 2324             | 14m 31.29s  | Set stretch to 3
+| `MCTracking_return_proofs.tla`      | 1648             | 12m 10.48s  
+| **Total**                           | **10816**        | **1h 5m 11.37s**
 
 ## Important definitions and theorems
 Here is a list of useful definitions and theorems, and where they are defined and proven:
