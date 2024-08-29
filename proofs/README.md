@@ -1,6 +1,7 @@
 # ParlayHash - proof of strong linearizability via meta-configuration tracking
 
-This directory contains the TLA+ implementation of ParlayHash, 
+This directory contains the TLA+ implementation of ParlayHash 
+(without more advanced features like table growing or epoch-based reclamation),
 and a [TLAPS](https://proofs.tlapl.us/doc/web/content/Home.html) 
 (TLA+ Proof System) proof of its strong linearizability.
 The proof approach begins by defining and proving an inductive invariant 
