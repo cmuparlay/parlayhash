@@ -86,7 +86,7 @@ namespace parlay {
 
     template <typename F = decltype(get_value)>
     auto Find(const K& k, const F& f = get_value)
-      -> std::optional<typename std::invoke_result<F(value_type)>::type>
+    // -> std::optional<typename std::invoke_result<F(value_type)>::type>
     {
       auto g = [&] (const Entry& e) {return f(e.get_entry());};
       return m.Find(Entry::make_key(k), g);
@@ -114,7 +114,7 @@ namespace parlay {
 
     template <typename F>
     auto Insert(const K& key, const V& value, const F& f)
-      -> std::optional<typename std::invoke_result<F(value_type)>::type>
+    // -> std::optional<typename std::invoke_result<F(value_type)>::type>
     {
       auto k = Entry::make_key(key);
       auto g = [&] (const Entry& e) {return f(e.get_entry());};
@@ -129,7 +129,7 @@ namespace parlay {
 
     template <typename F>
     auto Remove(const K& k, const F& f)
-      -> std::optional<typename std::invoke_result<F(value_type)>::type>
+    //  -> std::optional<typename std::invoke_result<F(value_type)>::type>
     {
       auto g = [&] (const Entry& e) {return f(e.get_entry());};
       return m.Remove(Entry::make_key(k), g);

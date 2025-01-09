@@ -326,7 +326,7 @@ private:
   void free_wrapper(wrapper* x) {
     check_wrapper_on_destruct(x);
 #ifdef USE_PARLAY_ALLOC
-    return Allocator::freex);
+    return Allocator::free(x);
 #else
     return std::free(x);
 #endif
