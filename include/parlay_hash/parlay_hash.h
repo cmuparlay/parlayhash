@@ -912,8 +912,8 @@ struct parlay_hash {
   void for_each(const F& f) {
     table_version* ht = current_table_version.load();
     return epoch::with_epoch([&] {
-      for(long i = 0; i < ht->size; i++)
-	for_each_bucket_rec(ht, i, f);});
+                               parallel_for(ht->size, [&] (long i) {
+                                   for_each_bucket_rec(ht, i, f);});});
   }
 
   // *********************************************
