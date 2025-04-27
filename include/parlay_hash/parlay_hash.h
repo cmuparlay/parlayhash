@@ -373,7 +373,7 @@ struct parlay_hash {
 	overflow_size(get_overflow_size(num_bits))
     {
       buckets = (bucket*) malloc(sizeof(bucket)*size);
-      block_status = (std::atomic<status>*) malloc(sizeof(std::atomic<status>) * size/block_size);
+      block_status = (std::atomic<status>*) malloc(sizeof(std::atomic<status>) * size/min_block_size);
     }
 
     ~table_version() {
