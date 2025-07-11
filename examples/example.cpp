@@ -14,8 +14,9 @@ int main() {
   std::cout << "value before increment: " << *my_map.Find("sue") << std::endl;
   auto increment = [] (std::optional<V> v) -> V {return v.has_value() ? 1 + *v : 1;};
   my_map.Upsert("sue", increment);
-  std::cout << "value after increment: " << *my_map.Find("sue") << std::endl;
-
+  std::cout << "new contents of map: " << std::endl;
+  for (auto [k,v] : my_map) std::cout << k << ":" << v << std::endl;
+  
   std::cout << "size before remove: " << my_map.size() << std::endl;
   my_map.Remove("sue");
   std::cout << "size after remove: " << my_map.size() << std::endl;

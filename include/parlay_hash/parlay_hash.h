@@ -270,7 +270,7 @@ struct parlay_hash {
 
   // Apply f to all entries in the state.
   template <typename F>
-  void for_each_in_state(const state& s, const F& f) {
+  void static for_each_in_state(const state& s, const F& f) {
     for (long i = 0; i < std::min(s.buffer_cnt(), buffer_size); i++)
       f(s.buffer[i]);
     link* l = s.overflow_list();
@@ -878,7 +878,7 @@ struct parlay_hash {
   }
 
   template <typename F>
-  void for_each_bucket_rec(table_version* t, long i, const F& f) {
+  void static for_each_bucket_rec(table_version* t, long i, const F& f) {
     state s = t->buckets[i].v.load();
     if (!s.is_forwarded())
       for_each_in_state(s, f);
@@ -937,8 +937,9 @@ struct parlay_hash {
     bool single;
     bool end;
     void get_next_bucket() {
+      auto g = [&] (const Entry& e) {entries.push_back(e);};
       while (entries.size() == 0 && ++bucket_num < t->size)
-	bucket_entries(t, bucket_num, entries, [] (const Entry& e) {return e;});
+        for_each_bucket_rec(t, bucket_num, g);
       if (bucket_num == t->size) end = true;
     }
 
