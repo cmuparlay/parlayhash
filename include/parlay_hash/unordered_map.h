@@ -64,14 +64,14 @@ namespace parlay {
     using value_type = std::pair<K, V>;
     using iterator = typename map::Iterator;
 
-    static constexpr auto true_f = [] (const Entry& kv) {return true;};
+    static constexpr auto true_f = [] (const value_type& kv) {return true;};
     static constexpr auto identity = [] (const Entry& kv) {return kv;};
     static constexpr auto get_value = [] (const value_type& kv) {return kv.second;};
 
-    unordered_map_internal(long n, bool clear_at_end = default_clear_at_end)
+    unordered_map_internal(long n = 0, bool clear_at_end = default_clear_at_end)
       : entries_(Entries(clear_at_end)),
-	m(map(n, &entries_, clear_at_end)) {}
-    
+	m(map(n+1, &entries_, clear_at_end)) {}
+
     iterator begin() { return m.begin();}
     iterator end() { return m.end();}
     bool empty() { return size() == 0;}
@@ -82,7 +82,7 @@ namespace parlay {
     template <typename F = decltype(identity)>
     //auto entries(const F& f = identity) { return m.entries(f);}
     long count(const K& k) { return (contains(k)) ? 1 : 0; }
-    bool contains(const K& k) { return find(k, true_f).has_value();}
+    bool contains(const K& k) { return Find(k, true_f).has_value();}
 
     template <typename F = decltype(get_value)>
     auto Find(const K& k, const F& f = get_value)

@@ -36,10 +36,10 @@ namespace parlay {
     static constexpr auto true_f = [] (const Entry& kv) {return true;};
     static constexpr auto identity = [] (const Entry& kv) {return kv;};
 
-    unordered_set_internal(long n, bool clear_at_end = default_clear_at_end)
+    unordered_set_internal(long n = 0, bool clear_at_end = default_clear_at_end)
       : entries_(Entries(clear_at_end)),
-	m(set(n, &entries_, clear_at_end)) {}
-    
+	m(set(n+1, &entries_, clear_at_end)) {}
+
     iterator begin() { return m.begin();}
     iterator end() { return m.end();}
     bool empty() { return size() == 0;}
@@ -48,9 +48,9 @@ namespace parlay {
     long size() { return m.size();}
 
     template <typename F = decltype(identity)>
-    auto entries(const F& f = identity) { return m.entries(f);}
+    //auto entries(const F& f = identity) { return m.entries(f);}
     long count(const K& k) { return (contains(k)) ? 1 : 0; }
-    bool contains(const K& k) { return find(k, true_f).has_value();}
+    bool contains(const K& k) { return Find(k);}
 
     bool Find(const K& k) { return m.Find(Entry::make_key(k), true_f).has_value(); }
     bool Insert(const K& key) 
