@@ -8,13 +8,14 @@ else()
   set(COMMON_LINKS ${JEMALLOC_LIB})
 endif()
 
-function(add_benchmark NAME DIRECTORY LINKS OPTIONS DEFS)
+function(add_benchmark NAME_ DIRECTORY LINKS OPTIONS DEFS)
+  set(NAME ${NAME_}${DEFS})
   add_executable(${NAME} ${SOURCES})
   target_link_libraries(${NAME} PRIVATE parlay ${LINKS} ${COMMON_LINKS})
   target_compile_options(${NAME} PRIVATE ${OPTIONS})
   target_compile_definitions(${NAME} PRIVATE ${DEFS})
   target_compile_definitions(${NAME} PRIVATE ${COMMON_DEFS})
-  target_include_directories(${NAME} PRIVATE ${PARLAYHASH_SOURCE_DIR}/${DIRECTORY}/${NAME})
+  target_include_directories(${NAME} PRIVATE ${PARLAYHASH_SOURCE_DIR}/${DIRECTORY}/${NAME_})
 endfunction()
 
 find_package(GTest)
@@ -22,6 +23,9 @@ find_package(absl)
 
 add_benchmark(old_parlay_hash other "" "" "")
 add_benchmark(parlay_hash other "absl::flags;absl::flags_parse" "" "")
+add_benchmark(parlay_hash other "absl::flags;absl::flags_parse" "" "lf")
+add_benchmark(parlay_hash other "absl::flags;absl::flags_parse" "" "noopt")
+add_benchmark(parlay_hash other "absl::flags;absl::flags_parse" "" "indirect")
 add_benchmark(std_hash other "" "" "")
 add_benchmark(std_sharded other "" "" "")
 add_benchmark(libcuckoo other "" "" "")
@@ -50,10 +54,10 @@ set(BOOST_DIR ${PARLAYHASH_SOURCE_DIR}/build/benchmarks/boost_1_83_0)
 
 # We have to manually specify Boost's location since we are using the latest
 # cutting-edge Boost version, and FindBoost.cmake can not find Boost.Unordered
-if (BOOST_DIR)
-  add_benchmark(boost_hash other "" "" "")
-  target_include_directories(boost_hash PRIVATE ${BOOST_DIR})
-endif()
+# if (BOOST_DIR)
+#   add_benchmark(boost_hash other "" "" "")
+#   target_include_directories(boost_hash PRIVATE ${BOOST_DIR})
+# endif()
 
 set(BENCH_FILES "runtests.py" "run_graphs" "runall")
 

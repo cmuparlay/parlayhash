@@ -13,8 +13,18 @@
 #include <utility>
 #include <vector>
 
+#include <utils/lock.h>
 #include <utils/epoch.h>
-#include "bigatomic.h"
+#ifdef lf
+#include "ba/bigatomic_lf.h"
+#elif defined(noopt)
+#include "ba/bigatomic_noopt.h"
+#elif defined(indirect)
+#include "ba/bigatomic_indirect.h"
+#else
+#include "ba/bigatomic.h"
+#endif
+
 #include "parallel.h"
 
 constexpr bool PrintGrow = false;
@@ -39,7 +49,8 @@ struct parlay_hash {
   static constexpr long min_block_size = 4;
 
   // buffer_size is picked so state fits in a cache line (if it can)
-  static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 48 / sizeof(Entry);
+  static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 40 / sizeof(Entry);
+  //static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 48 / sizeof(Entry);
 
   // log_2 of the expected number of entries in a bucket (<= buffer_size)
   static constexpr long log_bucket_size = 
