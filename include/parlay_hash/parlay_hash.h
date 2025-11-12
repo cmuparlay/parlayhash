@@ -21,6 +21,8 @@
 #include "ba/bigatomic_noopt.h"
 #elif defined(indirect)
 #include "ba/bigatomic_indirect.h"
+#elif defined(wf)
+#include "ba/bigatomic_wf.h"
 #else
 #include "ba/bigatomic.h"
 #endif
