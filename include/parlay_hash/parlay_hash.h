@@ -51,8 +51,8 @@ struct parlay_hash {
   static constexpr long min_block_size = 4;
 
   // buffer_size is picked so state fits in a cache line (if it can)
-  static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 40 / sizeof(Entry);
-  //static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 48 / sizeof(Entry);
+  // static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 40 / sizeof(Entry);
+  static constexpr long buffer_size = (sizeof(Entry) > 24) ? 1 : 48 / sizeof(Entry);
 
   // log_2 of the expected number of entries in a bucket (<= buffer_size)
   static constexpr long log_bucket_size = 

@@ -91,12 +91,11 @@ double geometric_mean(const parlay::sequence<double>& vals) {
 
 template <typename int_type>
 std::pair<parlay::sequence<int_type>,parlay::sequence<int_type>>
-generate_integer_distribution(long n,   // num entries in map
+generate_integer_distribution(long n, // num entries in map
 			      long p,
 			      double zipfian_param) // zipfian parameter [0:1) (0 is uniform, .99 is high skew)
 {
-  // total samples used
-  long m = 10 * n + 1000 * p;
+  long m = 10 * (n + p);
   
   // generate 2*n unique numbers in random order
   auto x = parlay::delayed_tabulate(1.2* 2 * n,[&] (size_t i) {
@@ -114,6 +113,23 @@ generate_integer_distribution(long n,   // num entries in map
     b = parlay::tabulate(m, [&] (int i) {return a[parlay::hash64(i) % (2 * n)]; });
   }
   return std::pair(a,b);
+}
+
+template <typename int_type>
+parlay::sequence<int_type>
+generate_integer_distribution_no_repeat(long n, // num entries in map
+                                        long p,
+                                        double zipfian_param) // zipfian parameter [0:1) (0 is uniform, .99 is high skew)
+{
+  int m = 100 * (n + p);
+  // take m numbers from a in uniform or zipfian distribution
+  parlay::sequence<int_type> b;
+  if (zipfian_param != 0.0) {
+    auto z = zipfian(m, zipfian_param);
+    return parlay::tabulate(m, [&] (int i) { return (int_type) z(i); });
+  } else {
+    return parlay::tabulate(m, [&] (long i) {return (int_type) parlay::hash64(i);});
+  }
 }
 
 std::pair<parlay::sequence<str_type>,parlay::sequence<str_type>>
@@ -154,7 +170,8 @@ test_loop(const std::string& command_name,
 	  bool verbose, // show some more info
 	  bool warmup,  // run one warmup round
 	  bool grow, // start with table of size 1
-	  int expand // start with table of size expand x n
+	  int expand, // start with table of size expand x n
+          bool no_repeat // keys not repeated
 	  ) {  
 
   enum op_type : char {Find, Insert, Remove};
@@ -174,23 +191,36 @@ test_loop(const std::string& command_name,
   parlay::sequence<double> bytes_pes;
   parlay::sequence<double> query_latency_percents;
   parlay::sequence<double> update_latency_percents;
-  
+
+  size_t mp = m/p;
+  size_t np = n/p;
+
+  if (no_repeat) {
+    auto a = parlay::flatten(parlay::tabulate(p, [&] (long i) {
+                               return parlay::tabulate(np, [&] (long j) {
+                                        return b[i * mp + j];});}));
+    n = parlay::remove_duplicates(a).size();
+  }
+
   for (int i = 0; i < rounds + warmup; i++) { {
     long mem_at_start = jemalloc_get_allocated();
     Map map = grow ? Map(1) : Map(n*expand);
-    size_t mp = m/p;
     auto start_insert = std::chrono::system_clock::now();
 
     // initialize the map with n distinct elements
-    parlay::parallel_for(0, n, [&] (size_t i) {
-      map.insert(a[i]); });
+    if (no_repeat)
+      parlay::parallel_for(0, p, [&] (long i) {
+        for (long j = i * mp; j < (i* mp) + np; j++) 
+          map.insert(b[j]);}, 1, true);
+    else
+      parlay::parallel_for(0, n, [&] (size_t i) {
+        map.insert(a[i]); });
     
     std::chrono::duration<double> insert_time = std::chrono::system_clock::now() - start_insert;
     long mem_after_insert = jemalloc_get_allocated();
 
     if (map.size() != n)
       std::cout << "bad initial size = " << map.size() << std::endl;
-
 
     double imops = n / insert_time.count() / 1e6;
     if (!warmup || i>0)
@@ -208,7 +238,7 @@ test_loop(const std::string& command_name,
     parlay::sequence<long> query_latency_counts(p);
     parlay::sequence<long> update_latency_counts(p);
 
-    if (verbose) std::cout << "entries inserted" << std::endl;
+    if (verbose) std::cout << "entries inserted: " << map.size() << std::endl;
 
     auto start = std::chrono::system_clock::now();
     
@@ -227,7 +257,7 @@ test_loop(const std::string& command_name,
     parlay::parallel_for(0, p, [&] (size_t i) {
       int cnt = 0;
       size_t j = i*mp;
-      size_t k = i*mp;
+      size_t k = no_repeat ? i*mp + np : i*mp;
       size_t total = 0;
       long added = 0;
       long removed = 0;
@@ -259,27 +289,49 @@ test_loop(const std::string& command_name,
 	  }
 	}
 
+        if (no_repeat) {
+          if (op_types[j] == Insert) {
+            total++;
+            run_op([&] {if (map.remove(b[j])) {removed++; update_success_count++;}},
+                   update_latency_count);
+          }
+          if (op_types[k] == Find) {
+            query_count++;
+            total++;
+            run_op([&] { query_success_count += map.find(b[k]);}, query_latency_count);
+          } else if (op_types[k] == Insert) {
+            total++;
+            run_op([&] {if (map.insert(b[k])) {added++; update_success_count++;}},
+                   update_latency_count);
+          }
+        
+          // wrap around if overflow
+          if (j++ == (i+1) * mp) j = i * mp;
+          if (k++ == (i+1) * mp) k = i * mp;
+          cnt++;
+        } else {
+          // do one of find, insert, or remove
+          if (op_types[k] == Find) {
+            query_count++;
+            run_op([&] { query_success_count += map.find(b[j]);}, query_latency_count);
+          } else if (op_types[k] == Insert) {
+            run_op([&] {if (map.insert(b[j])) {added++; update_success_count++;}},
+                   update_latency_count);
+          } else { // (op_types[k] == Remove)
+            run_op([&] {if (map.remove(b[j])) {removed++; update_success_count++;}},
+                   update_latency_count);
+          }
 
-	// do one of find, insert, or remove
-	if (op_types[k] == Find) {
-	  query_count++;
-	  run_op([&] { query_success_count += map.find(b[j]);}, query_latency_count);
-	} else if (op_types[k] == Insert) {
-	  run_op([&] {if (map.insert(b[j])) {added++; update_success_count++;}},
-		 update_latency_count);
-	} else { // (op_types[k] == Remove)
-	  run_op([&] {if (map.remove(b[j])) {removed++; update_success_count++;}},
-		 update_latency_count);
-	}
-
-	// wrap around if ran out of samples
-	if (++j >= (i+1)*mp) j = i*mp;
-	if (++k >= (i+1)*mp) k = i*mp + 1; // offset so different ops on different rounds
-	cnt++;
-	total++;
+          // wrap around if ran out of samples
+          if (++j >= (i+1)*mp) j = i*mp;
+          if (++k >= (i+1)*mp) k = i*mp + 1; // offset so different ops on different rounds
+          cnt++;
+          total++;
+        }
       }
     }, 1, true);
     auto current = std::chrono::system_clock::now();
+    long final_size = map.size();
 
     //long mem_at_end = jemalloc_get_allocated();
     
@@ -303,7 +355,7 @@ test_loop(const std::string& command_name,
     double mops = num_ops / (duration.count() * 1e6);
     bench_times.push_back(mops);
 
-    double bytes_pe = ((double) (mem_after_insert - mem_at_start))/n;
+    double bytes_pe = ((double) (mem_after_insert - mem_at_start))/final_size;
     bytes_pes.push_back(bytes_pe);
 
     std::cout << command_name << ","
@@ -334,9 +386,9 @@ test_loop(const std::string& command_name,
 		<< ", insertions = " << added
 		<< ", removes = " << removed
 		<< std::endl;
-    if (qratio < .4 || qratio > .6)
+    if (!no_repeat && (qratio < .4 || qratio > .6))
       std::cout << "warning: query success ratio = " << qratio << std::endl;
-    if (uratio < .4 || uratio > .6)
+    if (!no_repeat && (uratio < .4 || uratio > .6))
       std::cout << "warning: update success ratio = " << uratio << std::endl;
     if (initial_size + added - removed != final_cnt) {
       std::cout << "bad final size: intial size = " << initial_size
@@ -443,6 +495,7 @@ int main(int argc, char* argv[]) {
   bool string_only = P.getOption("-string");
   bool no_string = P.getOption("-nostring");
   bool full = P.getOption("-full");
+  bool no_repeat = P.getOption("-norepeat");
 #endif
   
   std::string command_name(argv[0]);
@@ -472,17 +525,28 @@ int main(int argc, char* argv[]) {
   using int_type = unsigned long;
   using int_map_type = bench_map<int_type, int_type, IntHash, 1>;
 
+
   if (!string_only) {
+
     double byte_size, insert_time;
-    for (auto zipfian_param : zipfians)
+    for (auto zipfian_param : zipfians) {
       for (auto update_percent : percents) {
 	for (auto n : sizes) {
-	  auto [a, b] = generate_integer_distribution<int_type>(n, p, zipfian_param);
-	  std::stringstream str;
-	  str << "long_long,z=" << zipfian_param;
-	  auto [itime, btime, size, q_latency, u_latency] =
-	    test_loop<int_map_type>(command_name, str.str(), a, b, p, rounds, update_percent, upsert,
-				    trial_time, latency_cuttoff, verbose, warmup, grow, expand);
+          std::stringstream str;
+          std::tuple<double,double,double,double,double> r;
+          if (no_repeat) {
+            auto b = generate_integer_distribution_no_repeat<int_type>(n, p, zipfian_param);
+            auto a = parlay::tabulate(2*n, [&] (long i) {return b[i];});
+            str << "long_long_nr,z=" << zipfian_param;
+            r = test_loop<int_map_type>(command_name, str.str(), a, b, p, rounds, update_percent, upsert,
+                                        trial_time, latency_cuttoff, verbose, warmup, grow, expand, true);
+          } else {
+            auto [a, b] = generate_integer_distribution<int_type>(n, p, zipfian_param);
+            str << "long_long,z=" << zipfian_param;
+            r = test_loop<int_map_type>(command_name, str.str(), a, b, p, rounds, update_percent, upsert,
+                                        trial_time, latency_cuttoff, verbose, warmup, grow, expand, false);
+          }
+          auto [itime, btime, size, q_latency, u_latency] = r;
 	  bench_times.push_back(btime);
 	  if (update_percent < 100) q_latencies.push_back(q_latency);
 	  if (update_percent > 0) u_latencies.push_back(u_latency);
@@ -491,6 +555,7 @@ int main(int argc, char* argv[]) {
 	}
 	if (print_means) std::cout << std::endl;
       }
+    }
     byte_sizes.push_back(byte_size);
     insert_times.push_back(insert_time);
 
@@ -506,7 +571,7 @@ int main(int argc, char* argv[]) {
 	str << "int,z=" << zipfian_param;
 	auto [itime, btime, size, q_latency, u_latency] =
 	  test_loop<int_set_type>(command_name, str.str(), a, b, p, rounds, update_percent, upsert,
-				  trial_time, latency_cuttoff, verbose, warmup, grow, expand);
+				  trial_time, latency_cuttoff, verbose, warmup, grow, expand, false);
 	bench_times.push_back(btime);
 	if (update_percent < 100) q_latencies.push_back(q_latency);
 	if (update_percent > 0) u_latencies.push_back(u_latency);
@@ -529,7 +594,7 @@ int main(int argc, char* argv[]) {
       str << "string_4xlong,trigram";
       auto [itime, btime, size, q_latency, u_latency] =
 	test_loop<string_map_type>(command_name, str.str(), a, b, p, rounds, update_percent, upsert,
-				   trial_time, latency_cuttoff, verbose, warmup, grow, expand);
+				   trial_time, latency_cuttoff, verbose, warmup, grow, expand, false);
       if (cnt++ == 0) {
 	byte_sizes.push_back(size);
 	insert_times.push_back(itime);
