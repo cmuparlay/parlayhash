@@ -16,8 +16,9 @@
 
 #include <parlay/primitives.h>
 #include <parlay/sequence.h>
+#include <parlay/portability.h>
 
-#include "epoch.h"
+#include "hazard.h"
 
 namespace parlay {
 
@@ -25,71 +26,49 @@ template<typename V, class KeyEqual = std::equal_to<V>>
 struct big_atomic {
 
   std::atomic<V*> ptr;
+
+  big_atomic(const V& v) : ptr(hazard::New<V>(v)) {}
+  big_atomic() : ptr(hazard::New<V>(V{})) {}
+  ~big_atomic() { hazard::Delete(ptr.load()); }
+
+  
   using tag = V*;
 
-  big_atomic(const V& v) : ptr(epoch::New<V>(v)) {}
-  big_atomic() : ptr(epoch::New<V>()) {}
+  PARLAY_INLINE void store_sequential(const V& v) {
+    auto old_v = ptr.load();
+    if (old_v != nullptr) hazard::Retire(old_v);
+    ptr = hazard::New<V>(v); }
 
-  V load() {
-    //__builtin_prefetch(this);
-    return epoch::with_epoch([&] { return *ptr.load(); });
+  PARLAY_INLINE std::pair<V,tag> ll() {
+    __builtin_prefetch(this);
+    auto old_v = hazard::load_protected(ptr, 0);
+    return std::pair<V,tag>(*old_v, old_v);
   }
 
-  void store(const V& v) {
-    //__builtin_prefetch(this);
-    V* new_v = epoch::New<V>(v);
-    V* old_v = ptr.load();
-    if (ptr.compare_exchange_strong(old_v, new_v))
-      epoch::Retire(old_v);
-    else
-      epoch::Delete(new_v);
-  }
-
-  bool cas(const V& expected_v, const V& v) {
-    //__builtin_prefetch(this);
-    return epoch::with_epoch([&] {
-      V* old_v = ptr.load();
-      if (!(*old_v == expected_v)) return false;
-      V* new_v = epoch::New<V>(v);
-      if (ptr.compare_exchange_strong(old_v, new_v)) {
-        epoch::Retire(old_v);
-        return true;
-      }
-      epoch::Delete(new_v);
-      return false;
-    });
-  }
-
-
-  void store_sequential(const V& v) {
-    V* old_v = ptr.load();
-    if (old_v != nullptr) epoch::Retire(old_v);
-    ptr = epoch::New<V>(v); }
-
-  std::pair<V,tag> ll() {
-    return epoch::with_epoch([&] {
-      V* old_v = ptr.load();
-      return std::pair<V,tag>(*old_v, old_v); });
-  }
-
-  bool lv(tag tg) {
+  PARLAY_INLINE bool lv(tag tg) {
     return ptr.load() == tg;
   }
 
-  bool sc(tag expected_tag, const V& v) {
-    return epoch::with_epoch([&] {
-      V* old_v = ptr.load();
+  PARLAY_INLINE bool sc(tag expected_tag, const V& v) {
+      auto old_v = ptr.load();
       if (old_v != expected_tag) return false;
-      V* new_v = epoch::New<V>(v);
+      auto new_v = hazard::New<V>(v);
       if (ptr.compare_exchange_strong(old_v, new_v)) {
-        epoch::Retire(old_v);
+        hazard::Retire(old_v);
         return true;
       }
-      epoch::Delete(new_v);
+      hazard::Delete(new_v);
       return false;
-    });
   }
 
+  PARLAY_INLINE V load() { return ll().first; }
+
+  PARLAY_INLINE bool cas(const V& expected, const V& desired) {
+    auto [current, tag] = ll();
+    if (!KeyEqual{}(current, expected)) return false;
+    if (KeyEqual{}(expected, desired)) return true;
+    return sc(tag, desired);
+  }
 };
 
 }  // namespace parlay

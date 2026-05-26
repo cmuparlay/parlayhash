@@ -1,541 +1,217 @@
-// An implementation of big_atomic using SeqLocks and short-lived indirect backup values.
-//
-//  Simple:
-//  - Lock-free load
-//  - Lock-free store
-//  - Lock-free CAS
-//
-// Guaranteed at most O(P^2) extra space, and no heap allocations after warmup.
-//
-
 #pragma once
+// A load reads the header, reads the cache, and reads the header again.   If both reads of the header are the same sequence number, return the value from the cache.   If they are both different sequence numbers, then try again, and if either was a pointer, then protected read the value through one of the pointers and return it.   If a ll, return the header as the tag (if a pointer, whichever was used for the value).
+
+// An sc given a tag:
+// protected read the header and:
+// If the tag was a sequence number, 
+//    if the header is not equal to the tag, the sc fails and returns false
+//    else copy the new value and tag+1 (new sequence number) to a new object and try to cas this in over the tag (sequence number) in the header
+//        if the cas fails, then the sc fails, deletes the object and returns false
+//        else copy the value into the cache
+//          try to cas tag+1 (new sequence number) into the header
+//          if succeeds then retire object and return true
+//          else try to install cache again: i.e., 
+//            protected read the new header, get value and seq num from it, install value in cache,  and try to cas in seq num 
+//            repeat until succeeds (only the sc that swapped out a sequence number will swap one back in so each try will only see a pointer)
+// else tag was a pointer
+//    if the header is a pointer and different, the sc fails and returns false
+//    if the header is a sequence number and does not match the sequence number in the object pointed to by the tag, the sc fails and returns false 
+//    otherwise
+//       new seq number is 1 + header if header is a sequence number or 1 + object seq number if a pointer
+//       copy new value and new seq number to new object and try to cas it in over the tag
+//       if the cas fails, the sc fails, deletes the object, and returns false
+//       else  if header was a pointer, retire old object 
+//          return true
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 
 #include <atomic>
-#include <memory>
-#include <new>
-#include <thread>
-#include <type_traits>
-#include <utility>
+#include <functional>
 
-#include <parlay/portability.h>
+#include <parlay/alloc.h>
 
-#include "free_list.h"
-#include "marked_ptr.h"
+#include "hazard_ptr.h"
 #include "utility.h"
 
 namespace parlay {
 
 template<typename T, typename Equal = std::equal_to<>>
-struct big_atomic;
-
-namespace internal {
-
-template<typename T, typename Equal>
-class NodeManager;
-
-template<typename T, typename Equal>
-extern inline NodeManager<T, Equal>& node_manager();
-
-template<typename T, typename Equal>
-struct big_atomic_node {
-  union {
-    big_atomic_node* next_;     // Intrusive link for free list
-    T value;
-  };
-  const unsigned owner{node_manager<T, Equal>().my_thread_id()};  // ID of the owning thread
-  std::atomic<bool> is_installed{false};
-  bool is_protected{false};
-  bool was_installed{false};
-
-  big_atomic_node() noexcept : next_{nullptr} {}
-  ~big_atomic_node() = default;
-};
-
-template<typename T, typename Equal>
-class NodeManager {
-
-  using big_atomic_type = big_atomic<T, Equal>;
-  using node_type = big_atomic_node<T, Equal>;
-  using marked_node_ptr_type = marked_ptr<node_type>;
-
-  // The minimum number of backup nodes to pre-allocate for each thread.  If a thread ever manages to run out, it will
-  // allocate another set of this many on top of whatever it already had.  This can only happen if the user spawns
-  // more threads, so there should be no allocations after the warmup run if the number of threads stays the same.
-  constexpr static std::size_t slab_size = 1024;
-
-  struct NodeMemorySlab {
-    std::array<node_type, slab_size> nodes;
-    NodeMemorySlab* next_;
-  };
-
-  // The slots are linked together to form a linked list so that threads can scan
-  // for the set of currently protected pointers.
-  //
-  struct alignas(CACHE_LINE_ALIGNMENT) AnnouncementSlot {
-    explicit AnnouncementSlot(unsigned thread_id_, bool in_use_) : thread_id(thread_id_), in_use(in_use_) {}
-
-    // Announced node and big_atomic
-    std::atomic<node_type*> protected_node{nullptr};
-
-    // Link together all existing slots into a big global linked list
-    std::atomic<AnnouncementSlot*> next{nullptr};
-
-    // Private linked lists of free (available) nodes
-    IntrusiveFreeList<node_type> free_nodes{};
-
-    // Private slab allocated nodes.  Slabs are connected in a linked list
-    NodeMemorySlab* my_nodes{nullptr};
-
-    // Unique ID for the owner of this slot (not guaranteed to be in order)
-    unsigned thread_id;
-
-    // True if this hazard pointer slot is owned by a thread.
-    std::atomic<bool> in_use;
-  };
-
-  // Find an available hazard slot, or allocate a new one if none available.
-  AnnouncementSlot* get_slot() {
-    auto current = announcement_list;
-    while (true) {
-      if (!current->in_use.load() && !current->in_use.exchange(true)) {
-        return current;
-      }
-      if (current->next.load() == nullptr) {
-        // thread_ids are not guaranteed to be installed in the linked list in order
-        auto my_slot = new AnnouncementSlot{num_threads.fetch_add(1), true};
-        AnnouncementSlot* next = nullptr;
-        while (!current->next.compare_exchange_weak(next, my_slot)) {
-          current = next;
-          next = nullptr;
-        }
-        return my_slot;
-      } else {
-        current = current->next.load();
-      }
-    }
-  }
-
-  // Give a slot back to the world so another thread can re-use it
-  void relinquish_slot(AnnouncementSlot* slot) { slot->in_use.store(false); }
-
-  // A AnnouncementSlotOwner owns exactly one AnnouncementSlot entry in the global linked list
-  // of AnnouncementSlots.  On creation, it acquires a free slot from the list, or appends
-  // a new slot if all of them are in use.  On destruction, it makes the slot available
-  // for another thread to pick up.
-  struct AnnouncementSlotOwner {
-    explicit AnnouncementSlotOwner(NodeManager<T, Equal>& list_) : list(list_), my_slot(list.get_slot()) {}
-
-    ~AnnouncementSlotOwner() { list.relinquish_slot(my_slot); }
-
-  private:
-    NodeManager<T, Equal>& list;
-
-  public:
-    AnnouncementSlot* const my_slot;
-  };
-
-public:
-  // Pre-populate the slot list with P slots, one for each hardware thread
-  NodeManager() : announcement_list(new AnnouncementSlot{0, false}) {
-    auto current = announcement_list;
-    for (unsigned i = 1; i < std::thread::hardware_concurrency(); i++) {
-      current->next = new AnnouncementSlot{i, false};
-      current = current->next;
-    }
-    num_threads.store(std::thread::hardware_concurrency());
-  }
-
-  NodeManager(const NodeManager&) = delete;
-  NodeManager& operator=(const NodeManager&) = delete;
-
-  ~NodeManager() = delete;
-
-  [[nodiscard]] unsigned my_thread_id() const noexcept { return local_data.my_slot->thread_id; }
-
-  marked_node_ptr_type protect_node(const std::atomic<marked_node_ptr_type>& src) noexcept {
-    auto& announcement_slot = local_data.my_slot->protected_node;
-    auto result = src.load(std::memory_order_acquire);
-
-    while (true) {
-      if (result.get_ptr() == nullptr) return result;
-      PARLAY_PREFETCH(result.get_ptr(), 0, 0);
-      announcement_slot.exchange(result.unmark(), std::memory_order_seq_cst);
-
-      auto current_value = src.load(std::memory_order_acquire);
-      if (current_value.get_ptr() == result.get_ptr()) { //[[likely]] {
-        return result;
-      } else {
-        result = current_value;
-      }
-    }
-  }
-
-  void release() {
-    auto& slot = *local_data.my_slot;
-    slot.protected_node.store(nullptr, std::memory_order_relaxed);
-  }
-
-  PARLAY_INLINE node_type* get_free_node() {
-    auto& slot = *local_data.my_slot;
-    if (slot.free_nodes.empty()) { //[[unlikely]] {
-      reclaim_free_nodes(slot);
-      assert(!slot.free_nodes.empty());
-    }
-    auto node = slot.free_nodes.pop();
-    return node;
-  }
-
-  void free_node(node_type* node) {
-    auto& slot = *local_data.my_slot;
-    slot.free_nodes.push(node);
-  }
-
-private:
-  PARLAY_NOINLINE PARLAY_COLD void reclaim_free_nodes(AnnouncementSlot& slot) {
-
-    if (slot.my_nodes != nullptr) {
-
-      for_each_node([&](auto node) {
-        node->was_installed = node->is_installed.load(std::memory_order_relaxed);
-      });
-
-      for_each_slot([&](auto& announcement) {
-        node_type* a = announcement.protected_node.load();
-        if (a != nullptr && a->owner == slot.thread_id) {
-          a->is_protected = true;
-        }
-      });
-
-      for_each_node([&](auto node) {
-        if (!node->was_installed && !node->is_protected) {
-          slot.free_nodes.push(node);
-        }
-        node->is_protected = false;
-      });
-    }
-
-    // Nothing available even after reclaiming -- need to allocate more nodes.  This should only happen either
-    // (a) the first time it is ever used, or (b) when new threads have been spawned since the last use.
-    if (slot.free_nodes.empty()) { // [[unlikely]] {
-      assert(slot.my_nodes == nullptr);   // True as long as we have < 300 threads.  Should remove this for a proper release version.
-      grow_nodes(slot);
-    }
-  }
-
-  // Allocate another slab of nodes. This should only occur when the current thread runs out of
-  // nodes, meaning there are more threads than the current number can handle.
-  void grow_nodes(AnnouncementSlot& slot) {
-    auto new_slab = new NodeMemorySlab{{}, slot.my_nodes};
-    slot.my_nodes = new_slab;
-    for (auto& node : new_slab->nodes) {
-      slot.free_nodes.push(&node);
-    }
-  }
-
-  template<typename F>
-  void for_each_slot(F&& f) noexcept(std::is_nothrow_invocable_v<F&, AnnouncementSlot&>) {
-    for (auto current = announcement_list; current != nullptr; current = current->next.load()) {
-      f(*current);
-    }
-  }
-
-  template<typename F>
-  void for_each_node(F&& f) noexcept(std::is_nothrow_invocable_v<F&, node_type*>) {
-    for (auto slab = local_data.my_slot->my_nodes; slab != nullptr; slab = slab->next_) {
-      for (auto& node : slab->nodes) {
-        f(&node);
-      }
-    }
-  }
-
-  AnnouncementSlot* const announcement_list;
-  std::atomic<unsigned> num_threads{0};
-
-  static inline const thread_local AnnouncementSlotOwner local_data{node_manager<T, Equal>()};
-};
-
-template<typename T, typename Equal>
-NodeManager<T, Equal>& node_manager() {
-  alignas(NodeManager<T, Equal>) static char buffer[sizeof(NodeManager<T, Equal>)];
-  static auto* list = new (&buffer) NodeManager<T, Equal>{};
-  return *list;
-}
-
-}  // namespace internal
-
-template<typename T, typename Equal>
 struct big_atomic {
   // T must be trivially copyable, but it doesn't have to be trivially default constructible (or
   // even default constructible at all) since we only make copies from what the user gives us
-  // static_assert(std::is_trivially_copyable_v<T>); // xxxx
-  // static_assert(std::is_invocable_r_v<bool, Equal, T&&, T&&>); // xxx
 
-  using node_type = internal::big_atomic_node<T, Equal>;
-  using marked_node_ptr_type = marked_ptr<node_type>;
-  using node_manager_type = internal::NodeManager<T, Equal>;
-
-  friend node_type;
-  friend node_manager_type;
-
-public:
-  using value_type = T;
-  using version_type = int64_t;
-
-  big_atomic() : version(0), backup_value(marked_node_ptr_type::create_ptr(nullptr)), fast_value{} {
-    static_assert(std::is_default_constructible_v<T>);
-    node_manager();
-    new (static_cast<void*>(&fast_value)) T{};
-  }
-
-  /* implicit */ big_atomic(const T& t) :  // NOLINT(google-explicit-constructor)
-    version(0),
-    backup_value(marked_node_ptr_type::create_ptr(nullptr)),
-    fast_value{} {
-    node_manager();
-    new (static_cast<void*>(&fast_value)) T{t};
-  }
-
-  PARLAY_INLINE T load() noexcept {
-    auto ver = version.load(std::memory_order_acquire);
-    alignas(T) char buffer[sizeof(T)];
-    atomic_load_per_byte_memcpy(&buffer, &fast_value, sizeof(T));
-    auto p = backup_value.load();
-    if (p.get_ptr() == nullptr && ver == version.load(std::memory_order_relaxed)) //[[likely]]
-      return bits_to_object<T>(buffer);
-    return load_indirect(p);
-  }
-
-  PARLAY_INLINE void store(const T& desired) {
-    auto ver = version.load(std::memory_order_acquire);
-    auto new_p = make_node(desired);
-    auto old_p = backup_value.exchange(new_p);
-    if (old_p.get_ptr() != nullptr)
-      old_p->is_installed.store(false, std::memory_order_relaxed);
-    try_seqlock_and_store(ver, desired, new_p);
-  }
-
-  PARLAY_INLINE bool cas(const T& expected, const T& desired) {
-    auto ver = version.load(std::memory_order_acquire);
-    alignas(T) char buffer[sizeof(T)];
-    marked_node_ptr_type p;
-    if (!try_load_indirect(ver, p, buffer)) {
-      // If try_load_indirect fails, we know we are racing with a writer, so
-      // we can return false.  Note that if we fail here because of a store
-      // that was storing the same value, this is a weak failure, i.e., we can
-      // only linearize it as a compare_exchange_weak. If we fail due to a
-      // concurrent CAS, its always linearizable as a compare_exchange_strong,
-      // because CAS always changes the value, and we can just linearize before
-      // whichever value was not desired.
-      return false;
-    }
-    // At this point, buffer definitely contains a valid T value
-    T current = bits_to_object<T>(buffer);
-    if (!Equal{}(current, expected)) return false;
-    if (Equal{}(expected, desired)) return true;
-
-    // At this point, either p == nullptr, in which case it is tagged with a
-    // sequence number, so we can safely CAS over it without fear of ABA, or
-    // p is a non-nullptr, and it is protected, so we can also safely CAS over
-    // it without fear of ABA.
-
-    auto new_p = make_node(desired);
-    auto old_p = p;
-
-    if ((backup_value.load(std::memory_order_relaxed) == p && backup_value.compare_exchange_strong(p, new_p))) { // [[likely]] {
-      if (old_p.get_ptr() != nullptr)
-        old_p->is_installed.store(false, std::memory_order_relaxed);
-      try_seqlock_and_store(ver, desired, new_p);
-      return true;
-    }
-    else if (old_p.get_ptr() != nullptr && p.get_ptr() == nullptr) {
-      // In this case, the old ptr was replaced with a nullptr, meaning it might actually
-      // still be the same value that was just validated and installed. Here, we have to
-      // try the CAS again if the value is still the same.
-      ver = version.load(std::memory_order_acquire);
-      atomic_load_per_byte_memcpy(buffer, &fast_value, sizeof(T));
-      if (ver % 2 == 0 && ver == version.load(std::memory_order_relaxed) &&
-          Equal{}(bits_to_object<T>(buffer), expected) &&
-          backup_value.load(std::memory_order_relaxed) == p &&
-          backup_value.compare_exchange_strong(p, new_p)) {
-
-        try_seqlock_and_store(ver, desired, new_p);
-        return true;
-      }
-    }
-
-    free_node(new_p);
-    return false;
-  }
-
-  using tag = marked_node_ptr_type;
-
-  void store_sequential(const T& desired) {
-    atomic_store_per_byte_memcpy(&fast_value, &desired, sizeof(T)); }
-
-  PARLAY_INLINE bool lv(tag tg) {
-    return backup_value.load() == tg;
-  }
-
-  PARLAY_INLINE std::pair<T,tag> ll() noexcept {
-    auto ver = version.load(std::memory_order_acquire);
-    alignas(T) char buffer[sizeof(T)];
-    atomic_load_per_byte_memcpy(&buffer, &fast_value, sizeof(T));
-    auto p = backup_value.load();
-    if (p.get_ptr() == nullptr && ver == version.load(std::memory_order_relaxed)) // [[likely]]
-      return std::pair(bits_to_object<T>(buffer), p);
-
-    return std::pair(load_indirect(p), p);
-  }
-
-  PARLAY_INLINE bool sc(tag expected_tag, const T& desired) {
-    auto ver = version.load(std::memory_order_acquire);
-    alignas(T) char buffer[sizeof(T)];
-    marked_node_ptr_type p;
-    if (!try_load_indirect(ver, p, buffer)) {
-      // If try_load_indirect fails, we know we are racing with a writer, so
-      // we can return false.  Note that if we fail here because of a store
-      // that was storing the same value, this is a weak failure, i.e., we can
-      // only linearize it as a compare_exchange_weak. If we fail due to a
-      // concurrent CAS, its always linearizable as a compare_exchange_strong,
-      // because CAS always changes the value, and we can just linearize before
-      // whichever value was not desired.
-      return false;
-    }
-    // At this point, buffer definitely contains a valid T value
-    T current = bits_to_object<T>(buffer);
-    if (p != expected_tag) return false; // SC: this line changed
-    // if (Equal{}(expected, desired)) return true; // SC: this line removed
-
-    // At this point, either p == nullptr, in which case it is tagged with a
-    // sequence number, so we can safely CAS over it without fear of ABA, or
-    // p is a non-nullptr, and it is protected, so we can also safely CAS over
-    // it without fear of ABA.
-
-    auto new_p = make_node(desired);
-    auto old_p = p;
-
-    if ((backup_value.load(std::memory_order_relaxed) == p &&
-         backup_value.compare_exchange_strong(p, new_p))) { //[[likely]] {
-      if (old_p.get_ptr() != nullptr)
-        old_p->is_installed.store(false, std::memory_order_relaxed);
-      try_seqlock_and_store(ver, desired, new_p);
-      return true;
-    }
-    // SC:: The following removed
-    // else if (old_p.get_ptr() != nullptr && p.get_ptr() == nullptr) {
-    //   // In this case, the old ptr was replaced with a nullptr, meaning it might actually
-    //   // still be the same value that was just validated and installed. Here, we have to
-    //   // try the CAS again if the value is still the same.
-    //   ver = version.load(std::memory_order_acquire);
-    //   atomic_load_per_byte_memcpy(buffer, &fast_value, sizeof(T));
-    //   if (ver % 2 == 0 && ver == version.load(std::memory_order_relaxed) &&
-    //       Equal{}(bits_to_object<T>(buffer), expected) &&
-    //       backup_value.load(std::memory_order_relaxed) == p &&
-    //       backup_value.compare_exchange_strong(p, new_p)) {
-
-    //     try_seqlock_and_store(ver, desired, new_p);
-    //     return true;
-    //   }
-    // }
- 
-    free_node(new_p);
-    return false;
-  }
-
-  ~big_atomic() {
-    auto p = backup_value.load();
-    if (p.get_ptr() != nullptr) {
-      p->is_installed.store(false, std::memory_order_relaxed);
-    }
-  }
+  // either a seqnum or a pointer to a backup
+  using tag = long;
 
 private:
 
-  marked_node_ptr_type make_node(const T& desired) noexcept {
-    auto new_node = node_manager().get_free_node();
-    new_node->value = desired;
-    new_node->is_installed.store(true, std::memory_order_relaxed);
-    return marked_node_ptr_type::create_ptr(new_node);
+  struct backup {
+    explicit backup(const T& value, long seqnum) : value(value), seqnum(seqnum) { }
+    T value;
+    long seqnum;
+    backup* next_;    // Intrusive link for hazard pointers
+    backup* get_next() { return next_; }
+    void set_next(backup* next) { next_ = next; }
+    void destroy() {  allocator::destroy(this); }
+  };
+
+  PARLAY_INLINE
+  static tag load_protected(const std::atomic<tag>& src) {
+    return get_hazard_list<backup>().protect(src, [](long tag) {
+             return is_seqnum(tag) ? nullptr : (backup*) tag; });
+  }
+  
+  PARLAY_INLINE
+  static void protect(backup* src) {
+    get_hazard_list<backup>().protect_direct(src); }
+
+  PARLAY_INLINE
+  static void retire(backup* p) {
+    if (p) { get_hazard_list<backup>().retire(p); } }
+
+  PARLAY_INLINE
+  static void Delete(backup* p) {
+    allocator::destroy(p);  }
+
+  PARLAY_INLINE
+  static backup* new_backup(T v, tag new_seqnum) {
+    return allocator::create(v, new_seqnum); }
+
+  PARLAY_INLINE
+  static bool is_seqnum(long tag) {
+    return tag < 0; }
+
+  PARLAY_INLINE
+  static bool is_pointer(long tag) {
+    return !is_seqnum(tag); }
+
+  PARLAY_INLINE
+  static tag& to_tag(backup*& ptr) {
+    return reinterpret_cast<tag&>(ptr); }
+
+  PARLAY_INLINE
+  static backup* to_ptr(tag hdr) {
+    return reinterpret_cast<backup*>(hdr); }
+
+  std::atomic<tag> header;   // Either pointer or sequence number
+  alignas(8) char cache[sizeof(T)]; 
+
+ public:
+
+  using value_type = T;
+  using allocator = type_allocator<backup>;
+
+  PARLAY_INLINE
+  void store_sequential(const T& desired) {
+    atomic_store_per_byte_memcpy(&cache, &desired, sizeof(T)); }
+
+  PARLAY_INLINE void load_sequential(char* buffer) {
+     atomic_load_per_byte_memcpy(buffer, &cache, sizeof(T));
   }
 
-  static void free_node(marked_node_ptr_type ptr) noexcept { node_manager().free_node(ptr.get_ptr()); }
+  big_atomic() : header(std::numeric_limits<long>::min()) {
+    static_assert(std::is_default_constructible_v<T>);
+    store_sequential(T{});
+  }
 
-  static void release() noexcept { node_manager().release(); }
+  big_atomic(const T& initial) : header(std::numeric_limits<long>::min()) {
+    store_sequential(initial);
+  }
 
-  marked_node_ptr_type protect_backup() noexcept { return node_manager().protect_node(backup_value); }
+  ~big_atomic() {
+    auto hdr = header.load(std::memory_order_relaxed);
+    if (is_pointer(hdr)) { Delete(to_ptr(hdr)); }
+  }
 
-
-  PARLAY_INLINE T load_indirect(marked_node_ptr_type& p) noexcept {
-    [[maybe_unused]] version_type ver;
+  PARLAY_INLINE std::pair<T, tag> ll() {
     alignas(T) char buffer[sizeof(T)];
-    while (!try_load_indirect(ver, p, buffer)) {}
-    return bits_to_object<T>(buffer);
-  }
-
-  // Tries to read the current version, backup ptr, and active value into ver, p, dest (out params)
-  //
-  // On success, returns true, on failure returns false. This method is guaranteed to succeed if
-  // it does not race with an update.  If it races with an update, it may fail.  If it succeeds,
-  // then it is guaranteed that either:
-  //   (i) p == nullptr and dest contains the active value
-  //  (ii) p != nullptr, is protected, and dest contains the active value equal to p.get_ptr()->value
-  //
-  PARLAY_INLINE bool try_load_indirect(/* out */ version_type& ver, /* out */ marked_node_ptr_type& p, /* out */ char* dest) noexcept {
-    p = protect_backup();
-    if (p.get_ptr() != nullptr) { //[[likely]] {
-      std::memcpy(dest, &(p.get_ptr()->value), sizeof(T));
-      return true;
-    }
-    ver = version.load(std::memory_order_acquire);
-    atomic_load_per_byte_memcpy(dest, &fast_value, sizeof(T));
-    p = backup_value.load();
-    if (p.get_ptr() == nullptr && ver == version.load(std::memory_order_relaxed)) {
-      return true;
-    }
-    return false;
-  }
-
-  bool try_seqlock_and_store(version_type ver, T desired, marked_node_ptr_type p) noexcept {
-
-    while ((ver % 2 == 0) && (ver == version.load(std::memory_order_relaxed))
-           && version.compare_exchange_strong(ver, ver + 1)) {
-
-      // We took the SeqLock, try to save the fast value
-      atomic_store_per_byte_memcpy(&fast_value, &desired, sizeof(T));
-      ver += 2;
-      version.store(ver, std::memory_order_release);
-
-      if (backup_value.compare_exchange_strong(p, marked_node_ptr_type::create_tagged_null(ver))) { // [[likely]] {
-        p->is_installed.store(false, std::memory_order_relaxed);
-        return true;
+    while (true) {
+      tag fst_hdr = header.load(std::memory_order_acquire);
+      load_sequential(buffer);
+      tag snd_hdr = header.load(std::memory_order_relaxed);
+      if (is_seqnum(fst_hdr) && (fst_hdr == snd_hdr)) [[likely]] {
+        return {bits_to_object<T>(buffer), fst_hdr};
+      } else {
+        tag hdr = load_protected(header);
+        if (is_pointer(hdr)) 
+          return {to_ptr(hdr)->value, hdr};
       }
-      else if (p.get_ptr() == nullptr) {
-        // Someone else came in and successfully installed something,
-        // so everything is up-to-date.
-        return true;
-      }
-
-      p = protect_backup();
-      if (p.get_ptr() == nullptr) // [[unlikely]]
-        return true;
-
-      // Someone beat us and installed a new backup value while we were installing
-      // the fast value. We need to try and help install the new desired value.
-      desired = p->value;
     }
-    return false;
   }
 
-  static internal::NodeManager<T, Equal>& node_manager() { return internal::node_manager<T, Equal>(); }
+  PARLAY_INLINE T load() { return ll().first; }
 
-  std::atomic<marked_node_ptr_type> backup_value{0};
-  std::atomic<version_type> version{0};
-  alignas(std::max_align_t) alignas(T) char fast_value[sizeof(T)];
+  PARLAY_INLINE bool lv(tag expected_tag) {
+    tag hdr = header.load(std::memory_order_acquire);
+    if (is_seqnum(expected_tag)) [[likely]] {
+      return hdr == expected_tag;
+    } else 
+      return (expected_tag == hdr ||
+              to_ptr(expected_tag)->seqnum == hdr);
+  }
+
+  PARLAY_INLINE bool sc(tag expected_tag, const T& v) {
+    tag old_hdr, seqnum;
+    if (is_seqnum(expected_tag)) [[likely]] {
+      old_hdr = header.load(std::memory_order_acquire);
+      if (old_hdr != expected_tag) return false;
+      seqnum = old_hdr;
+    } else { // expected_tag is a pointer
+      for (volatile int i = 0; i < 1000; i++); // for efficiency
+      old_hdr = header.load(std::memory_order_acquire);
+      auto expected_ptr = to_ptr(expected_tag);
+      if (is_pointer(old_hdr)) { // also a pointer
+        if (expected_tag != old_hdr) return false;
+        seqnum = expected_ptr->seqnum;
+      } else { // now a tag
+        if (old_hdr != expected_ptr->seqnum) return false;
+        seqnum = old_hdr;
+      }
+    }
+    tag new_seqnum = seqnum + 1;
+    backup* new_ptr = allocator::create(v, new_seqnum);
+    protect(new_ptr);
+
+    // try to install new value (linerization point if succeeds)
+    tag tmp_hdr = header.load(std::memory_order_relaxed);
+    if (tmp_hdr != old_hdr ||
+        !header.compare_exchange_strong(tmp_hdr, to_tag(new_ptr))) [[unlikely]] {
+      // if failed because current value is a seq number, and old_hdr
+      // was a pointer with same seq num, try again             
+      if (is_pointer(tmp_hdr) || (tmp_hdr != seqnum) ||
+          !header.compare_exchange_strong(tmp_hdr, to_tag(new_ptr))) {
+        allocator::destroy(new_ptr); // installation failed
+        return false;
+      }
+    }
+    
+    if (is_pointer(tmp_hdr)) // was a pointer, do not install cache
+      retire(to_ptr(old_hdr));
+    else { // try to install the cached value
+      store_sequential(v);
+      while (header.load(std::memory_order_relaxed) != to_tag(new_ptr) ||
+             !header.compare_exchange_weak(to_tag(new_ptr), new_seqnum)) {
+        new_ptr = to_ptr(load_protected(header));
+        store_sequential(new_ptr->value);
+        new_seqnum = new_ptr->seqnum;
+      }
+      retire(new_ptr);
+    }
+    return true;
+  }
+
+  PARLAY_INLINE bool cas(const T& expected, const T& desired) {
+    auto [current, tag] = ll();
+    if (!Equal{}(current, expected)) return false;
+    if (Equal{}(expected, desired)) return true;
+    return sc(tag, desired);
+  }
+
 };
+
 
 }  // namespace parlay
