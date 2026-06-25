@@ -20,7 +20,7 @@ private:
   double theta, zeta_n, eta, alpha;
 
   double Zeta(uint64_t n) {
-    return parlay::reduce(parlay::delayed_tabulate(n, [=] (uint64_t i) {
+    return parlay::reduce(parlay::delayed_tabulate(n, [this] (uint64_t i) {
 	  return 1.0/ std::pow(i+1, theta);}));
   }
 

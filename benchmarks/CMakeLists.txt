@@ -33,11 +33,46 @@ add_benchmark(libcuckoo other "" "" "")
 add_benchmark(parallel_hashmap other "" "" "")
 add_benchmark(seq_hash other "" "" "")
 
+# #find_package(absl CONFIG)
+# #if(NOT absl_FOUND)
+# #  message(STATUS "Abseil not found, fetching from GitHub...")
+#   include(FetchContent)
+#   FetchContent_Declare(
+#     abseil-cpp
+#     GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+#     # Using a recent LTS release
+#     GIT_TAG        20240116.2
+#   )
+#   set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+#   # We only need a subset, but FetchContent_MakeAvailable will configure all.
+#   # We can select what we need when linking.
+#   FetchContent_MakeAvailable(abseil-cpp)
+# endif()
+
 #add_subdirectory(abseil-cpp)
 if (absl_FOUND)
   add_benchmark(abseil other absl::flat_hash_map "" "")
   add_benchmark(abseil_sharded other absl::flat_hash_map "" "")
 endif()
+
+find_package(Highway CONFIG)
+if(NOT Highway_FOUND)
+  message(STATUS "Highway not found, fetching from GitHub...")
+  include(FetchContent)
+  
+  # Disable Highway's own tests and examples to avoid target clashes (e.g. gtest)
+  set(HWY_ENABLE_TESTS OFF CACHE BOOL "Disable Highway tests" FORCE)
+  set(HWY_ENABLE_EXAMPLES OFF CACHE BOOL "Disable Highway examples" FORCE)
+  
+  FetchContent_Declare(
+    highway
+    GIT_REPOSITORY https://github.com/google/highway.git
+    GIT_TAG        1.2.0 # Or appropriate version
+  )
+  FetchContent_MakeAvailable(highway)
+endif()
+
+add_benchmark(swiss_parlay other "absl::synchronization;absl::base;hwy" "" "")
 
 find_package(folly)
 if (folly_FOUND)
