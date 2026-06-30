@@ -45,7 +45,7 @@
 //    - If a Group's 16 slots are completely full, collisions are resolved
 //      using an atomic overflow linked list attached to the Group.
 //    - This greatly simplifies concurrent updates and copying during
-//      growth since each group is independent.  It aslo prevents the
+//      growth since each group is independent.  It also prevents the
 //      "primary clustering" issues of open addressing under high
 //      load.
 //    - The header for each group therefore consists of 16 control
@@ -59,7 +59,7 @@
 //      will copy its group, and some constant number of other groups
 //      to the new table version.
 //    - Groups that have been copied are marked with a special
-//      `kForwarded` control byte.  Any operation (query or updare)
+//      `kForwarded` control byte.  Any operation (query or update)
 //      that encounters a forwarded group automatically redirects to
 //      the new table version.
 //    - Each initial group gets copied to 4 new groups avoiding any
@@ -106,11 +106,11 @@
 //     Clears the map (re-allocates the underlying table).
 //
 //   - `int64_t size() const` / `bool empty() const`
-//     Returns size (O(size) operation) or if empty.
+//     Size returns size (O(size) operation), empty returns if empty.
 //
 //   - `std::optional<V> Find(const K& key)` / `bool contains(const K& key)`
 //     Looks up a key. `Find` returns the value if found, `std::nullopt`
-//     otherwise.
+//     otherwise. `contains` returns true if key is found.
 //
 //   - `std::optional<V> Insert(const K& key, const V& value)`
 //     Inserts the key-value pair. If the key exists, does NOT overwrite and
@@ -182,17 +182,22 @@
 #include <parlay/thread_specific.h>
 #include <utils/epoch.h>
 #include "parallel.h"
+// #include "third_party/absl/synchronization/mutex.h"
+// #include "third_party/flock/utils/epoch.h"
+// #include "third_party/flock/utils/parallel.h"
+// #include "third_party/highway/hwy/highway.h"
+// #include "third_party/parlay/include/parlay/thread_specific.h"
 
 namespace parlay {
-  // Force sequential initialization of Parlay's thread ID pool to avoid
-  // deadlocks in fibers.
-  inline int dummy_parlay_init = (parlay::my_thread_id(), 0);
+// Force sequential initialization of Parlay's thread ID pool to avoid
+// deadlocks in fibers.
+inline int dummy_parlay_init = (parlay::my_thread_id(), 0);
 
 HWY_BEFORE_NAMESPACE();
 
 #define USE_SET
 
-  namespace internal {
+namespace internal {
 // MapPolicy and SetPolicy are used so we can share the same code for
 // implementing maps and sets.  For maps the value_type is a key-value
 // pair, but for sets it is just the key.
@@ -200,11 +205,13 @@ template <typename K_, typename V_, class Hash_ = std::hash<K_>,
           class KeyEqual_ = std::equal_to<K_>>
 struct MapPolicy {
   using K = K_;
-  using V = V_;
+  using result_type = std::optional<V_>;
   using Hash = Hash_;
   using KeyEqual = KeyEqual_;
-  using value_type = std::pair<K, V>;
-  static const K& get_key(const value_type& x) { return x.first; }
+  using value_type = std::pair<K, V_>;
+  static const K& get_k(const value_type& x) { return x.first; }
+  static result_type get_v(const value_type& x) { return x.second; }
+  static bool is_found(const result_type& r) {return r.has_value();}
   static constexpr bool kIsMap = true;
 };
 
@@ -212,11 +219,13 @@ template <typename K_, class Hash_ = std::hash<K_>,
           class KeyEqual_ = std::equal_to<K_>>
 struct SetPolicy {
   using K = K_;
-  using V = void;
+  using result_type = bool;
   using Hash = Hash_;
   using KeyEqual = KeyEqual_;
   using value_type = K;
-  static const K& get_key(const value_type& x) { return x; }
+  static const K& get_k(const value_type& x) { return x; }
+  static result_type get_v(const value_type& x) { return true; }
+  static bool is_found(const result_type& r) {return r;}
   static constexpr bool kIsMap = false;
 };
 
@@ -230,17 +239,17 @@ struct is_effectively_trivially_copyable : std::is_trivially_copyable<T> {};
 
 template <typename T1, typename T2>
 struct is_effectively_trivially_copyable<std::pair<T1, T2>>
-  : std::bool_constant<is_effectively_trivially_copyable<T1>::value &&
-                       is_effectively_trivially_copyable<T2>::value> {};
+    : std::bool_constant<is_effectively_trivially_copyable<T1>::value &&
+                         is_effectively_trivially_copyable<T2>::value> {};
 
 template <typename... Args>
 struct is_effectively_trivially_copyable<std::tuple<Args...>>
-  : std::bool_constant<(is_effectively_trivially_copyable<Args>::value &&
-                        ...)> {};
+    : std::bool_constant<(is_effectively_trivially_copyable<Args>::value &&
+                          ...)> {};
 
 template <typename T>
 inline constexpr bool is_effectively_trivially_copyable_v =
-  is_effectively_trivially_copyable<T>::value;
+    is_effectively_trivially_copyable<T>::value;
 
 // DirectEntries stores the value directly in the table slots.
 // Safe for types that are effectively trivially copyable because torn reads
@@ -253,7 +262,9 @@ struct DirectEntries {
   using K = typename Policy::K;
 
   static const Data& get_data(const Entry& e) { return e; }
-  static const K& get_key(const Entry& e) { return Policy::get_key(e); }
+  static const K& get_key(const Entry& e) { return Policy::get_k(e); }
+  static const typename Policy::result_type
+  get_result(const Entry& e) { return Policy::get_v(e); }
 
   explicit DirectEntries(bool clear_at_end = false) {}
   Entry make_entry(const K& k, const Data& d) { return d; }
@@ -273,15 +284,17 @@ struct IndirectEntries {
   using K = typename Policy::K;
 
   static const Data& get_data(const Entry& e) { return *e; }
-  static const K& get_key(const Entry& e) { return Policy::get_key(*e); }
+  static const K& get_key(const Entry& e) { return Policy::get_k(*e); }
+  static const typename Policy::result_type
+  get_result(const Entry& e) { return Policy::get_v(*e); }
 
   bool clear_at_end;
   epoch::memory_pool<Data>* data_pool;
 
   explicit IndirectEntries(bool clear_at_end = false)
-    : clear_at_end(clear_at_end),
-      data_pool(clear_at_end ? new epoch::memory_pool<Data>()
-                : &epoch::get_default_pool<Data>()) {}
+      : clear_at_end(clear_at_end),
+        data_pool(clear_at_end ? new epoch::memory_pool<Data>()
+                               : &epoch::get_default_pool<Data>()) {}
   ~IndirectEntries() {
     if (clear_at_end) {
       delete data_pool;
@@ -289,9 +302,7 @@ struct IndirectEntries {
   }
 
   Entry make_entry(const K& k, const Data& d) { return data_pool->New(d); }
-  void retire_entry(Entry& e) {
-    data_pool->Retire(e);
-  }
+  void retire_entry(Entry& e) { data_pool->Retire(e); }
   void update_entry(Entry& slot, const Data& new_data) {
     Entry new_entry = data_pool->New(new_data);
     Entry old = slot;
@@ -317,11 +328,12 @@ struct swiss_parlay_table {
   static_assert((kGrowthFactor & (kGrowthFactor - 1)) == 0,
                 "Growth factor must be a power of 2");
   static_assert(kGrowthFactor > 1, "Growth factor must be greater than 1");
-  
+
   struct Iterator;
 
   using Policy = typename Entries::Policy;
   using K = typename Policy::K;
+  using result_type = typename Policy::result_type;
   using value_type = typename Policy::value_type;
   using Hash = typename Policy::Hash;
   // conditionally rehash if type Hash::is_avalanching is not defined
@@ -338,9 +350,7 @@ struct swiss_parlay_table {
     size_t operator()(size_t i) const { return i; }
   };
 
-  size_t hash(const K& key) const {
-    return rehash<Hash>{}(Hash{}(key));
-  }
+  size_t hash(const K& key) const { return rehash<Hash>{}(Hash{}(key)); }
   static inline size_t fast_map(size_t hash_val, size_t num_groups) {
     if (num_groups < (1ULL << 32)) [[likely]] {
       uint32_t hash_32 = static_cast<uint32_t>(hash_val);
@@ -372,9 +382,12 @@ struct swiss_parlay_table {
     slot_type slots[16];
 
     Group() : seq(0), overflow(nullptr) {
-      std::fill(std::begin(ctrl), std::end(ctrl), 0x80);  // all empty
+      std::fill(std::begin(ctrl), std::end(ctrl), kEmpty);  // all empty
     }
   };
+
+  // Control byte stored in slots that are empty.
+  static constexpr uint8_t kEmpty = 0x80;
 
   // This is stored in the sequence number to indicate that the group
   // is forwarded.  Importantly it is odd, so acts as a locked state.
@@ -447,7 +460,7 @@ struct swiss_parlay_table {
   std::atomic<table_version*> current_version;
   table_version* initial_version;
   epoch::memory_pool<Node>* node_pool;
-  //static_assert(decltype(cached_groups_and_mask)::is_always_lock_free,
+  // static_assert(decltype(cached_groups_and_mask)::is_always_lock_free,
   //              "cached_groups_and_mask must be always lock-free");
 
   groups_and_mask load_cached_info_fast() const {
@@ -455,10 +468,10 @@ struct swiss_parlay_table {
   }
 
   explicit swiss_parlay_table(size_t n, bool clear_at_end = false)
-    : entries(clear_at_end),
-      clear_memory_at_end(clear_at_end),
-      node_pool(clear_at_end ? new epoch::memory_pool<Node>()
-                : &epoch::get_default_pool<Node>()) {
+      : entries(clear_at_end),
+        clear_memory_at_end(clear_at_end),
+        node_pool(clear_at_end ? new epoch::memory_pool<Node>()
+                               : &epoch::get_default_pool<Node>()) {
     size_t num_groups = std::max<size_t>(1, (kFillFactor * n + 15) / 16);
     initial_version = new table_version(num_groups, node_pool, true);
     current_version.store(initial_version);
@@ -473,7 +486,7 @@ struct swiss_parlay_table {
     for (size_t i = 0; i < tv->num_groups; i++) {
       Group& g = tv->groups[i];
       for (int j = 0; j < 16; ++j) {
-        if (g.ctrl[j] < 0x80) {
+        if (g.ctrl[j] < kEmpty) {
           entries.retire_entry(g.slots[j]);
         }
       }
@@ -502,7 +515,7 @@ struct swiss_parlay_table {
   }
 
   // Determines number of full entries in a group.  Because of
-  // growing, it might need to recurse through copied groups.  
+  // growing, it might need to recurse through copied groups.
   int64_t recursive_group_size(table_version* tv, size_t g_idx) const {
     Group& g = tv->groups[g_idx];
     if (g.seq.load(std::memory_order_acquire) == kForwarded) {
@@ -516,13 +529,12 @@ struct swiss_parlay_table {
       namespace highway = hwy::HWY_NAMESPACE;
       constexpr highway::FixedTag<uint8_t, 16> byte_vec_16;
       auto ctrl_val = highway::Load(byte_vec_16, g.ctrl);
-      auto match_val = highway::Set(byte_vec_16, 0x80);  // empty
+      auto match_val = highway::Set(byte_vec_16, kEmpty);  // empty
       auto cmp = highway::Eq(ctrl_val, match_val);
       uint16_t empty_mask = 0;
-      highway::StoreMaskBits(byte_vec_16, cmp,
-			     reinterpret_cast<uint8_t*>(&empty_mask));
+      highway::StoreMaskBits(byte_vec_16, cmp,  reinterpret_cast<uint8_t*>(&empty_mask));
       int full_slots_count =
-        16 - std::popcount(static_cast<unsigned int>(empty_mask));
+          16 - std::popcount(static_cast<unsigned int>(empty_mask));
       int overflow_count = 0;
       Node* curr = g.overflow.load(std::memory_order_acquire);
       while (curr != nullptr) {
@@ -547,14 +559,85 @@ struct swiss_parlay_table {
     });
   }
 
-  std::optional<value_type> Find(const K& key) {
+  // returns true if sequence lock was successful
+  // side effects result and target slot
+  bool find_in_group(uint64_t seq1, const K& key,
+                     const uint8_t h2, Group* g,
+                     result_type& result, int& target_slot) {
+    namespace highway = hwy::HWY_NAMESPACE;
+    constexpr highway::FixedTag<uint8_t, 16> byte_vec_16;
+    auto ctrl_val = highway::Load(byte_vec_16, g->ctrl);
+    auto match_val = highway::Set(byte_vec_16, h2);
+    auto cmp = highway::Eq(ctrl_val, match_val);
+    uint16_t mask = 0;
+    highway::StoreMaskBits(byte_vec_16, cmp, reinterpret_cast<uint8_t*>(&mask));
+    if (mask == 0 &&
+        g->overflow.load(std::memory_order_acquire) == nullptr) {
+      std::atomic_thread_fence(std::memory_order_acquire);
+      if (seq1 == g->seq.load(std::memory_order_relaxed)) {
+        return true;
+      }
+    }
+
+    auto do_find = [&] {
+      slot_type res;
+      bool found = false;
+      while (mask > 0) {
+        int bit = std::countr_zero(static_cast<unsigned int>(mask));
+        if (KeyEqual{}(Entries::get_key(g->slots[bit]), key)) [[likely]] {
+          res = g->slots[bit];
+          found = true;
+          target_slot = bit;
+          break;
+        }
+        mask &= mask - 1;
+      }
+
+      if (!found &&
+          g->overflow.load(std::memory_order_acquire) != nullptr) {
+        auto search_overflow = [&] {
+          Node* curr = g->overflow.load(std::memory_order_acquire);
+          while (curr != nullptr) {
+            if (KeyEqual{}(Entries::get_key(curr->entry), key)) {
+              res = curr->entry;
+              found = true;
+              break;
+            }
+            curr = curr->next.load(std::memory_order_acquire);
+          }
+        };
+        if constexpr (std::is_pointer_v<typename Entries::Entry>) {
+          search_overflow();
+        } else {
+          epoch::with_epoch(search_overflow);
+        }
+      }
+
+      std::atomic_thread_fence(std::memory_order_acquire);
+      if (seq1 == g->seq.load(std::memory_order_relaxed)) {
+        if (found)
+          result = Entries::get_result(res);
+        return true;
+      }
+      return false;
+    };
+
+    if constexpr (std::is_pointer_v<typename Entries::Entry>) {
+      if (mask != 0) {
+        int bit = std::countr_zero(static_cast<unsigned int>(mask));
+        __builtin_prefetch(g->slots[bit]);
+      }
+      return epoch::with_epoch(do_find);
+    } else {
+      return do_find();
+    }
+  }
+
+  result_type Find(const K& key) {
     groups_and_mask gm = load_cached_info_fast();
     size_t h = hash(key);
     size_t g_idx = fast_map(h >> 7, gm.num_groups);
     uint8_t h2 = h & 0x7F;
-    namespace highway = hwy::HWY_NAMESPACE;
-    constexpr highway::FixedTag<uint8_t, 16> byte_vec_16;
-    auto match_val = highway::Set(byte_vec_16, h2);
     Group* g = &(gm.groups[g_idx]);
 
     while (true) {
@@ -579,76 +662,10 @@ struct swiss_parlay_table {
           continue;  // locked or forwarded, retry
       }
 
-      auto ctrl_val = highway::Load(byte_vec_16, g->ctrl);
-      auto cmp = highway::Eq(ctrl_val, match_val);
-      uint16_t mask_bits = 0;
-      highway::StoreMaskBits(byte_vec_16, cmp,
-			     reinterpret_cast<uint8_t*>(&mask_bits));
-      if (mask_bits == 0 &&
-          g->overflow.load(std::memory_order_acquire) == nullptr) {
-        std::atomic_thread_fence(std::memory_order_acquire);
-        if (g->seq.load(std::memory_order_relaxed) == seq1) {
-          return std::nullopt;
-        }
-        continue;
-      }
-
-      // Prefetch matching slots
-      if constexpr (std::is_pointer_v<typename Entries::Entry>) {
-        uint16_t temp_mask = mask_bits;
-        while (temp_mask > 0) {
-          int bit = std::countr_zero(static_cast<unsigned int>(temp_mask));
-          __builtin_prefetch(g->slots[bit]);
-          temp_mask &= temp_mask - 1;
-        }
-      }
-
-      bool found_in_slots = false;
-      std::optional<value_type> res = std::nullopt;
-
-      auto do_compare = [&] {
-        uint16_t active_mask = mask_bits;
-        while (active_mask > 0) {
-          int bit = std::countr_zero(static_cast<unsigned int>(active_mask));
-          if (KeyEqual{}(Entries::get_key(g->slots[bit]), key)) [[likely]] {
-            res = entries.get_data(g->slots[bit]);
-            found_in_slots = true;
-            break;
-          }
-          active_mask &= active_mask - 1;
-        }
-
-        if (!found_in_slots &&
-            g->overflow.load(std::memory_order_acquire) != nullptr) {
-          auto search_overflow = [&] {
-            Node* curr = g->overflow.load(std::memory_order_acquire);
-            while (curr != nullptr) {
-              if (KeyEqual{}(Entries::get_key(curr->entry), key)) {
-                res = entries.get_data(curr->entry);
-                break;
-              }
-              curr = curr->next.load(std::memory_order_acquire);
-            }
-          };
-          if constexpr (std::is_pointer_v<typename Entries::Entry>) {
-            search_overflow();
-          } else {
-            epoch::with_epoch(search_overflow);
-          }
-        }
-      };
-
-      if constexpr (std::is_pointer_v<typename Entries::Entry>) {
-        epoch::with_epoch(do_compare);
-      } else {
-        do_compare();
-      }
-
-      std::atomic_thread_fence(std::memory_order_acquire);
-      uint64_t seq2 = g->seq.load(std::memory_order_relaxed);
-      if (seq1 == seq2) {
-        return res;
-      }
+      result_type result{};
+      int target_slot = -1; // not used in Find
+      if (find_in_group(seq1, key, h2, g, result, target_slot))
+        return result;
     }
   }
 
@@ -686,8 +703,7 @@ struct swiss_parlay_table {
       auto ctrl_val = highway::Load(byte_vec_16, g->ctrl);
       auto cmp = highway::Eq(ctrl_val, match_val);
       uint16_t mask_bits = 0;
-      highway::StoreMaskBits(byte_vec_16, cmp,
-			     reinterpret_cast<uint8_t*>(&mask_bits));
+      highway::StoreMaskBits(byte_vec_16, cmp, reinterpret_cast<uint8_t*>(&mask_bits));
       if (mask_bits == 0 &&
           g->overflow.load(std::memory_order_acquire) == nullptr) {
         std::atomic_thread_fence(std::memory_order_acquire);
@@ -712,8 +728,7 @@ struct swiss_parlay_table {
           active_mask &= active_mask - 1;
         }
 
-        if (!found &&
-            g->overflow.load(std::memory_order_acquire) != nullptr) {
+        if (!found && g->overflow.load(std::memory_order_acquire) != nullptr) {
           auto search_overflow = [&] {
             Node* curr = g->overflow.load(std::memory_order_acquire);
             while (curr != nullptr) {
@@ -780,7 +795,7 @@ struct swiss_parlay_table {
 
         std::vector<slot_type> entries;
         for (int i = 0; i < 16; ++i) {
-          if (g_old.ctrl[i] != 0x80) {
+          if (g_old.ctrl[i] != kEmpty) {
             entries.push_back(g_old.slots[i]);
           }
         }
@@ -823,7 +838,7 @@ struct swiss_parlay_table {
         retire_list(overflow_ptr);
 
         size_t finished =
-          from->completed_count.fetch_add(1, std::memory_order_acq_rel) + 1;
+            from->completed_count.fetch_add(1, std::memory_order_acq_rel) + 1;
         if (finished == from->num_groups) {
           finish_growing(to);
         }
@@ -858,72 +873,19 @@ struct swiss_parlay_table {
       g = &v->groups[g_idx];
     } else if (v == current_version.load(std::memory_order_acquire) &&
                v->get_overflow_groups_count() >
-               std::min<size_t>(v->num_groups, 100) * kRegrowFraction) {
+                   std::min<size_t>(v->num_groups, 100) * kRegrowFraction) {
       // if overfull then try to create a new larger table
       absl::MutexLock lck(&v->allocate_lock);
       if (v->next.load(std::memory_order_acquire) != nullptr) return;
-      v->next.store(new table_version(v->num_groups * kGrowthFactor, node_pool));
+      v->next.store(
+          new table_version(v->num_groups * kGrowthFactor, node_pool));
       is_growing.store(true);
     }
   }
-  
-  std::optional<value_type>
-  find_in_group(const K& key, const uint8_t h2, Group* g, int& target_slot) {
-    std::optional<value_type> result{};
-    namespace highway = hwy::HWY_NAMESPACE;
-    constexpr highway::FixedTag<uint8_t, 16> byte_vec_16;
-    auto ctrl_val = highway::Load(byte_vec_16, g->ctrl);
-    auto match_val = highway::Set(byte_vec_16, h2);
-    auto cmp = highway::Eq(ctrl_val, match_val);
-    uint16_t mask = 0;
-    highway::StoreMaskBits(byte_vec_16, cmp, reinterpret_cast<uint8_t*>(&mask));
 
-    auto check_slots = [&] {
-      while (mask > 0) {
-        int bit = std::countr_zero(static_cast<unsigned int>(mask));
-        if (KeyEqual{}(Entries::get_key(g->slots[bit]), key)) {
-          result = Entries::get_data(g->slots[bit]);
-          target_slot = bit;
-          break;
-        }
-        mask &= mask - 1;
-      }
-    };
-
-    if (mask != 0) {
-      if constexpr (std::is_pointer_v<typename Entries::Entry>) {
-        // only need to protect if using indirect entries
-        // Prefetch matching slots
-        uint16_t temp_mask = mask;
-        while (temp_mask > 0) {
-          int bit = std::countr_zero(static_cast<unsigned int>(temp_mask));
-          __builtin_prefetch(g->slots[bit]);
-          temp_mask &= temp_mask - 1;
-        }
-        epoch::with_epoch(check_slots);   
-      } else check_slots();
-    } 
-
-    if (!result.has_value() &&
-        g->overflow.load(std::memory_order_acquire) != nullptr) {
-      epoch::with_epoch([&] {
-        Node* curr = g->overflow.load(std::memory_order_acquire);
-        while (curr != nullptr) {
-          if (KeyEqual{}(Entries::get_key(curr->entry), key)) {
-            result = Entries::get_data(curr->entry);
-            break;
-          }
-          curr = curr->next.load(std::memory_order_acquire);
-        }
-      });
-    }
-    return result;
-  }
-  
-  std::optional<value_type>
-  Insert(const value_type& entry) {
+  result_type Insert(const value_type& entry) {
     groups_and_mask gm = load_cached_info_fast();
-    const K& key = Policy::get_key(entry);
+    const K& key = Policy::get_k(entry);
     size_t h = hash(key);
     size_t g_idx = fast_map(h >> 7, gm.num_groups);
     uint8_t h2 = h & 0x7F;
@@ -932,34 +894,41 @@ struct swiss_parlay_table {
     auto match_val = highway::Set(byte_vec_16, h2);
     Group* g = &(gm.groups[g_idx]);
 
-
     // Fast path for insertion.  If finds key in slots then returns
-    // immediately.  If it does not find it slots and not growing, it
+    // immediately.  If it does not find in slots and not growing, it
     // checks if it can place directly in the primary slots.  Notably
     // improves performance for workloads with high insertion rates.
     if (!is_growing.load(std::memory_order_relaxed)) {
       uint64_t seqn = g->seq.load(std::memory_order_acquire);
       auto ctrl_val = highway::Load(byte_vec_16, g->ctrl);
       auto cmp = highway::Eq(ctrl_val, match_val);
-      uint16_t mask = 0;     // slots where h2 matches
+      uint16_t mask = 0;  // slots where h2 matches
       highway::StoreMaskBits(byte_vec_16, cmp, reinterpret_cast<uint8_t*>(&mask));
       if (mask != 0) {
-        if constexpr (!std::is_pointer_v<typename Entries::Entry>) {
-          int bit = std::countr_zero(static_cast<unsigned int>(mask));
+        int bit = std::countr_zero(static_cast<unsigned int>(mask));
+        result_type result{};
+        auto check = [&] {
           if (KeyEqual{}(Entries::get_key(g->slots[bit]), key)) {
-            auto res = Entries::get_data(g->slots[bit]);
+            auto r = g->slots[bit];
             std::atomic_thread_fence(std::memory_order_acquire);
             if (((seqn & 1) == 0) &&  // not locked
-                g->seq.load(std::memory_order_relaxed) ==
-                    seqn)  // hasn't changed
-              return res;
+                g->seq.load(std::memory_order_relaxed) == seqn) { // hasn't changed
+              result = Entries::get_result(r);
+              return true;
+            }
           }
+          return false;
+        };
+        if constexpr (std::is_pointer_v<typename Entries::Entry>) {
+          if (epoch::with_epoch(check)) return result;
+        } else {
+          if (check()) return result;
         }
-      } else { // no matches in slots
-        auto cmp_empty = highway::Eq(ctrl_val, highway::Set(byte_vec_16, 0x80));
+      } else {  // no matches in slots
+        auto cmp_empty =
+            highway::Eq(ctrl_val, highway::Set(byte_vec_16, kEmpty));
         uint16_t empty_mask = 0;  // slots where h2 is empty
-        highway::StoreMaskBits(byte_vec_16, cmp_empty,
-                               reinterpret_cast<uint8_t*>(&empty_mask));
+        highway::StoreMaskBits(byte_vec_16, cmp_empty, reinterpret_cast<uint8_t*>(&empty_mask));
         std::atomic_thread_fence(std::memory_order_acquire);
         if (empty_mask != 0 &&    // at least one empty
             ((seqn & 1) == 0) &&  // not locked
@@ -973,7 +942,7 @@ struct swiss_parlay_table {
         }
       }
     }
-    
+
     table_version* v = current_version.load(std::memory_order_acquire);
     g_idx = fast_map(h >> 7, v->num_groups);
     g = &(v->groups[g_idx]);
@@ -987,34 +956,33 @@ struct swiss_parlay_table {
         continue;
       }
 
+      result_type result{};
       int target_slot = -1;
       // Optimistic Pre-check
-      auto r = find_in_group(key, h2, g, target_slot);
+      if (!find_in_group(seq1, key, h2, g, result, target_slot))
+        continue;
 
-      std::atomic_thread_fence(std::memory_order_acquire);
-      uint64_t seq2 = g->seq.load(std::memory_order_relaxed);
-      if (seq1 != seq2) {
-	retry = true;
-	continue;
+      if (Policy::is_found(result)) {
+        return result;
       }
 
-      if (r.has_value()) {
-        return r;
+      if (retry) {  // delay after first attempt to reduce contention
+        volatile int i = 0;
+        while (i < 1000) {
+          i = i + 1;
+        }
       }
-
-      if (retry)
-        for (volatile int i = 0; i < 1000; i++) {}
 
       // Now try insert with lock
       uint64_t expected = seq1;
       if (g->seq.load(std::memory_order_relaxed) == seq1 &&
-	  g->seq.compare_exchange_strong(expected, seq1 + 1,
-                                            std::memory_order_acquire)) {
+          g->seq.compare_exchange_strong(expected, seq1 + 1,
+                                         std::memory_order_acquire)) {
         auto ctrl_val = highway::Load(byte_vec_16, g->ctrl);
-        auto cmp_empty = highway::Eq(ctrl_val, highway::Set(byte_vec_16, 0x80));
+        auto cmp_empty =
+            highway::Eq(ctrl_val, highway::Set(byte_vec_16, kEmpty));
         uint16_t empty_mask = 0;
-        highway::StoreMaskBits(byte_vec_16, cmp_empty,
-                               reinterpret_cast<uint8_t*>(&empty_mask));
+        highway::StoreMaskBits(byte_vec_16, cmp_empty, reinterpret_cast<uint8_t*>(&empty_mask));
         if (empty_mask > 0) {
           int bit = std::countr_zero(static_cast<unsigned int>(empty_mask));
           g->slots[bit] = entries.make_entry(key, entry);
@@ -1026,7 +994,7 @@ struct swiss_parlay_table {
         // Slots full, insert to overflow
         Node* old_head = g->overflow.load(std::memory_order_relaxed);
         Node* new_node =
-          node_pool->New(entries.make_entry(key, entry), old_head);
+            node_pool->New(entries.make_entry(key, entry), old_head);
         g->overflow.store(new_node, std::memory_order_release);
         if (old_head == nullptr && g_idx < 100)
           v->overflow_groups_count.fetch_add(1, std::memory_order_relaxed);
@@ -1037,8 +1005,7 @@ struct swiss_parlay_table {
     }
   }
 
-  std::optional<value_type>
-  Remove(const K& key) {
+  result_type Remove(const K& key) {
     table_version* v = current_version.load();
     size_t h = hash(key);
     size_t g_idx = fast_map(h >> 7, v->num_groups);
@@ -1054,25 +1021,21 @@ struct swiss_parlay_table {
         continue;
       }
 
+      result_type result{};
       int target_slot = -1;
       // Optimistic Pre-check
-      auto r = find_in_group(key, h2, g, target_slot);
-  
-      std::atomic_thread_fence(std::memory_order_acquire);
-      uint64_t seq2 = g->seq.load(std::memory_order_relaxed);
-      if (seq1 != seq2) {
+      if (!find_in_group(seq1, key, h2, g, result, target_slot))
         continue;
-      }
 
-      if (!r.has_value()) {
+      if (!Policy::is_found(result)) {
         return {};
       }
 
       // Lock
       uint64_t expected = seq1;
       if (g->seq.load(std::memory_order_relaxed) == seq1 &&
-	  g->seq.compare_exchange_strong(expected, seq1 + 1,
-                                            std::memory_order_acquire)) {
+          g->seq.compare_exchange_strong(expected, seq1 + 1,
+                                         std::memory_order_acquire)) {
         if (target_slot != -1) {
           Node* oh = g->overflow.load(std::memory_order_relaxed);
           if (oh != nullptr) {
@@ -1089,10 +1052,10 @@ struct swiss_parlay_table {
             node_pool->Retire(oh);
           } else {
             entries.retire_entry(g->slots[target_slot]);
-            g->ctrl[target_slot] = 0x80;
+            g->ctrl[target_slot] = kEmpty;
           }
           g->seq.store(seq1 + 2, std::memory_order_release);
-          return r;
+          return result;
         }
 
         Node* prev = nullptr;
@@ -1118,15 +1081,14 @@ struct swiss_parlay_table {
         entries.retire_entry(curr->entry);
         node_pool->Retire(curr);
         g->seq.store(seq1 + 2, std::memory_order_release);
-        return r;
+        return result;
       }
     }
   }
 
   template <typename F, typename P = Policy>
-  typename std::enable_if_t<P::kIsMap,
-                            std::optional<typename P::V>> upsert(const K& key,
-                                                                 const F& f) {
+  typename std::enable_if_t<P::kIsMap, result_type> upsert(
+      const K& key, const F& f) {
     table_version* v = current_version.load();
     size_t h = hash(key);
     size_t g_idx = fast_map(h >> 7, v->num_groups);
@@ -1145,37 +1107,31 @@ struct swiss_parlay_table {
         continue;
       }
 
+      result_type result{};
       int target_slot = -1;
       // Optimistic Pre-check
-      bool found = find_in_group(key, h2, g, target_slot).has_value();
-
-      std::atomic_thread_fence(std::memory_order_acquire);
-      uint64_t seq2 = g->seq.load(std::memory_order_relaxed);
-      if (seq1 != seq2) {
+      if (!find_in_group(seq1, key, h2, g, result, target_slot))
         continue;
-      }
 
       // Lock
-      std::optional<typename P::V> ret_val;
+      result_type ret_val;
       uint64_t expected = seq1;
       if (g->seq.compare_exchange_strong(expected, seq1 + 1,
-                                            std::memory_order_acquire)) {
+                                         std::memory_order_acquire)) {
         if (target_slot != -1) {
           value_type old_val = entries.get_data(g->slots[target_slot]);
-          value_type new_val =
-            std::make_pair(key, f(std::make_optional(old_val.second)));
+          value_type new_val = std::make_pair(key, f(result));
           entries.update_entry(g->slots[target_slot], new_val);
           g->seq.store(seq1 + 2, std::memory_order_release);
           return old_val.second;
         }
 
-        if (found) {
+        if (Policy::is_found(result)) {
           Node* curr = g->overflow.load(std::memory_order_relaxed);
           while (curr != nullptr) {
             if (KeyEqual{}(Entries::get_key(curr->entry), key)) {
               value_type old_val = entries.get_data(curr->entry);
-              value_type new_val =
-                std::make_pair(key, f(std::make_optional(old_val.second)));
+              value_type new_val = std::make_pair(key, f(result));
               entries.update_entry(curr->entry, new_val);
               ret_val = old_val.second;
               break;
@@ -1187,14 +1143,12 @@ struct swiss_parlay_table {
         }
 
         // Not found, insert
-        using MappedV = typename P::V;
-        MappedV new_val = f(std::nullopt);
+        auto new_val = f(std::nullopt);
         auto ctrl_val_lock = highway::Load(byte_vec_16, g->ctrl);
         auto cmp_empty =
-          highway::Eq(ctrl_val_lock, highway::Set(byte_vec_16, 0x80));
+            highway::Eq(ctrl_val_lock, highway::Set(byte_vec_16, kEmpty));
         uint16_t empty_mask = 0;
-        highway::StoreMaskBits(byte_vec_16, cmp_empty,
-                               reinterpret_cast<uint8_t*>(&empty_mask));
+        highway::StoreMaskBits(byte_vec_16, cmp_empty, reinterpret_cast<uint8_t*>(&empty_mask));
         if (empty_mask > 0) {
           int bit = std::countr_zero(static_cast<unsigned int>(empty_mask));
           g->slots[bit] = entries.make_entry(key, std::make_pair(key, new_val));
@@ -1204,9 +1158,8 @@ struct swiss_parlay_table {
         }
 
         Node* old_head = g->overflow.load(std::memory_order_relaxed);
-        Node* new_node =
-          node_pool->New(entries.make_entry(key,std::make_pair(key, new_val)),
-                         old_head);
+        Node* new_node = node_pool->New(
+            entries.make_entry(key, std::make_pair(key, new_val)), old_head);
         g->overflow.store(new_node, std::memory_order_release);
         if (old_head == nullptr && g_idx < 100) {
           v->overflow_groups_count.fetch_add(1, std::memory_order_relaxed);
@@ -1224,7 +1177,7 @@ struct swiss_parlay_table {
     uint64_t seq = g.seq.load(std::memory_order_acquire);
     if (seq != kForwarded) {
       for (int j = 0; j < 16; j++) {
-        if (g.ctrl[j] != 0x80) {
+        if (g.ctrl[j] != kEmpty) {
           f(g.slots[j]);
         }
       }
@@ -1244,14 +1197,14 @@ struct swiss_parlay_table {
   }
 
   struct Iterator {
-  public:
+   public:
     using value_type = typename Entries::Data;
     using iterator_category = std::forward_iterator_tag;
     using pointer = value_type*;
     using reference = value_type&;
     using difference_type = int64_t;
 
-  private:
+   private:
     std::vector<slot_type> entries;
     int i;
     table_version* t;
@@ -1267,15 +1220,15 @@ struct swiss_parlay_table {
       if (group_num == t->num_groups) end = true;
     }
 
-  public:
+   public:
     explicit Iterator(bool end)
-      : i(0), group_num(-2l), single(false), end(true) {}
+        : i(0), group_num(-2l), single(false), end(true) {}
     explicit Iterator(table_version* t)
-      : t(t), i(0), group_num(-1l), single(false), end(false) {
+        : t(t), i(0), group_num(-1l), single(false), end(false) {
       get_next_group();
     }
     explicit Iterator(slot_type entry)
-      : entry(entry), single(true), end(false) {}
+        : entry(entry), single(true), end(false) {}
 
     Iterator& operator++() {
       if (single) {
@@ -1306,10 +1259,11 @@ struct swiss_parlay_table {
 
     bool operator!=(const Iterator& iterator) const {
       return !(end ? iterator.end
-               : (group_num == iterator.group_num && i == iterator.i));
+                   : (group_num == iterator.group_num && i == iterator.i));
     }
     bool operator==(const Iterator& iterator) const {
-      return !(*this != iterator); }
+      return !(*this != iterator);
+    }
   };
 
   Iterator begin() { return Iterator(current_version.load()); }
@@ -1319,141 +1273,126 @@ struct swiss_parlay_table {
   void for_each(const F& f) {
     auto g = [&](const slot_type& e) { f(Entries::get_data(e)); };
     table_version* v = current_version.load();
-    parlay::parallel_for(static_cast<int64_t>(v->num_groups), [&](int64_t i) {
-      for_each_group_rec(v, i, g);
-    });
+    parlay::parallel_for(static_cast<int64_t>(v->num_groups),
+                         [&](int64_t i) { for_each_group_rec(v, i, g); });
   }
 };
-  } // end namespace internal
+}  // end namespace internal
 
-  template <typename K, typename V, class Hash = std::hash<K>,
-            class KeyEqual = std::equal_to<K>>
-  struct parlay_unordered_map {
-    using Policy = internal::MapPolicy<K, V, Hash, KeyEqual>;
-    using Entries = std::conditional_t<
-      internal::is_effectively_trivially_copyable_v<typename Policy::value_type>,
-      internal::DirectEntries<Policy>, internal::IndirectEntries<Policy>>;
-    using Table = internal::swiss_parlay_table<Entries>;
-    std::unique_ptr<Table> t_ptr;
-    size_t initial_size;
+template <typename K, typename V, class Hash = std::hash<K>,
+          class KeyEqual = std::equal_to<K>>
+struct parlay_unordered_map {
+  using Policy = internal::MapPolicy<K, V, Hash, KeyEqual>;
+  using Entries =
+      std::conditional_t<internal::is_effectively_trivially_copyable_v<
+                             typename Policy::value_type>,
+                         internal::DirectEntries<Policy>,
+                         internal::IndirectEntries<Policy>>;
+  using Table = internal::swiss_parlay_table<Entries>;
+  std::unique_ptr<Table> t_ptr;
+  size_t initial_size;
 
-    // For benchmark compatibility
-    using K_ = K;
-    using V_ = V;
+  // For benchmark compatibility
+  using K_ = K;
+  using V_ = V;
 
-    parlay_unordered_map() : parlay_unordered_map(1000) {}
-    explicit parlay_unordered_map(size_t n)
+  parlay_unordered_map() : parlay_unordered_map(1000) {}
+  explicit parlay_unordered_map(size_t n)
       : t_ptr(std::make_unique<Table>(n, true)), initial_size(n) {}
 
-    void clear() {
-      t_ptr = std::make_unique<Table>(initial_size, true);
+  void clear() { t_ptr = std::make_unique<Table>(initial_size, true); }
+
+  int64_t size() const { return t_ptr->size(); }
+
+  bool empty() const { return size() == 0; }
+  bool contains(const K& key) { return Find(key).has_value(); }
+  int64_t count(const K& key) { return contains(key) ? 1 : 0; }
+
+  using iterator = typename Table::Iterator;
+  iterator begin() { return t_ptr->begin(); }
+  iterator end() { return t_ptr->end(); }
+
+  std::optional<V> Find(const K& key) { return t_ptr->Find(key); }
+
+  std::optional<V> Insert(const K& key, const V& value) {
+    return t_ptr->Insert(std::make_pair(key, value));
+  }
+
+  std::optional<V> Remove(const K& key) { return t_ptr->Remove(key); }
+
+  size_t erase(const K& key) { return Remove(key).has_value() ? 1 : 0; }
+
+  std::pair<iterator, bool> insert(const std::pair<K, V>& val) {
+    auto res = t_ptr->Insert(val);
+    if (res.has_value()) {
+      return {t_ptr->find_iterator(val.first), false};
+    } else {
+      return {t_ptr->find_iterator(val.first), true};
     }
+  }
 
-    int64_t size() const { return t_ptr->size(); }
+  template <typename F>
+  std::optional<V> Upsert(const K& key, const F& f) {
+    return t_ptr->upsert(key, f);
+  }
 
-    bool empty() const { return size() == 0; }
-    bool contains(const K& key) { return Find(key).has_value(); }
-    int64_t count(const K& key) { return contains(key) ? 1 : 0; }
+  std::optional<V> Upsert(const K& key, const V& value) {
+    auto f = [&](std::optional<V> old) { return value; };
+    return t_ptr->upsert(key, f);
+  }
 
-    using iterator = typename Table::Iterator;
-    iterator begin() { return t_ptr->begin(); }
-    iterator end() { return t_ptr->end(); }
+  template <typename F>
+  bool upsert(const K& key, const F& f) {
+    Upsert(key, f);
+    return true;
+  }
 
-    std::optional<V> Find(const K& key) {
-      auto res = t_ptr->Find(key);
-      if (res.has_value()) {
-        return res->second;
-      }
-      return std::nullopt;
-    }
+  template <typename F>
+  void for_each(const F& f) {
+    t_ptr->for_each(f);
+  }
+};
 
-    std::optional<V> Insert(const K& key, const V& value) {
-      auto res = t_ptr->Insert(std::make_pair(key, value));
-      if (res.has_value()) return res->second;
-      else return {};
-    }
+template <typename K, class Hash = std::hash<K>,
+          class KeyEqual = std::equal_to<K>>
+struct parlay_unordered_set {
+  using Policy = internal::SetPolicy<K, Hash, KeyEqual>;
+  using Entries =
+      std::conditional_t<internal::is_effectively_trivially_copyable_v<
+                             typename Policy::value_type>,
+                         internal::DirectEntries<Policy>,
+                         internal::IndirectEntries<Policy>>;
+  using Table = internal::swiss_parlay_table<Entries>;
+  std::unique_ptr<Table> t_ptr;
+  size_t initial_size;
 
-    std::optional<V> Remove(const K& key) {
-      auto res = t_ptr->Remove(key);
-      if (res.has_value()) return res->second;
-      else return {};
-    }
-
-    size_t erase(const K& key) {
-      return Remove(key).has_value() ? 1 : 0;
-    }
-
-    std::pair<iterator, bool> insert(const std::pair<K, V>& val) {
-      auto res = t_ptr->Insert(val);
-      if (res.has_value()) {
-        return {t_ptr->find_iterator(val.first), false};
-      } else {
-        return {t_ptr->find_iterator(val.first), true};
-      }
-    }
-
-    template <typename F>
-    std::optional<V> Upsert(const K& key, const F& f) {
-      return t_ptr->upsert(key, f);
-    }
-
-    std::optional<V> Upsert(const K& key, const V& value) {
-      auto f = [&](std::optional<V> old) { return value; };
-      return t_ptr->upsert(key, f);
-    }
-
-    template <typename F>
-    bool upsert(const K& key, const F& f) {
-      Upsert(key, f);
-      return true;
-    }
-
-    template <typename F>
-    void for_each(const F& f) {
-      t_ptr->for_each(f);
-    }
-  };
-
-  template <typename K, class Hash = std::hash<K>,
-            class KeyEqual = std::equal_to<K>>
-  struct parlay_unordered_set {
-    using Policy = internal::SetPolicy<K, Hash, KeyEqual>;
-    using Entries = std::conditional_t<
-      internal::is_effectively_trivially_copyable_v<typename Policy::value_type>,
-      internal::DirectEntries<Policy>, internal::IndirectEntries<Policy>>;
-    using Table = internal::swiss_parlay_table<Entries>;
-    std::unique_ptr<Table> t_ptr;
-    size_t initial_size;
-
-    parlay_unordered_set() : parlay_unordered_set(1000) {}
-    explicit parlay_unordered_set(size_t n)
+  parlay_unordered_set() : parlay_unordered_set(1000) {}
+  explicit parlay_unordered_set(size_t n)
       : t_ptr(std::make_unique<Table>(n, true)), initial_size(n) {}
 
-    void clear() {
-      t_ptr = std::make_unique<Table>(initial_size, true);
-    }
+  void clear() { t_ptr = std::make_unique<Table>(initial_size, true); }
 
-    int64_t size() const { return t_ptr->size(); }
+  int64_t size() const { return t_ptr->size(); }
 
-    bool empty() const { return size() == 0; }
-    bool contains(const K& key) { return Find(key); }
-    int64_t count(const K& key) { return contains(key) ? 1 : 0; }
+  bool empty() const { return size() == 0; }
+  bool contains(const K& key) { return Find(key); }
+  int64_t count(const K& key) { return contains(key) ? 1 : 0; }
 
-    using iterator = typename Table::Iterator;
-    iterator begin() { return t_ptr->begin(); }
-    iterator end() { return t_ptr->end(); }
+  using iterator = typename Table::Iterator;
+  iterator begin() { return t_ptr->begin(); }
+  iterator end() { return t_ptr->end(); }
 
-    bool Find(const K& key) { return t_ptr->Find(key).has_value(); }
+  bool Find(const K& key) { return t_ptr->Find(key); }
 
-    bool Insert(const K& key) { return !t_ptr->Insert(key).has_value(); }
+  bool Insert(const K& key) { return !t_ptr->Insert(key); }
 
-    bool Remove(const K& key) { return t_ptr->Remove(key).has_value(); }
+  bool Remove(const K& key) { return t_ptr->Remove(key); }
 
-    template <typename F>
-    void for_each(const F& f) {
-      t_ptr->for_each(f);
-    }
-  };
+  template <typename F>
+  void for_each(const F& f) {
+    t_ptr->for_each(f);
+  }
+};
 
 }  // namespace parlay
 
