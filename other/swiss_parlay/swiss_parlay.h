@@ -407,7 +407,7 @@ struct swiss_parlay_table {
     // When copying, indicates next slot to copy
     std::atomic<size_t> copy_counter{0};
     // Used to lock when allocating memory to copy into
-    absl::Mutex allocate_lock;
+    std::mutex allocate_lock;
     epoch::memory_pool<Node>* node_pool;
 
     explicit table_version(size_t n, epoch::memory_pool<Node>* pool,
@@ -875,7 +875,7 @@ struct swiss_parlay_table {
                v->get_overflow_groups_count() >
                    std::min<size_t>(v->num_groups, 100) * kRegrowFraction) {
       // if overfull then try to create a new larger table
-      absl::MutexLock lck(&v->allocate_lock);
+      std::lock_guard<std::mutex> lck(v->allocate_lock);
       if (v->next.load(std::memory_order_acquire) != nullptr) return;
       v->next.store(
           new table_version(v->num_groups * kGrowthFactor, node_pool));
