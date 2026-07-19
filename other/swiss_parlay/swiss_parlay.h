@@ -1,165 +1,8 @@
-#ifndef THIRD_PARTY_SWISS_PARLAY_UNORDERED_MAP_H_
-#define THIRD_PARTY_SWISS_PARLAY_UNORDERED_MAP_H_
+#ifndef THIRD_PARTY_SWISS_PARLAY_8_UNORDERED_MAP_H_
+#define THIRD_PARTY_SWISS_PARLAY_8_UNORDERED_MAP_H_
 
-// A highly concurrent, growable, SIMD-accelerated hash map and hash set
-// implementation.
-//
-// This implementation combines the "Swiss Table" layout (pioneered by
-// Abseil) with a prior version of "Parlay Hash" which uses
-// cooperative-fiber-safe concurrency, sequence-lock based reads,
-// fine-grained locking for writes, and epoch-based memory
-// reclamation.
-//
-// === Key Features ===
-//
-// 1. Swiss Table Layout & SIMD Acceleration
-//    - The table is partitioned into "Groups" of 16 slots.
-//    - Each group maintains a 16-byte control array (`ctrl`)
-//      containing 7-bit hash fingerprints (h2) of the keys, or
-//      special markers (empty = 0x80, forwarded = 0xfe).
-//    - Google's Highway SIMD library is used to compare a target
-//      key's fingerprint against all 16 slots in a group
-//      simultaneously using vector instructions.  This eliminates
-//      most branch mispredictions during lookups.
-//    - For trivially copyable types (or pairs/tuples of such types),
-//      all values are stored directly in the group array avoiding any
-//      indirection, and also avoiding the need for protection by the
-//      epoch-based reclamation scheme.  Other types are stored in the
-//      heap via a level of indirection, required to make concurrency
-//      safe.  They are never copied or moved.
-//
-// 2. Concurrency Control
-//    - Reads and writes coordinate through a sequence lock on each group.
-//    - Reads (Finds) do not take locks. They check a sequence number
-//      before and after, and if they detect a concurrent write, they
-//      retry.  They are not technically lock-free since they can
-//      block if a writer stalls while holding the sequence lock (an
-//      odd sequence number), but perform much better than read locks.
-//    - Writes (Inserts, Removes, Upserts, and Copying during growth)
-//      acquire a fine-grained lock on the target Group. To minimize
-//      memory overhead, locks are not stored in the groups
-//      themselves; instead, group addresses are mapped to a global
-//      striped lock pool.
-//
-// 3. Overflow Chains for Collision Resolution
-//    - If a Group's 16 slots are completely full, collisions are resolved
-//      using an atomic overflow linked list attached to the Group.
-//    - This greatly simplifies concurrent updates and copying during
-//      growth since each group is independent.  It also prevents the
-//      "primary clustering" issues of open addressing under high
-//      load.
-//    - The header for each group therefore consists of 16 control
-//      bytes, 8 bytes for the sequence lock, and 8 bytes for the
-//      overflow pointer (32 bytes total).
-//
-// 4. Resizing with minimally blocking (Incremental Growing)
-//    - When the table capacity is exceeded, it allocates a new
-//      `table_version` with 4x more groups.
-//    - Migration is done incrementally.  When growing, any update
-//      will copy its group, and some constant number of other groups
-//      to the new table version.
-//    - Groups that have been copied are marked with a special
-//      `kForwarded` control byte.  Any operation (query or update)
-//      that encounters a forwarded group automatically redirects to
-//      the new table version.
-//    - Each initial group gets copied to 4 new groups avoiding any
-//      synchronization among the groups.
-//    - While an individual group is growing (a reasonably fast
-//      operation) other operations are blocked from accessing that
-//      group.
-//    - New groups are first touched when copied to, avoiding a
-//      sequential initialization of the new array of groups.
-//
-// 5. Cooperative Fiber Safety & Performance
-//    - Designed specifically to run safely under cooperative fiber
-//      schedulers (like Gloop).
-//      - Avoids all block-scope static variables and
-//        compiler-generated runtime initialization guards, which
-//        trigger deadlocks when fibers yield.
-//      - Uses `absl::NoDestructor` to avoid exit-time destruction
-//        order issues for global metadata.
-//      - Leverages Epoch-Based Reclamation (`epoch.h`) to safely
-//        defer the deletion of retired nodes and table versions until
-//        all active readers have exited their epoch.
-//
-// === Supported Interface ===
-//
-// This header defines two user-facing concurrent container templates:
-// `parlay_unordered_map` and `parlay_unordered_set`. Both are built on top
-// of the lock-free/fine-grained locked `swiss_parlay_table` and use epoch-based
-// memory reclamation.
-//
-// -----------------------------------------------------------------------------
-// 1. parlay_unordered_map<K, V, Hash = std::hash<K>,
-//                         KeyEqual = std::equal_to<K>>
-// -----------------------------------------------------------------------------
-// A concurrent map. Key-value pairs are stored as `std::pair<K, V>`.
-//
-// Key Types:
-//   - `iterator`: Forward iterator
-//
-// Public Methods:
-//   - `parlay_unordered_map()` / `explicit parlay_unordered_map(size_t n)`
-//     Constructs the map. `n` is the expected number of entries.
-//
-//   - `void clear()`
-//     Clears the map (re-allocates the underlying table).
-//
-//   - `int64_t size() const` / `bool empty() const`
-//     Size returns size (O(size) operation), empty returns if empty.
-//
-//   - `std::optional<V> Find(const K& key)` / `bool contains(const K& key)`
-//     Looks up a key. `Find` returns the value if found, `std::nullopt`
-//     otherwise. `contains` returns true if key is found.
-//
-//   - `std::optional<V> Insert(const K& key, const V& value)`
-//     Inserts the key-value pair. If the key exists, does NOT overwrite and
-//     returns the *existing* value. If inserted, returns `std::nullopt`.
-//
-//   - `std::pair<iterator, bool> insert(const std::pair<K, V>& val)`
-//     STL-like insert. Returns {iterator, inserted_bool}.
-//
-//   - `std::optional<V> Remove(const K& key)` / `size_t erase(const K& key)`
-//     Removes the key. `Remove` returns the removed value if found, or
-//     `std::nullopt`. `erase` returns 1 if erased, 0 otherwise.
-//
-//   - `template <typename F> std::optional<V> Upsert(const K& key, const F& f)`
-//     Updates value using `f(old_value)` or inserts `f(std::nullopt)`.
-//     `f` must be `V(std::optional<V>)`. Returns old value if updated,
-//     `std::nullopt` if inserted.
-//
-//   - `std::optional<V> Upsert(const K& key, const V& value)`
-//     Overwrites or inserts `value`. Returns old value if updated,
-//     `std::nullopt` if inserted.
-//
-//   - `template <typename F> void for_each(const F& f)`
-//     Applies `f(std::pair<K, V>)` to all entries in parallel.
-//
-// -----------------------------------------------------------------------------
-// 2. parlay_unordered_set<K, Hash = std::hash<K>, KeyEqual = std::equal_to<K>>
-// -----------------------------------------------------------------------------
-// A concurrent set.
-//
-// Public Methods:
-//   - `parlay_unordered_set()` / `explicit parlay_unordered_set(size_t n)`
-//     Constructs the set.
-//
-//   - `void clear()`
-//     Clears the set.
-//
-//   - `int64_t size() const` / `bool empty() const`
-//
-//   - `bool Find(const K& key)` / `bool contains(const K& key)`
-//     Returns true if key exists.
-//
-//   - `bool Insert(const K& key)`
-//     Inserts key. Returns `true` if inserted, `false` if already existed.
-//
-//   - `bool Remove(const K& key)`
-//     Removes key. Returns `true` if removed, `false` if not found.
-//
-//   - `template <typename F> void for_each(const F& f)`
-//     Applies `f(K)` to all entries in parallel.
+// A highly concurrent, growable hash map and hash set implementation
+// using 8-element groups and Abseil GroupPortableImpl bithack techniques.
 
 #include <algorithm>
 #include <atomic>
@@ -178,6 +21,28 @@
 #include <utility>
 #include <vector>
 
+#if !defined(SWISS_PARLAY_8_USE_HIGHWAY)
+#if defined(SWISS_PARLAY_USE_HIGHWAY) || defined(SWISS_PARLAY_USE_VECTORS) || defined(USE_HIGHWAY)
+#define SWISS_PARLAY_8_USE_HIGHWAY 1
+#elif defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64) || defined(_M_ARM)
+#define SWISS_PARLAY_8_USE_HIGHWAY 0
+#else
+#define SWISS_PARLAY_8_USE_HIGHWAY 0
+#endif
+#endif
+
+#ifdef GOOGLE
+#include "third_party/absl/base/no_destructor.h"
+#include "third_party/flock/utils/epoch.h"
+#include "third_party/parlay/include/parlay/delayed.h"
+#include "third_party/parlay/include/parlay/parallel.h"
+#include "third_party/parlay/include/parlay/primitives.h"
+#include "third_party/parlay/include/parlay/sequence.h"
+#include "third_party/parlay/include/parlay/thread_specific.h"
+#if SWISS_PARLAY_8_USE_HIGHWAY
+#include "third_party/highway/hwy/highway.h"
+#endif
+#else
 #include "hwy/highway.h"
 #include <parlay/delayed.h>
 #include <parlay/parallel.h>
@@ -185,48 +50,39 @@
 #include <parlay/sequence.h>
 #include <parlay/thread_specific.h>
 #include <utils/epoch.h>
-
-// #include "third_party/absl/base/no_destructor.h"
-// #include "third_party/flock/utils/epoch.h"
-// #include "third_party/highway/hwy/highway.h"
-// #include "third_party/parlay/include/parlay/delayed.h"
-// #include "third_party/parlay/include/parlay/parallel.h"
-// #include "third_party/parlay/include/parlay/primitives.h"
-// #include "third_party/parlay/include/parlay/sequence.h"
-// #include "third_party/parlay/include/parlay/thread_specific.h"
+#if SWISS_PARLAY_8_USE_HIGHWAY
+#include "hwy/highway.h"
+#endif
+#endif
 
 namespace parlay {
-// Force sequential initialization of Parlay's thread ID pool to avoid
-// deadlocks in fibers.
-inline int dummy_parlay_init = (parlay::my_thread_id(), 0);
+inline int dummy_parlay_init_8 = (parlay::my_thread_id(), 0);
 
+#if SWISS_PARLAY_8_USE_HIGHWAY
 HWY_BEFORE_NAMESPACE();
+#endif
 
 #define USE_SET
 
 namespace internal {
 
 extern inline auto& get_locks() {
-  //static absl::NoDestructor<std::vector<std::atomic<bool>>> locks(1ul << 14);
+#ifdef GOOGLE
+  static absl::NoDestructor<std::vector<std::atomic<bool>>> locks(1ul << 14);
+  return *locks;
+#else
   static std::vector<std::atomic<bool>> locks(1ul << 14);
   return locks;
+#endif
 }
 
-// The body of the table.  General for both Maps and Sets, and for both
-// direct and indirect values, depending on the definitions in
-// Entries.   Specialized at the bottom of the file.
 template <typename Entries>
 struct swiss_parlay_table {
 
-  // A table that is initiallized with size n will have fill_factor *
-  // n entries.  Making this smaller saves memory at the cost of
-  // performance. Making this larger improves performance at the cost
-  // of memory.
   static constexpr float kFillFactor = 1.4;
   static_assert(kFillFactor >= 1, "Fill factor must be at least 1");
 
-  // Fraction of buckets with overflow that sets off a grow step
-  static constexpr float kRegrowFraction = .2;
+  static constexpr float kRegrowFraction = .4;
 
   static constexpr size_t kGrowthFactor = 4;
   static_assert((kGrowthFactor & (kGrowthFactor - 1)) == 0,
@@ -236,18 +92,13 @@ struct swiss_parlay_table {
   struct Iterator;
 
   using Policy = typename Entries::Policy;
-  // raw entries stored in slots (for indirect, it will be a pointer)
   using slot_type = typename Entries::Entry;
-  // type returned by Find, Insert, Delete and Upsert
-  // i.e. std::optional<V> for maps and bool for sets
   using result_type = typename Policy::result_type;
-  // std::pair<K,V> for maps, and K for sets
   using value_type = typename Policy::value_type; 
   using K = typename Policy::K;
   using Hash = typename Policy::Hash;
   using KeyEqual = typename Policy::KeyEqual;
 
-  // conditionally rehash if type Hash::is_avalanching is not defined
   template <typename H, typename ignore = void>
   struct rehash {
     size_t operator()(size_t h) const {
@@ -288,50 +139,101 @@ struct swiss_parlay_table {
     get_locks()[idx].store(false, std::memory_order_release);
   }
 
+#if SWISS_PARLAY_8_USE_HIGHWAY
+  // must be power of 2, and to be portable, no more than 32 (and
+  // depending on architecture).
+  static constexpr size_t kGroupSize = 16;
+  
+  // Match `h2` across kGroupSize slots using Highway vector instructions.
+  static inline uint64_t match_slots(const uint8_t* ctrl, uint8_t h2) {
+    namespace highway = hwy::HWY_NAMESPACE;
+    constexpr highway::FixedTag<uint8_t, kGroupSize> byte_vec;
+    auto ctrl_val = highway::Load(byte_vec, ctrl);
+    auto match_val = highway::Set(byte_vec, h2);
+    auto cmp = highway::Eq(ctrl_val, match_val);
+    uint64_t mask = 0;
+    highway::StoreMaskBits(byte_vec, cmp, reinterpret_cast<uint8_t*>(&mask));
+    return mask & ((1ULL << kGroupSize) - 1);
+  }
+
+  // Match empty slots across kGroupSize slots using Highway vector instructions.
+  static inline uint64_t match_empty_slots(const uint8_t* ctrl) {
+    namespace highway = hwy::HWY_NAMESPACE;
+    constexpr highway::FixedTag<uint8_t, kGroupSize> byte_vec;
+    auto ctrl_val = highway::Load(byte_vec, ctrl);
+    auto match_val = highway::Set(byte_vec, kEmpty);
+    auto cmp = highway::Eq(ctrl_val, match_val);
+    uint64_t mask = 0;
+    highway::StoreMaskBits(byte_vec, cmp, reinterpret_cast<uint8_t*>(&mask));
+    return mask & ((1ULL << kGroupSize) - 1);
+  }
+
+  // Convert a match mask to a slot index.
+  static inline int mask_to_slot(uint64_t mask) {
+    return std::countr_zero(mask);
+  }
+#else
+  // must be 8 in this case
+  static constexpr size_t kGroupSize = 8;
+
+  static constexpr uint64_t kMsbs8Bytes = 0x8080808080808080ULL;
+  static constexpr uint64_t kLsbs8Bytes = 0x0101010101010101ULL;
+
+  static inline uint64_t load_ctrl(const uint8_t* ctrl) {
+    uint64_t res;
+    std::memcpy(&res, ctrl, 8);
+    return res;
+  }
+
+  // Stanford bithacks / Abseil GroupPortableImpl technique to match `h2` across 8 slots without vectors.
+  static inline uint64_t match_slots(const uint8_t* ctrl, uint8_t h2) {
+    uint64_t ctrl_val = load_ctrl(ctrl);
+    auto x = ctrl_val ^ (kLsbs8Bytes * h2);
+    return (x - kLsbs8Bytes) & ~x & kMsbs8Bytes;
+  }
+
+  // Stanford bithacks technique to find empty slots.
+  static inline uint64_t match_empty_slots(const uint8_t* ctrl) {
+    uint64_t ctrl_val = load_ctrl(ctrl);
+    return ctrl_val & kMsbs8Bytes;
+  }
+
+  // Convert a match mask to a slot index (0 to 7).
+  static inline int mask_to_slot(uint64_t mask) {
+    return std::countr_zero(mask) >> 3;
+  }
+#endif
+
   struct Node {
     slot_type entry;
     std::atomic<Node*> next;
     Node(const slot_type& entry, Node* next) : entry(entry), next(next) {}
   };
 
-  // Holds a group of 16 entries, along with a 16-byte control block
-  // that contains for each entry a 7-bit secondary hash, and a bit to
-  // indicate if full/empty.  Contains a sequence number used as a
-  // sequence lock.  It is odd if locked and even otherwise.  Every
-  // update increments it by two (+1 to lock, +1 to unlock).  Contains
-  // an overflow list used if we run out of the 16 primary slots.
+  // Holds a group of kGroupSize entries, along with a kGroupSize-byte control block
   struct alignas(32) Group {
-    uint8_t ctrl[16];
+    uint8_t ctrl[kGroupSize];
     std::atomic<uint64_t> seq;
     std::atomic<Node*> overflow;
-    slot_type slots[16];
+    slot_type slots[kGroupSize];
 
     Group() : seq(0), overflow(nullptr) {
       std::fill(std::begin(ctrl), std::end(ctrl), kEmpty);  // all empty
     }
   };
 
-  // Control byte stored in slots that are empty.
   static constexpr uint8_t kEmpty = 0x80;
 
-  // This is stored in the sequence number to indicate that the group
-  // is forwarded.  Importantly it is odd, so acts as a locked state.
   static constexpr uint64_t kForwarded = std::numeric_limits<uint64_t>::max();
+
 
   struct table_version {
     size_t num_groups;
-    // The array of groups
     Group* groups;
-    // Updated after a grow cycle
     std::atomic<table_version*> next{nullptr};
-    // Used to count the number of overflows in first 100 groups so as
-    // to detect when to grow.
     std::atomic<int64_t> overflow_groups_count{0};
-    // When copying, indicates how many groups have been copied
     std::atomic<size_t> completed_count{0};
-    // When copying, indicates next slot to copy
     std::atomic<size_t> copy_counter{0};
-    // Used to lock when allocating memory to copy into
     // NOLINTNEXTLINE(google3-custom-lockable-without-annotations)
     std::mutex allocate_lock;
     epoch::memory_pool<Node>* node_pool;
@@ -349,22 +251,7 @@ struct swiss_parlay_table {
       }
     }
 
-    // Destructor of table_version does NOT retire slot entries (e.g. freeing
-    // heap memory in IndirectEntries) because during resize, active slots are
-    // copied to the new version by copying pointers. Only the current_version
-    // (the latest table version) owns the entries, which are cleaned up in
-    // ~swiss_parlay_table() via retire_all_entries.
     ~table_version() {
-      for (size_t i = 0; i < num_groups; i++) {
-        Group& g = groups[i];
-        Node* curr = g.overflow.load(std::memory_order_relaxed);
-        while (curr != nullptr) {
-          Node* next_node = curr->next.load(std::memory_order_relaxed);
-          node_pool->Delete(curr);
-          curr = next_node;
-        }
-      }
-
       std::free(groups);
     }
 
@@ -373,8 +260,6 @@ struct swiss_parlay_table {
     }
   };
 
-  // Used to cache the groups and mask avoiding a level of indirection
-  // on the fast path of a find.
   struct alignas(16) groups_and_mask {
     Group* groups;
     size_t num_groups;
@@ -398,37 +283,47 @@ struct swiss_parlay_table {
         clear_memory_at_end(clear_at_end),
         node_pool(clear_at_end ? new epoch::memory_pool<Node>()
                                : &epoch::get_default_pool<Node>()) {
-    size_t num_groups = std::max<size_t>(1, (kFillFactor * n + 15) / 16);
+    size_t num_groups = std::max<size_t>(1, (kFillFactor * n + kGroupSize - 1) / kGroupSize);
     initial_version = new table_version(num_groups, node_pool, true);
     current_version.store(initial_version);
     cached_groups_and_mask.store(
         {initial_version->groups, initial_version->num_groups});
   }
 
-  // Reclaims all heap allocations stored in the entries of the active table
-  // version. Must only be called when the table is being destroyed and no
-  // concurrent operations are running.
-  void retire_all_entries(table_version* tv) {
-    for (size_t i = 0; i < tv->num_groups; i++) {
-      Group& g = tv->groups[i];
-      for (int j = 0; j < 16; ++j) {
+  void retire_and_clear_group_rec(table_version* tv, size_t g_idx) {
+    Group& g = tv->groups[g_idx];
+    if (g.seq.load(std::memory_order_relaxed) == kForwarded) {
+      table_version* next = tv->next.load(std::memory_order_relaxed);
+      if (next != nullptr) {
+        for (size_t i = 0; i < kGrowthFactor; ++i) {
+          retire_and_clear_group_rec(next, g_idx * kGrowthFactor + i);
+        }
+      }
+    } else {
+      for (int j = 0; j < kGroupSize; ++j) {
         if (g.ctrl[j] < kEmpty) {
           entries.retire_entry(g.slots[j]);
         }
       }
       Node* curr = g.overflow.load(std::memory_order_relaxed);
       while (curr != nullptr) {
+        Node* next_node = curr->next.load(std::memory_order_relaxed);
         entries.retire_entry(curr->entry);
-        curr = curr->next.load(std::memory_order_relaxed);
+        tv->node_pool->Delete(curr);
+        curr = next_node;
       }
+      g.overflow.store(nullptr, std::memory_order_relaxed);
+    }
+  }
+
+  void retire_all_entries(table_version* tv) {
+    for (size_t i = 0; i < tv->num_groups; i++) {
+      retire_and_clear_group_rec(tv, i);
     }
   }
 
   ~swiss_parlay_table() {
-    // Clean up heap allocated entries (if using IndirectEntries) from the
-    // latest version.
     retire_all_entries(current_version.load());
-    // Delete all table versions.
     table_version* curr = initial_version;
     while (curr != nullptr) {
       table_version* next = curr->next.load(std::memory_order_relaxed);
@@ -448,7 +343,7 @@ struct swiss_parlay_table {
       delete curr;
       curr = next;
     }
-    size_t num_groups = std::max<size_t>(1, (kFillFactor * n + 15) / 16);
+    size_t num_groups = std::max<size_t>(1, (kFillFactor * n + kGroupSize - 1) / kGroupSize);
     initial_version = new table_version(num_groups, node_pool, true);
     current_version.store(initial_version);
     cached_groups_and_mask.store(
@@ -456,8 +351,6 @@ struct swiss_parlay_table {
     is_growing.store(false);
   }
 
-  // Determines number of full entries in a group.  Because of
-  // growing, it might need to recurse through copied groups.
   int64_t recursive_group_size(table_version* tv, size_t g_idx) const {
     Group& g = tv->groups[g_idx];
     if (g.seq.load(std::memory_order_acquire) == kForwarded) {
@@ -468,15 +361,8 @@ struct swiss_parlay_table {
       }
       return total_size;
     } else {
-      namespace highway = hwy::HWY_NAMESPACE;
-      constexpr highway::FixedTag<uint8_t, 16> byte_vec_16;
-      auto ctrl_val = highway::Load(byte_vec_16, g.ctrl);
-      auto match_val = highway::Set(byte_vec_16, kEmpty);  // empty
-      auto cmp = highway::Eq(ctrl_val, match_val);
-      uint16_t empty_mask = 0;
-      highway::StoreMaskBits(byte_vec_16, cmp,  reinterpret_cast<uint8_t*>(&empty_mask));
-      int full_slots_count =
-          16 - std::popcount(static_cast<unsigned int>(empty_mask));
+      uint64_t empty_mask = match_empty_slots(g.ctrl);
+      int full_slots_count = kGroupSize - std::popcount(empty_mask);
       int overflow_count = 0;
       Node* curr = g.overflow.load(std::memory_order_acquire);
       while (curr != nullptr) {
@@ -487,11 +373,6 @@ struct swiss_parlay_table {
     }
   }
 
-  // We do not keep track of size since that is expensive, so need to
-  // go through full table to determine the size.  Safe to call
-  // concurrently with updates, but might or might not include any
-  // upates that are concurrent with this operation (i.e., it is not
-  // strictly linearizable, but has relazed consistency).
   int64_t size() const {
     return epoch::with_epoch([&] {
       table_version* curr = current_version.load(std::memory_order_acquire);
@@ -501,20 +382,10 @@ struct swiss_parlay_table {
     });
   }
 
-  // Returns true if sequence lock was successful.
-  // Side effects result and target slot if found.
-  // Used by Find, Insert, Remove and Upsert.
   bool find_in_group(uint64_t seq1, const K& key,
                      const uint8_t h2, Group* g,
                      result_type& result, int& target_slot) {
-    namespace highway = hwy::HWY_NAMESPACE;
-    constexpr highway::FixedTag<uint8_t, 16> byte_vec_16;
-    auto ctrl_val = highway::Load(byte_vec_16, g->ctrl);
-    auto match_val = highway::Set(byte_vec_16, h2);
-    auto cmp = highway::Eq(ctrl_val, match_val);
-    uint16_t mask = 0;
-    highway::StoreMaskBits(byte_vec_16, cmp, reinterpret_cast<uint8_t*>(&mask));
-    // fast path for not found
+    uint64_t mask = match_slots(g->ctrl, h2);
     Node* overflow_ptr = g->overflow.load(std::memory_order_acquire);
     
     if (mask == 0 && (overflow_ptr == nullptr)) {
@@ -524,18 +395,12 @@ struct swiss_parlay_table {
       }
     }
 
-    // Returns whether succeeded in either finding or not finding the
-    // key (true), or failed because the sequence counter was updated
-    // and hence the read was invalid (false).
-    // If found then result is side effected to the found value
     auto do_find = [&] {
       slot_type res;
       while (mask > 0) {
-        // first search in main slots
-        int bit = std::countr_zero(static_cast<unsigned int>(mask));
+        int bit = mask_to_slot(mask);
         slot_type e = g->slots[bit];
         std::atomic_thread_fence(std::memory_order_acquire);
-        // need to verify e was read atomically before using it
         if (seq1 == g->seq.load(std::memory_order_relaxed)) [[likely]] {
           if (KeyEqual{}(Entries::get_key(e), key)) [[likely]] {
             result = Entries::get_result(e);
@@ -546,7 +411,6 @@ struct swiss_parlay_table {
         mask &= mask - 1;
       }
 
-      // If not found in main slots then search the overflow.
       auto search_overflow = [&] {
         Node* curr = overflow_ptr;
         while (curr != nullptr) {
@@ -561,14 +425,10 @@ struct swiss_parlay_table {
           }
           curr = curr->next.load(std::memory_order_acquire);
         }
-        // if here, then key was not found (result has not been side
-        // effected).
         std::atomic_thread_fence(std::memory_order_acquire);
         return seq1 == g->seq.load(std::memory_order_relaxed);
       };
-      // searching overflow needs to be protected
       if constexpr (Entries::kNeedsEpochProtection) {
-        // already protected, no need to protect again
         return search_overflow();
       } else {
         return epoch::with_epoch(search_overflow);
@@ -578,7 +438,7 @@ struct swiss_parlay_table {
     if constexpr (Entries::kNeedsEpochProtection) {
       if (mask != 0) {
         if constexpr (std::is_pointer_v<typename Entries::Entry>) {
-          int bit = std::countr_zero(static_cast<unsigned int>(mask));
+          int bit = mask_to_slot(mask);
           __builtin_prefetch(g->slots[bit]);
         }
       }
@@ -599,8 +459,6 @@ struct swiss_parlay_table {
       uint64_t seq1 = g->seq.load(std::memory_order_acquire);
       if (seq1 % 2 != 0) [[unlikely]] {
         if (seq1 == kForwarded) {
-          // trickiest case is when group is forwaded during growing
-          // now cannot use the cached groups and mask.
           table_version* v = current_version.load();
           table_version* new_v = v->next.load(std::memory_order_acquire);
           g_idx = fast_map(h >> 7, v->num_groups);
@@ -614,11 +472,11 @@ struct swiss_parlay_table {
             continue;
           }
         } else
-          continue;  // locked or forwarded, retry
+          continue;
       }
 
       result_type result{};
-      int target_slot = -1; // not used in Find
+      int target_slot = -1;
       if (find_in_group(seq1, key, h2, g, result, target_slot))
         return result;
     }
@@ -649,7 +507,6 @@ struct swiss_parlay_table {
       }
       if (g_old.seq.compare_exchange_strong(expected, expected + 1,
                                             std::memory_order_acquire)) {
-        // initialize the groups moving to and keep pointers
         Group* target_groups[kGrowthFactor];
         for (size_t i = 0; i < kGrowthFactor; ++i) {
           target_groups[i] = &to->groups[g_idx * kGrowthFactor + i];
@@ -657,7 +514,7 @@ struct swiss_parlay_table {
         }
 
         std::vector<slot_type> entries;
-        for (int i = 0; i < 16; ++i) {
+        for (int i = 0; i < kGroupSize; ++i) {
           if (g_old.ctrl[i] != kEmpty) {
             entries.push_back(g_old.slots[i]);
           }
@@ -682,7 +539,7 @@ struct swiss_parlay_table {
           size_t& cnt = counters[i];
           uint8_t h2 = h & 0x7F;
 
-          if (cnt < 16) {
+          if (cnt < kGroupSize) {
             tg->slots[cnt] = entry;
             tg->ctrl[cnt] = h2;
             cnt++;
@@ -712,8 +569,6 @@ struct swiss_parlay_table {
     }
   }
 
-  // Incrementally copies some number of groups to next larger table.
-  // The copy counter keeps track of which groups and when done.
   void copy_some_groups(table_version* v, table_version* next_v) {
     size_t cnt = std::min<size_t>(8, v->num_groups);
     size_t total_batches = (v->num_groups + cnt - 1) / cnt;
@@ -737,7 +592,6 @@ struct swiss_parlay_table {
     } else if (v == current_version.load(std::memory_order_acquire) &&
                v->get_overflow_groups_count() >
                std::min<size_t>(v->num_groups, 100) * kRegrowFraction) {
-      // if overfull then try to create a new larger table
       std::unique_lock<std::mutex> lck(v->allocate_lock, std::try_to_lock);
       if (!lck.owns_lock() ||
           v->next.load(std::memory_order_acquire) != nullptr)
@@ -754,29 +608,19 @@ struct swiss_parlay_table {
     size_t h = hash(key);
     size_t g_idx = fast_map(h >> 7, gm.num_groups);
     uint8_t h2 = h & 0x7F;
-    namespace highway = hwy::HWY_NAMESPACE;
-    constexpr highway::FixedTag<uint8_t, 16> byte_vec_16;
-    auto match_val = highway::Set(byte_vec_16, h2);
     Group* g = &(gm.groups[g_idx]);
 
-    // Fast path for insertion.  If finds key in slots then returns
-    // immediately.  If it does not find in slots and not growing, it
-    // checks if it can place directly in the primary slots.  Notably
-    // improves performance for workloads with high insertion rates.
     if (!is_growing.load(std::memory_order_relaxed)) {
       uint64_t seqn = g->seq.load(std::memory_order_acquire);
-      auto ctrl_val = highway::Load(byte_vec_16, g->ctrl);
-      auto cmp = highway::Eq(ctrl_val, match_val);
-      uint16_t mask = 0;  // slots where h2 matches
-      highway::StoreMaskBits(byte_vec_16, cmp, reinterpret_cast<uint8_t*>(&mask));
+      uint64_t mask = match_slots(g->ctrl, h2);
       if (mask != 0) {
-        int bit = std::countr_zero(static_cast<unsigned int>(mask));
+        int bit = mask_to_slot(mask);
         result_type result{};
         auto check = [&] {
           slot_type e = g->slots[bit];
           std::atomic_thread_fence(std::memory_order_acquire);
-          if (((seqn & 1) == 0) &&  // not locked
-              g->seq.load(std::memory_order_relaxed) == seqn) { // hasn't changed
+          if (((seqn & 1) == 0) &&
+              g->seq.load(std::memory_order_relaxed) == seqn) {
             if (KeyEqual{}(Entries::get_key(e), key)) {
               result = Entries::get_result(e);
               return true;
@@ -789,19 +633,15 @@ struct swiss_parlay_table {
         } else {
           if (check()) return result;
         }
-      } else {  // no matches in slots
-        auto cmp_empty =
-            highway::Eq(ctrl_val, highway::Set(byte_vec_16, kEmpty));
-        uint16_t empty_mask = 0;  // slots where h2 is empty
-        highway::StoreMaskBits(byte_vec_16, cmp_empty,
-                               reinterpret_cast<uint8_t*>(&empty_mask));
+      } else {
+        uint64_t empty_mask = match_empty_slots(g->ctrl);
         std::atomic_thread_fence(std::memory_order_acquire);
-        if (empty_mask != 0 &&    // at least one empty
-            ((seqn & 1) == 0)) {  // not locked
-          int bit = std::countr_zero(static_cast<unsigned int>(empty_mask));
+        if (empty_mask != 0 &&
+            ((seqn & 1) == 0)) {
+          int bit = mask_to_slot(empty_mask);
           slot_type e = entries.make_entry(key, entry);
-          if (g->seq.load(std::memory_order_relaxed) == seqn &&  // hasn't changed
-              g->seq.compare_exchange_strong(seqn, seqn + 1)) {  // try lock
+          if (g->seq.load(std::memory_order_relaxed) == seqn &&
+              g->seq.compare_exchange_strong(seqn, seqn + 1)) {
             g->slots[bit] = e;
             g->ctrl[bit] = h2;
             g->seq.store(seqn + 2, std::memory_order_release);
@@ -825,7 +665,6 @@ struct swiss_parlay_table {
 
       result_type result{};
       int target_slot = -1;
-      // Optimistic Pre-check
       if (!find_in_group(seq1, key, h2, g, result, target_slot))
         continue;
 
@@ -833,18 +672,13 @@ struct swiss_parlay_table {
         return result;
       }
 
-      // Now try insert with lock
-      auto ctrl_val = highway::Load(byte_vec_16, g->ctrl);
-      auto cmp_empty =
-        highway::Eq(ctrl_val, highway::Set(byte_vec_16, kEmpty));
-      uint16_t empty_mask = 0;
-      highway::StoreMaskBits(byte_vec_16, cmp_empty, reinterpret_cast<uint8_t*>(&empty_mask));
+      uint64_t empty_mask = match_empty_slots(g->ctrl);
       slot_type e = entries.make_entry(key, entry);
       uint64_t expected = seq1;
       bool acquired;
-      
-      if (empty_mask > 0) {
-        int bit = std::countr_zero(static_cast<unsigned int>(empty_mask));
+
+      if (empty_mask != 0) {
+        int bit = mask_to_slot(empty_mask);
         if ((acquired = try_acquire_lock(h)) &&
             g->seq.load(std::memory_order_relaxed) == seq1 &&
             g->seq.compare_exchange_strong(expected, seq1 + 1,
@@ -856,7 +690,6 @@ struct swiss_parlay_table {
           return {};
         }
       } else {
-        // Slots full, insert to overflow
         Node* old_head = g->overflow.load(std::memory_order_relaxed);
         Node* new_node =
             node_pool->New(e, old_head);
@@ -872,7 +705,6 @@ struct swiss_parlay_table {
           return {};
         } else node_pool->Delete(new_node);
       }
-      // if here, then seqlock failed, need to retire entry
       entries.retire_entry(e);
       if (acquired) release_lock(h);
     }
@@ -896,7 +728,6 @@ struct swiss_parlay_table {
 
       result_type result{};
       int target_slot = -1;
-      // Optimistic Pre-check
       if (!find_in_group(seq1, key, h2, g, result, target_slot))
         continue;
 
@@ -906,7 +737,6 @@ struct swiss_parlay_table {
 
       bool acquired;
 
-      // Lock
       uint64_t expected = seq1;
       if (target_slot != -1) {
         Node* oh = g->overflow.load(std::memory_order_relaxed);
@@ -959,7 +789,6 @@ struct swiss_parlay_table {
             curr = curr->next.load(std::memory_order_relaxed);
           }
 
-          // curr should not be nullptr since key was found in speculative phase
           Node* next_node = curr->next.load(std::memory_order_relaxed);
           if (prev == nullptr) {
             g->overflow.store(next_node, std::memory_order_release);
@@ -989,9 +818,6 @@ struct swiss_parlay_table {
     size_t g_idx = fast_map(h >> 7, v->num_groups);
     uint8_t h2 = h & 0x7F;
 
-    namespace highway = hwy::HWY_NAMESPACE;
-    constexpr highway::FixedTag<uint8_t, 16> byte_vec_16;
-
     Group* g = &(v->groups[g_idx]);
 
     while (true) {
@@ -1004,11 +830,9 @@ struct swiss_parlay_table {
 
       result_type result{};
       int target_slot = -1;
-      // Optimistic Pre-check
       if (!find_in_group(seq1, key, h2, g, result, target_slot))
         continue;
 
-      // Lock
       result_type ret_val;
       uint64_t expected = seq1;
       if (g->seq.compare_exchange_strong(expected, seq1 + 1,
@@ -1037,15 +861,10 @@ struct swiss_parlay_table {
           return ret_val;
         }
 
-        // Not found, insert
         auto new_val = f(std::nullopt);
-        auto ctrl_val_lock = highway::Load(byte_vec_16, g->ctrl);
-        auto cmp_empty =
-            highway::Eq(ctrl_val_lock, highway::Set(byte_vec_16, kEmpty));
-        uint16_t empty_mask = 0;
-        highway::StoreMaskBits(byte_vec_16, cmp_empty, reinterpret_cast<uint8_t*>(&empty_mask));
-        if (empty_mask > 0) {
-          int bit = std::countr_zero(static_cast<unsigned int>(empty_mask));
+        uint64_t empty_mask = match_empty_slots(g->ctrl);
+        if (empty_mask != 0) {
+          int bit = mask_to_slot(empty_mask);
           g->slots[bit] = entries.make_entry(key, std::make_pair(key, new_val));
           g->ctrl[bit] = h2;
           g->seq.store(seq1 + 2, std::memory_order_release);
@@ -1065,18 +884,12 @@ struct swiss_parlay_table {
     }
   }
 
-
-  // Applies f to all elements in group i of t.
-  // f must be of type slot_type -> void
-  // If the group is forwarded, then include all forwarded entries.
-  // Runs sequentially so can be used to gather elements in the group.
-  // Not safe with concurrent updates
   template <typename F>
   static void for_each_in_group_rec(table_version* t, int64_t i, const F& f) {
     Group& g = t->groups[i];
     uint64_t seq = g.seq.load(std::memory_order_acquire);
     if (seq != kForwarded) {
-      for (int j = 0; j < 16; j++) {
+      for (int j = 0; j < kGroupSize; j++) {
         if (g.ctrl[j] != kEmpty) {
           f(g.slots[j]);
         }
@@ -1096,8 +909,6 @@ struct swiss_parlay_table {
     }
   }
 
-  // applies f to every entry in the table
-  // f must be of type value_type -> void
   template <typename F>
   void for_each(const F& f) {
     auto g = [&](const slot_type& e) { f(Entries::get_data(e)); };
@@ -1106,9 +917,6 @@ struct swiss_parlay_table {
                          [&](int64_t i) { for_each_in_group_rec(v, i, g); });
   }
 
-  // return all entries in a group as a vector.  If group is forwarded
-  // will recursively gather entries.  Not safe with concurrent
-  // updates.
   static std::vector<slot_type> group_entries(table_version* t, int64_t i) {
     std::vector<slot_type> result;
     auto g = [&](const slot_type& e) { result.push_back(e); };
@@ -1116,7 +924,6 @@ struct swiss_parlay_table {
     return result;
   }
 
-  // returns all the entries in the hash table as value types
   parlay::sequence<value_type> to_sequence() {
     table_version* t = current_version.load();
     return parlay::flatten(parlay::tabulate(t->num_groups,
@@ -1129,7 +936,6 @@ struct swiss_parlay_table {
                                             }));
   }
     
-  // --- Iterator Support ---
   struct Iterator {
    public:
     using value_type = typename Entries::Data;
@@ -1205,9 +1011,6 @@ struct swiss_parlay_table {
 
 };
 
-  // MapPolicy and SetPolicy are used so we can share the same code for
-// implementing maps and sets.  For maps the value_type is a key-value
-// pair, but for sets it is just the key.
 template <typename K_, typename V_, class Hash_ = std::hash<K_>,
           class KeyEqual_ = std::equal_to<K_>>
 struct MapPolicy {
@@ -1236,11 +1039,6 @@ struct SetPolicy {
   static constexpr bool kIsMap = false;
 };
 
-// A type is effectively trivially copyable if it can be safely copied
-// concurrently without risking crashes from torn reads. Standard
-// std::is_trivially_copyable may return false for std::pair or
-// std::tuple of trivially copyable types depending on the compiler,
-// so we specialize it here.
 template <typename T>
 struct is_effectively_trivially_copyable : std::is_trivially_copyable<T> {};
 
@@ -1286,9 +1084,6 @@ template <typename T>
 inline constexpr bool is_relocatable_v =
     is_relocatable<T>::value;
 
-// DirectEntries stores the value directly in the table slots.
-// Safe for types that are effectively trivially copyable because torn reads
-// are detected and discarded by sequence number validation without crashing.
 template <typename Policy_>
 struct DirectEntries {
   using Policy = Policy_;
@@ -1309,10 +1104,6 @@ struct DirectEntries {
   void update_entry(Entry& slot, const Data& new_data) { slot = new_data; }
 };
 
-// IndirectEntries stores pointers to heap-allocated values.
-// Necessary for non-trivially copyable types (e.g. std::string) to avoid
-// crashing the reader if a torn pointer is dereferenced during a concurrent
-// update.
 template <typename Policy_>
 struct IndirectEntries {
   using Policy = Policy_;
@@ -1349,8 +1140,6 @@ struct IndirectEntries {
   }
 };
 
-// RelocatableEntries stores values as byte arrays and can be used for
-// relocatable types (i.e., types that can be moved using memcpy).
 template <typename Policy_>
 struct RelocatableEntries {
   using Policy = Policy_;
@@ -1363,7 +1152,6 @@ struct RelocatableEntries {
   bool clear_at_end;
   epoch::memory_pool<Data>* data_pool;
 
-  // Ensure every Entry slot satisfies the natural alignment of Data
   struct alignas(alignof(Data)) Entry {
     char bytes[sizeof(Data)];
   };
@@ -1430,7 +1218,6 @@ struct parlay_unordered_map {
   Table table;
   size_t initial_size;
 
-  // For benchmark compatibility
   using K_ = K;
   using V_ = V;
 
@@ -1530,6 +1317,8 @@ struct parlay_unordered_set {
 
 }  // namespace parlay
 
+#if SWISS_PARLAY_8_USE_HIGHWAY
 HWY_AFTER_NAMESPACE();
+#endif
 
-#endif  // THIRD_PARTY_SWISS_PARLAY_UNORDERED_MAP_H_
+#endif  // THIRD_PARTY_SWISS_PARLAY_8_UNORDERED_MAP_H_
