@@ -33,27 +33,27 @@ add_benchmark(libcuckoo other "" "" "")
 add_benchmark(parallel_hashmap other "" "" "")
 add_benchmark(seq_hash other "" "" "")
 
-# #find_package(absl CONFIG)
-# #if(NOT absl_FOUND)
-# #  message(STATUS "Abseil not found, fetching from GitHub...")
-#   include(FetchContent)
-#   FetchContent_Declare(
-#     abseil-cpp
-#     GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
-#     # Using a recent LTS release
-#     GIT_TAG        20240116.2
-#   )
-#   set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
-#   # We only need a subset, but FetchContent_MakeAvailable will configure all.
-#   # We can select what we need when linking.
-#   FetchContent_MakeAvailable(abseil-cpp)
-# endif()
+find_package(absl CONFIG)
+if(NOT absl_FOUND)
+  message(STATUS "Abseil not found, fetching from GitHub...")
+  include(FetchContent)
+  FetchContent_Declare(
+    abseil-cpp
+    GIT_REPOSITORY https://github.com/abseil/abseil-cpp.git
+    # Using a recent LTS release
+    GIT_TAG        20240116.2
+  )
+  set(ABSL_PROPAGATE_CXX_STD ON CACHE BOOL "" FORCE)
+  # We only need a subset, but FetchContent_MakeAvailable will configure all.
+  # We can select what we need when linking.
+  FetchContent_MakeAvailable(abseil-cpp)
+endif()
 
 #add_subdirectory(abseil-cpp)
-if (absl_FOUND)
-  add_benchmark(abseil other absl::flat_hash_map "" "")
-  add_benchmark(abseil_sharded other absl::flat_hash_map "" "")
-endif()
+#if (absl_FOUND)
+add_benchmark(abseil other absl::flat_hash_map "" "")
+add_benchmark(abseil_sharded other absl::flat_hash_map "" "")
+#endif()
 
 find_package(Highway CONFIG)
 if(NOT Highway_FOUND)
