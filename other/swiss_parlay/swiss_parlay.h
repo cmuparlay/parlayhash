@@ -491,7 +491,7 @@ struct swiss_parlay_table {
       auto ctrl_val = highway::Load(byte_vec, g.ctrl);
       auto match_val = highway::Set(byte_vec, kEmpty);  // empty
       auto cmp = highway::Eq(ctrl_val, match_val);
-      uint64_t empty_mask = 0;
+      uint16_t empty_mask = 0;
       highway::StoreMaskBits(byte_vec, cmp,  reinterpret_cast<uint8_t*>(&empty_mask));
       empty_mask &= (1ULL << kGroupSize) - 1;
       int full_slots_count =
@@ -531,7 +531,7 @@ struct swiss_parlay_table {
     auto ctrl_val = highway::Load(byte_vec, g->ctrl);
     auto match_val = highway::Set(byte_vec, h2);
     auto cmp = highway::Eq(ctrl_val, match_val);
-    uint64_t mask = 0;
+    uint16_t mask = 0;
     highway::StoreMaskBits(byte_vec, cmp, reinterpret_cast<uint8_t*>(&mask));
     mask &= (1ULL << kGroupSize) - 1;
     // fast path for not found
@@ -787,7 +787,7 @@ struct swiss_parlay_table {
       uint64_t seqn = g->seq.load(std::memory_order_acquire);
       auto ctrl_val = highway::Load(byte_vec, g->ctrl);
       auto cmp = highway::Eq(ctrl_val, match_val);
-      uint64_t mask = 0;  // slots where h2 matches
+      uint16_t mask = 0;  // slots where h2 matches
       highway::StoreMaskBits(byte_vec, cmp, reinterpret_cast<uint8_t*>(&mask));
       mask &= (1ULL << kGroupSize) - 1;
       if (mask != 0) {
@@ -813,7 +813,7 @@ struct swiss_parlay_table {
       } else {  // no matches in slots
         auto cmp_empty =
             highway::Eq(ctrl_val, highway::Set(byte_vec, kEmpty));
-        uint64_t empty_mask = 0;  // slots where h2 is empty
+        uint16_t empty_mask = 0;  // slots where h2 is empty
         highway::StoreMaskBits(byte_vec, cmp_empty,
                                reinterpret_cast<uint8_t*>(&empty_mask));
         empty_mask &= (1ULL << kGroupSize) - 1;
@@ -860,7 +860,7 @@ struct swiss_parlay_table {
       auto ctrl_val = highway::Load(byte_vec, g->ctrl);
       auto cmp_empty =
         highway::Eq(ctrl_val, highway::Set(byte_vec, kEmpty));
-      uint64_t empty_mask = 0;
+      uint16_t empty_mask = 0;
       highway::StoreMaskBits(byte_vec, cmp_empty, reinterpret_cast<uint8_t*>(&empty_mask));
       empty_mask &= (1ULL << kGroupSize) - 1;
       slot_type e = entries.make_entry(key, entry);
@@ -1069,7 +1069,7 @@ struct swiss_parlay_table {
         auto ctrl_val_lock = highway::Load(byte_vec, g->ctrl);
         auto cmp_empty =
             highway::Eq(ctrl_val_lock, highway::Set(byte_vec, kEmpty));
-        uint64_t empty_mask = 0;
+        uint16_t empty_mask = 0;
         highway::StoreMaskBits(byte_vec, cmp_empty, reinterpret_cast<uint8_t*>(&empty_mask));
         empty_mask &= (1ULL << kGroupSize) - 1;
         if (empty_mask > 0) {
