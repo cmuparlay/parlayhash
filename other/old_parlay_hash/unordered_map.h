@@ -7,7 +7,7 @@ template <typename K,
 	  class KeyEqual = std::equal_to<K>>
 struct unordered_map {
 
-  using Map = parlay_unordered_map<K,V,Hash,KeyEqual>;
+  using Map = parlay::parlay_unordered_map<K,V,Hash,KeyEqual>;
   Map m;
   unordered_map(long n) : m(Map(n)) {}
   long size() { return m.size();}
@@ -35,7 +35,7 @@ template <typename K,
 	  class KeyEqual = std::equal_to<K>>
 struct unordered_set {
 
-  using Set = parlay_unordered_set<K,Hash,KeyEqual>;
+  using Set = parlay::parlay_unordered_set<K,Hash,KeyEqual>;
   Set m;
   unordered_set(long n) : m(Set(n)) {}
   long size() { return m.size();}

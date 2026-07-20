@@ -57,7 +57,7 @@ struct alignas(32) big_atomic {
       std::atomic_thread_fence(std::memory_order_acquire);
       if ((ver & 1) == 0 && version.load(std::memory_order_relaxed) == ver)
 	return std::pair(v,ver);
-      for (volatile int i = 0; i < delay; i++);
+      for (volatile int i = 0; i < delay;) i = i+1;
       delay = std::min(2 * delay, 1000);
     }
   }
@@ -84,7 +84,7 @@ struct alignas(32) big_atomic {
             return true;
           }))
         return result;
-      for (volatile int i = 0; i < delay; i++);
+      for (volatile int i = 0; i < delay;) i = i + 1;
       delay = std::min(2 * delay, 2000);
     }
   }

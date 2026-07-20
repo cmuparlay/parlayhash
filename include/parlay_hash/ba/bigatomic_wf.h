@@ -155,7 +155,7 @@ struct big_atomic {
     } else {
       p = to_ptr(expected_tag);
       ver = seqnum.load(std::memory_order_acquire);
-      for (volatile int i = 0; i < 500; i++);
+      for (volatile int i = 0; i < 500;) i = i + 1;
     }
 
     auto ptr = new_backup(desired);

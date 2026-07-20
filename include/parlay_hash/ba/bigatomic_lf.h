@@ -161,7 +161,7 @@ private:
       if (old_hdr != expected_tag) return false;
       seqnum = old_hdr;
     } else { // expected_tag is a pointer
-      for (volatile int i = 0; i < 1000; i++); // for efficiency
+      for (volatile int i = 0; i < 1000;) i = i + 1; // for efficiency
       old_hdr = header.load(std::memory_order_acquire);
       auto expected_ptr = to_ptr(expected_tag);
       if (is_pointer(old_hdr)) { // also a pointer

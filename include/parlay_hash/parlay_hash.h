@@ -516,7 +516,7 @@ struct parlay_hash {
       } else {
 	// If another thread is working on the block, wait until Done
 	while (t->block_status[block_num] == Working) {
-	  for (volatile int i=0; i < 100; i++);
+	  for (volatile int i=0; i < 100;) i = i + 1;
 	}
       }
     }
@@ -727,7 +727,7 @@ struct parlay_hash {
 	retire_link(new_head);
       }
       // delay before trying again, only marginally helps
-      for (volatile int i=0; i < delay; i++);
+      for (volatile int i=0; i < delay;) i = i + 1;
       delay = std::min(2*delay, 5000); // 1000-10000 are about equally good
     }
   }
@@ -791,7 +791,7 @@ struct parlay_hash {
 	  }	    
 	}
 	// delay before trying again, only marginally helps
-	for (volatile int i=0; i < delay; i++);
+	for (volatile int i=0; i < delay;) i = i + 1;
 	delay = std::min(2*delay, 5000); // 1000-10000 are about equally good
       }
     });
@@ -862,7 +862,7 @@ struct parlay_hash {
           } // if sc failed, will need to try again
           retire_list_n(new_list, cnt - 1); // failed, retire new list
 	}
-	for (volatile int i=0; i < delay; i++);
+	for (volatile int i=0; i < delay;) i = i + 1;
 	delay = std::min(2*delay, 5000); // 1000-10000 are about equally good
       }
     });

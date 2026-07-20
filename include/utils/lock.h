@@ -58,7 +58,7 @@ public:
       auto r = f();
       if (r.has_value()) return *r;
       multiplier = std::min(2*multiplier, max_multiplier);
-      for (volatile int i=0; i < delay * multiplier; i++);
+      for (volatile int i=0; i < delay * multiplier;) i = i + 1;
     }
   }
 
