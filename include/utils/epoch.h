@@ -152,7 +152,7 @@ struct alignas(64) epoch_s {
     if (prev_state != current_state)
       return current_state;
     size_t i = current_state >> 48;
-    size_t current_e = ((1ul << 48) - 1) & current_state;
+    size_t current_e = ((1ull << 48) - 1) & current_state;
     size_t workers = num_workers();
     if (i == workers) {
       for (const auto h : before_epoch_hooks) h();

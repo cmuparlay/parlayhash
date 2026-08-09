@@ -26,7 +26,7 @@ private:
   }
 public:
   template <typename F>
-  bool try_lock(long i, F f) {
+  bool try_lock(size_t i, F f) {
     bool old = false;
     bool result = false;
     lck& x = locks[hash64(i) & mask];
