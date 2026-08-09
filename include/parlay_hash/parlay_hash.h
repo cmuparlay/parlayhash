@@ -99,13 +99,13 @@ struct parlay_hash {
     size_t list_head;
     Entry buffer[buffer_size];
     state() : list_head(0) {}
-    state(const Entry& e) : list_head(1ul << 48) {
+    state(const Entry& e) : list_head(1ull << 56) {
       buffer[0] = e;
     }
     static constexpr size_t forwarded_val = 1ul;
     
     size_t make_head(link* l, size_t bsize) {
-      return (((size_t) l) | (bsize << 48)); }
+      return (((size_t) l) | (bsize << 56)); }
 
     // update overflow list with new ptr (assumes buffer is full)
     state(const state& s, link* ptr)
@@ -156,7 +156,7 @@ struct parlay_hash {
     bool is_forwarded() const {return list_head == forwarded_val ;}
 
     // number of entries in buffer, or buffer_size+1 if overflow
-    long buffer_cnt() const {return (list_head >> 48) & 255ul ;}
+    long buffer_cnt() const {return (list_head >> 56) & 255ul ;}
 
     // number of entries in bucket (includes those in the overflow list)
     long size() const {
@@ -166,7 +166,7 @@ struct parlay_hash {
 
     // get the overflow list
     link* overflow_list() const {
-      return (link*) (list_head & ((1ul << 48) - 1));}
+      return (link*) (list_head & ((1ull << 56) - 1));}
   };
 
   // returns std::optional(f(entry)) for entry with given key
@@ -352,7 +352,7 @@ struct parlay_hash {
 	finished_block_count(0),
 	num_bits(std::max<long>((long) std::ceil(std::log2(min_block_size-1)),
 				(long) std::ceil(std::log2(1.5*n)) - log_bucket_size)),
-	size(1ul << num_bits),
+	size(1ull << num_bits),
 	block_size(num_bits < 10 ? min_block_size : get_block_size(num_bits)),
 	overflow_size(get_overflow_size(num_bits))
     {
@@ -399,7 +399,7 @@ struct parlay_hash {
     if (htt->next == nullptr) {
       long n = ht->size;
       // if fail on lock, someone else is working on it, so skip
-      get_locks().try_lock((long) ht, [&] {
+      get_locks().try_lock((size_t) ht, [&] {
 	 if (ht->next == nullptr) {
 	   ht->next = new table_version(ht);
 	   //if (PrintGrow)
@@ -1055,7 +1055,7 @@ struct parlay_hash {
 	return (Data*) (((hashv >> 48) << 48) | ((size_t) data));
       }
       Data* get_ptr() const {
-	return (Data*) (((size_t) ptr) & ((1ul << 48) - 1)); }
+	return (Data*) (((size_t) ptr) & ((1ull << 48) - 1)); }
       static unsigned long hash(const Key& k) {
 	return k.second;}
       bool equal(const Key& k) const {
