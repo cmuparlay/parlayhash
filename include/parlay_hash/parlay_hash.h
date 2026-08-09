@@ -99,13 +99,13 @@ struct parlay_hash {
     size_t list_head;
     Entry buffer[buffer_size];
     state() : list_head(0) {}
-    state(const Entry& e) : list_head(1ull << 48) {
+    state(const Entry& e) : list_head(1ull << 56) {
       buffer[0] = e;
     }
     static constexpr size_t forwarded_val = 1ul;
     
     size_t make_head(link* l, size_t bsize) {
-      return (((size_t) l) | (bsize << 48)); }
+      return (((size_t) l) | (bsize << 56)); }
 
     // update overflow list with new ptr (assumes buffer is full)
     state(const state& s, link* ptr)
@@ -156,7 +156,7 @@ struct parlay_hash {
     bool is_forwarded() const {return list_head == forwarded_val ;}
 
     // number of entries in buffer, or buffer_size+1 if overflow
-    long buffer_cnt() const {return (list_head >> 48) & 255ul ;}
+    long buffer_cnt() const {return (list_head >> 56) & 255ul ;}
 
     // number of entries in bucket (includes those in the overflow list)
     long size() const {
@@ -166,7 +166,7 @@ struct parlay_hash {
 
     // get the overflow list
     link* overflow_list() const {
-      return (link*) (list_head & ((1ull << 48) - 1));}
+      return (link*) (list_head & ((1ull << 56) - 1));}
   };
 
   // returns std::optional(f(entry)) for entry with given key
