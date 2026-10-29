@@ -731,9 +731,9 @@ struct parlay_hash {
       int delay = 200;
       while (true) {
 	auto [s, tag] = b->ll();
-	state out_s = s;
 	copy_if_needed(ht, idx);
 	check_bucket_and_state(ht, key, b, s, tag, idx);
+	state out_s = s;
 	long len = s.buffer_cnt();
 	bool cont = false;
 	for (long i = 0; i < std::min(len, buffer_size); i++) {

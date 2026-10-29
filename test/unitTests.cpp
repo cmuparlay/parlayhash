@@ -202,3 +202,16 @@ TEST(TestHash,TestMapClear) {
   ASSERT_EQ(map.size(), 0);
   ASSERT_TRUE(map.empty());
 }
+
+// Upserts on existing keys while the table is growing.
+TEST(TestHash,TestMapUpsertWhileGrowing) {
+  constexpr long num_keys = test_size;
+  constexpr long rounds = 20;
+  parlay::parlay_unordered_map<long,long> map(1000);
+  parallel_for(num_keys * rounds, [&] (long i) {
+    long k = (i * 2654435761l) % num_keys;
+    map.Upsert(k, [] (const std::optional<long>& v) {return v.has_value() ? *v + 1 : 1;});});
+  ASSERT_EQ(map.size(), num_keys);
+  for (long k = 0; k < num_keys; k++)
+    ASSERT_EQ(map.Find(k), std::optional<long>(rounds));
+}
