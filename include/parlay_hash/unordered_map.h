@@ -75,7 +75,7 @@ namespace parlay {
     iterator begin() { return m.begin();}
     iterator end() { return m.end();}
     bool empty() { return size() == 0;}
-    bool max_size() { return (1ul << 47)/sizeof(Entry);}
+    bool max_size() { return (1ull << 47)/sizeof(Entry);}
     void clear() { m.clear_buckets();}
     long size() { return m.size();}
 
