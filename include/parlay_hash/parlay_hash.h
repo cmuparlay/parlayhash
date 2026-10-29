@@ -804,8 +804,10 @@ struct parlay_hash {
     long idx = ht->get_index(key);
     auto b = &(ht->buckets[idx].v);
     // if entries are direct safe to scan the buffer without epoch protection
+    // note: copy_if_needed is not called here since copying walks the
+    // overflow lists, which needs epoch protection.  It is called in the
+    // protected loop below, as it is in Find.
     if constexpr (Entry::Direct) {
-      copy_if_needed(ht, idx);
       auto [s, tag] = b->ll();
       check_bucket_and_state(ht, key, b, s, tag, idx);
       if (s.buffer_cnt() <= buffer_size) {
