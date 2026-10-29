@@ -550,13 +550,21 @@ struct parlay_hash {
   void clear(bool reinitialize = true) {
     clear_buckets();
 
-    // now reclaim the arrays
+    // now reclaim the arrays, first running the bucket destructors (some big_atomics, e.g.
+    // wf_lowmem_del, need them before their memory is freed).  The buckets of an expanded
+    // version are constructed only once their block of the previous version is copied.
+    table_version* prev = nullptr;
     table_version* tv = initial_table_version;
     while (tv != nullptr) {
+      parallel_for(tv->size, [&] (size_t i) {
+        if (prev == nullptr || prev->block_status[(i / grow_factor) / prev->block_size] == Done)
+          tv->buckets[i].~bucket();});
       table_version* tv_next = tv->next;
-      delete tv;
+      delete prev;
+      prev = tv;
       tv = tv_next;
     }
+    delete prev;    
     // reinitialize
     if (reinitialize) {
       current_table_version = new table_version(1);
@@ -684,8 +692,8 @@ struct parlay_hash {
     auto b = &(ht->buckets[idx].v);
     int delay = 200;
     while (true) {
-      auto [s, tag] = b->ll();
       copy_if_needed(ht, idx);
+      auto [s, tag] = b->ll();
       check_bucket_and_state(ht, key, b, s, tag, idx);
       long len = s.buffer_cnt();
       // if found in buffer then done
@@ -730,8 +738,8 @@ struct parlay_hash {
     return epoch::with_epoch([&] () -> rtype {
       int delay = 200;
       while (true) {
-	auto [s, tag] = b->ll();
 	copy_if_needed(ht, idx);
+	auto [s, tag] = b->ll();
 	check_bucket_and_state(ht, key, b, s, tag, idx);
 	state out_s = s;
 	long len = s.buffer_cnt();
@@ -797,8 +805,8 @@ struct parlay_hash {
     auto b = &(ht->buckets[idx].v);
     // if entries are direct safe to scan the buffer without epoch protection
     if constexpr (Entry::Direct) {
-      auto [s, tag] = b->ll();
       copy_if_needed(ht, idx);
+      auto [s, tag] = b->ll();
       check_bucket_and_state(ht, key, b, s, tag, idx);
       if (s.buffer_cnt() <= buffer_size) {
 	int i = find_in_buffer(s, key);
@@ -814,8 +822,8 @@ struct parlay_hash {
     return epoch::with_epoch([&] () -> rtype {
       int delay = 200;
       while (true) {
-        auto [s, tag] = b->ll();
 	copy_if_needed(ht, idx);
+        auto [s, tag] = b->ll();
 	check_bucket_and_state(ht, key, b, s, tag, idx);
 	int i = find_in_buffer(s, key);
 	if (i >= 0) { // found in buffer
