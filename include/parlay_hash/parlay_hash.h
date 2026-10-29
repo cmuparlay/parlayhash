@@ -99,7 +99,7 @@ struct parlay_hash {
     size_t list_head;
     Entry buffer[buffer_size];
     state() : list_head(0) {}
-    state(const Entry& e) : list_head(1ul << 48) {
+    state(const Entry& e) : list_head(1ull << 48) {
       buffer[0] = e;
     }
     static constexpr size_t forwarded_val = 1ul;
@@ -166,7 +166,7 @@ struct parlay_hash {
 
     // get the overflow list
     link* overflow_list() const {
-      return (link*) (list_head & ((1ul << 48) - 1));}
+      return (link*) (list_head & ((1ull << 48) - 1));}
   };
 
   // returns std::optional(f(entry)) for entry with given key
@@ -352,7 +352,7 @@ struct parlay_hash {
 	finished_block_count(0),
 	num_bits(std::max<long>((long) std::ceil(std::log2(min_block_size-1)),
 				(long) std::ceil(std::log2(1.5*n)) - log_bucket_size)),
-	size(1ul << num_bits),
+	size(1ull << num_bits),
 	block_size(num_bits < 10 ? min_block_size : get_block_size(num_bits)),
 	overflow_size(get_overflow_size(num_bits))
     {
@@ -399,7 +399,7 @@ struct parlay_hash {
     if (htt->next == nullptr) {
       long n = ht->size;
       // if fail on lock, someone else is working on it, so skip
-      get_locks().try_lock((long) ht, [&] {
+      get_locks().try_lock((size_t) ht, [&] {
 	 if (ht->next == nullptr) {
 	   ht->next = new table_version(ht);
 	   //if (PrintGrow)
@@ -550,13 +550,21 @@ struct parlay_hash {
   void clear(bool reinitialize = true) {
     clear_buckets();
 
-    // now reclaim the arrays
+    // now reclaim the arrays, first running the bucket destructors (some big_atomics, e.g.
+    // wf_lowmem_del, need them before their memory is freed).  The buckets of an expanded
+    // version are constructed only once their block of the previous version is copied.
+    table_version* prev = nullptr;
     table_version* tv = initial_table_version;
     while (tv != nullptr) {
+      parallel_for(tv->size, [&] (size_t i) {
+        if (prev == nullptr || prev->block_status[(i / grow_factor) / prev->block_size] == Done)
+          tv->buckets[i].~bucket();});
       table_version* tv_next = tv->next;
-      delete tv;
+      delete prev;
+      prev = tv;
       tv = tv_next;
     }
+    delete prev;    
     // reinitialize
     if (reinitialize) {
       current_table_version = new table_version(1);
@@ -684,8 +692,8 @@ struct parlay_hash {
     auto b = &(ht->buckets[idx].v);
     int delay = 200;
     while (true) {
-      auto [s, tag] = b->ll();
       copy_if_needed(ht, idx);
+      auto [s, tag] = b->ll();
       check_bucket_and_state(ht, key, b, s, tag, idx);
       long len = s.buffer_cnt();
       // if found in buffer then done
@@ -730,10 +738,10 @@ struct parlay_hash {
     return epoch::with_epoch([&] () -> rtype {
       int delay = 200;
       while (true) {
-	auto [s, tag] = b->ll();
-	state out_s = s;
 	copy_if_needed(ht, idx);
+	auto [s, tag] = b->ll();
 	check_bucket_and_state(ht, key, b, s, tag, idx);
+	state out_s = s;
 	long len = s.buffer_cnt();
 	bool cont = false;
 	for (long i = 0; i < std::min(len, buffer_size); i++) {
@@ -816,8 +824,8 @@ struct parlay_hash {
     return epoch::with_epoch([&] () -> rtype {
       int delay = 200;
       while (true) {
-        auto [s, tag] = b->ll();
 	copy_if_needed(ht, idx);
+        auto [s, tag] = b->ll();
 	check_bucket_and_state(ht, key, b, s, tag, idx);
 	int i = find_in_buffer(s, key);
 	if (i >= 0) { // found in buffer
@@ -1057,7 +1065,7 @@ struct parlay_hash {
 	return (Data*) (((hashv >> 48) << 48) | ((size_t) data));
       }
       Data* get_ptr() const {
-	return (Data*) (((size_t) ptr) & ((1ul << 48) - 1)); }
+	return (Data*) (((size_t) ptr) & ((1ull << 48) - 1)); }
       static unsigned long hash(const Key& k) {
 	return k.second;}
       bool equal(const Key& k) const {

@@ -72,7 +72,7 @@ struct alignas(32) big_atomic {
     while (true) {
       vtype ver = version.load();
       if (ver != expected_tag) return false;
-      if (get_locks().try_lock((long)this, [&] {
+      if (get_locks().try_lock((size_t)this, [&] {
             if (version.load(std::memory_order_acquire) != expected_tag)
               result = false;
             else {
